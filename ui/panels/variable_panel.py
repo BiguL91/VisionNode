@@ -1,0 +1,101 @@
+import tkinter as tk
+from helpers import _template_farbe
+
+class VariablePanel:
+    def __init__(self, parent, bot):
+        self.parent = parent
+        self.bot = bot
+        self.ocr_engine = bot.ocr_engine
+        
+        self._nur_aktive_variablen = False
+        self.timer_eintraege = {}
+        
+        self._setup_ui()
+        self.aktualisieren()
+
+    def _setup_ui(self):
+        self.container = tk.Frame(self.parent, bg="#2d2d2d")
+        self.container.pack(fill=tk.BOTH, expand=True)
+        
+        # Header with Toggle
+        self.header_extra = tk.Frame(self.container, bg="#2d2d2d")
+        # Note: In _panel_erstellen, this was passed as kopf_extra. 
+        # Since I'm modularizing, I'll assume the caller (bot) manages the overall panel frame.
+        # But for now, I'll keep the logic here.
+
+    def set_nur_aktive(self, nur_aktive):
+        self._nur_aktive_variablen = nur_aktive
+        self.aktualisieren()
+
+    def aktualisieren(self):
+        for widget in self.container.winfo_children():
+            widget.destroy()
+        
+        self.timer_eintraege = {}
+        m_farbe = {"Timer": "#42a5f5", "Zahl": "#ffca28", "Text": "#aaaaaa"}
+        hat = False
+        
+        # 1. Feste Regionen
+        if self.ocr_engine.regionen:
+            hat = True
+            self._gruppe_erstellen("Feste Regionen", "#888888", 
+                                   [(n, n, r.get("modus", "Text"), lambda _n=n: self.bot._ocr_region_loeschen(_n)) 
+                                    for n, r in self.ocr_engine.regionen.items()], m_farbe)
+        
+        # 2. Template OCR
+        konf = self.ocr_engine.template_ocr_konfigurationen()
+        grp = {}
+        for en, k in konf.items():
+            grp.setdefault(k.get("template", en), []).append(
+                (en, en, k.get("modus", "Text"), lambda _n=en: self.bot._template_ocr_aus_panel_loeschen(_n))
+            )
+            
+        akt = {m[0] for m in self.bot.app.state.active_matches}
+        for tn, ents in grp.items():
+            if self._nur_aktive_variablen and tn not in akt:
+                continue
+            hat = True
+            self._gruppe_erstellen(tn, _template_farbe(tn), ents, m_farbe)
+            
+        if not hat:
+            tk.Label(self.container, text="(Keine Variablen)", bg="#2d2d2d", fg="#555555", 
+                     font=("Segoe UI", 9)).pack(anchor="w", padx=8)
+
+    def _gruppe_erstellen(self, gn, f, ents, mf):
+        g = tk.Frame(self.container, bg="#1a1a1a")
+        g.pack(fill=tk.X, pady=3, padx=2)
+        tk.Frame(g, bg=f, width=3).pack(side=tk.LEFT, fill=tk.Y)
+        inh = tk.Frame(g, bg="#1a1a1a")
+        inh.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        k = tk.Frame(inh, bg="#1a1a1a")
+        k.pack(fill=tk.X, padx=(6, 4), pady=(4, 2))
+        tk.Label(k, text=gn, bg="#1a1a1a", fg=f, font=("Segoe UI", 8, "bold")).pack(side=tk.LEFT)
+        tk.Frame(inh, bg="#2d2d2d", height=1).pack(fill=tk.X, padx=4)
+        
+        gs = [("Consolas", 18, "bold"), ("Consolas", 13, "bold"), ("Consolas", 10, "bold")]
+        
+        for s, an, m, lc in ents:
+            z = tk.Frame(inh, bg="#1a1a1a")
+            z.pack(fill=tk.X, padx=(6, 4), pady=2)
+            l = tk.Frame(z, bg="#1a1a1a")
+            l.pack(side=tk.LEFT, fill=tk.Y)
+            tk.Label(l, text=f"[{m}]", bg="#1a1a1a", fg=mf.get(m, "#aaa"), font=("Segoe UI", 7)).pack(anchor="w")
+            tk.Label(l, text=an, bg="#1a1a1a", fg="#888888", font=("Segoe UI", 8)).pack(anchor="w")
+            tk.Button(z, text="✕", bg="#1a1a1a", fg="#333333", font=("Segoe UI", 7), 
+                      relief=tk.FLAT, cursor="hand2", command=lc).pack(side=tk.RIGHT)
+            
+            idx = [0]
+            wl = tk.Label(z, text="–", bg="#1a1a1a", fg="#ffffff", font=gs[0], anchor="e")
+            wl.pack(side=tk.RIGHT, padx=4, fill=tk.X, expand=True)
+            
+            def sw(e, _l=wl, _i=idx):
+                _i[0] = (_i[0] + 1) % 3
+                _l.config(font=gs[_i[0]])
+            
+            wl.bind("<Double-Button-1>", sw)
+            self.timer_eintraege[s] = wl
+
+    def werte_aktualisieren(self, w):
+        for n, t in w.items():
+            if n in self.timer_eintraege:
+                self.timer_eintraege[n].config(text=t if t else "–")

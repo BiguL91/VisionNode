@@ -1,0 +1,10 @@
+pywin32
+opencv-python
+easyocr
+torch
+torchvision
+Pillow
+mss
+windows-capture
+PyYAML
+numpy

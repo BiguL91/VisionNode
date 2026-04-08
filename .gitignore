@@ -1,0 +1,45 @@
+# ── Virtuelle Umgebung ─────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Python Cache ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ── Benutzerdaten (spielspezifisch, nicht ins Repo) ─────────────
+templates/
+snapshots/
+debug/
+settings.json
+template_settings.json
+template_klicks.json
+template_ocr.json
+template_farben.json
+ocr_regionen.json
+schedule.json
+workflows.json
+
+# ── Lokale Dokumentation (nicht öffentlich) ─────────────────────
+ai.md
+UNRELEASED.md
+REINFORCEMENT.md
+ideen.md
+überlegung.md
+
+# ── Claude Code / IDE ───────────────────────────────────────────
+.claude/
+
+# ── Backup & Entwicklungsartefakte ──────────────────────────────
+backup/
+engines/
+loops.py
+bug.png
+test.png
+test.py
+
+# ── Sonstiges ───────────────────────────────────────────────────
+*.log
+*.tmp

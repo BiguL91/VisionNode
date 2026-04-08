@@ -1,0 +1,312 @@
+import easyocr
+import json
+import os
+import re
+import cv2
+import numpy as np
+import warnings
+from PIL import Image
+
+# Unterdrücke PyTorch RNN-Warnung (bekanntes EasyOCR/GPU Problem)
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
+
+OCR_REGIONEN_DATEI = "ocr_regionen.json"
+TEMPLATE_OCR_DATEI = "template_ocr.json"
+
+
+class OCREngine:
+    def __init__(self):
+        # name -> {"x": int, "y": int, "breite": int, "hoehe": int, "modus": str}
+        self.regionen = {}
+        # Initialisiere EasyOCR mit GPU-Support
+        self.reader = easyocr.Reader(["en"], gpu=True)
+        self.debug_filter = "Aus"  # "Aus", "Alle" oder Name der Region
+        self._template_ocr_cache = None
+
+        self._regionen_laden()
+        self._template_ocr_laden() # Sofort laden
+
+        # Debug-Ordner sicherstellen
+        if not os.path.exists("debug"):
+            os.makedirs("debug")
+    def _regionen_laden(self):
+        """Lädt gespeicherte OCR-Regionen aus der JSON-Datei."""
+        if os.path.exists(OCR_REGIONEN_DATEI):
+            try:
+                with open(OCR_REGIONEN_DATEI, "r", encoding="utf-8") as f:
+                    self.regionen = json.load(f)
+            except Exception:
+                self.regionen = {}
+
+    def _regionen_speichern(self):
+        """Speichert alle OCR-Regionen in die JSON-Datei."""
+        with open(OCR_REGIONEN_DATEI, "w", encoding="utf-8") as f:
+            json.dump(self.regionen, f, ensure_ascii=False, indent=2)
+
+    def region_hinzufuegen(self, name, x, y, breite, hoehe, modus="Timer"):
+        """Fügt eine neue OCR-Region hinzu und speichert sie."""
+        self.regionen[name] = {"x": x, "y": y, "breite": breite, "hoehe": hoehe, "modus": modus}
+        self._regionen_speichern()
+
+    def region_loeschen(self, name):
+        """Löscht eine OCR-Region."""
+        self.regionen.pop(name, None)
+        self._regionen_speichern()
+
+    def template_match_scannen(self, screenshot_pil, entry_name, match_coords):
+        """Scant eine Template-OCR-Region basierend auf Match-Koordinaten (mit Varianten-Fallback)."""
+        ocr_konf = self.template_ocr_konfigurationen()
+        konfig = ocr_konf.get(entry_name)
+        if not konfig:
+            return ""
+        
+        # Format von match_coords: (display_name, x, y, w, h, score, phys_name)
+        mx, my, mw, mh = match_coords[1], match_coords[2], match_coords[3], match_coords[4]
+        
+        region = {
+            "name": entry_name,
+            "x": mx, "y": my, "breite": mw, "hoehe": mh,
+            "modus": konfig["modus"],
+            "crop_oben":   konfig.get("crop_oben", 0),
+            "crop_unten":  konfig.get("crop_unten", 0),
+            "crop_links":  konfig.get("crop_links", 0),
+            "crop_rechts": konfig.get("crop_rechts", 0),
+            "contrast":    konfig.get("contrast", 1.0),
+            "brightness":  konfig.get("brightness", 0),
+            "sharpness":   konfig.get("sharpness", 1.0),
+            "upscale":     konfig.get("upscale", 5.0),
+            "color_filter": konfig.get("color_filter", False),
+            "target_color": konfig.get("target_color", [255, 255, 255]),
+            "color_tolerance": konfig.get("color_tolerance", 30)
+        }
+        return self.region_scannen(screenshot_pil, region)
+
+    def region_scannen(self, screenshot_pil, region, debug=False):
+        """Scannt eine Region mit EasyOCR. Unterstützt Expansion über den Match-Bereich hinaus."""
+        name = region.get("name", "ocr_debug")
+        
+        # Basis-Koordinaten des Matches
+        mx = region["x"]
+        my = region["y"]
+        mw = region["breite"]
+        mh = region["hoehe"]
+        modus = region.get("modus", "Text")
+
+        # Prozentuale Offsets (können negativ sein!)
+        co = region.get("crop_oben",   0)
+        cu = region.get("crop_unten",  0)
+        cl = region.get("crop_links",  0)
+        cr = region.get("crop_rechts", 0)
+
+        # Absolute Ziel-Koordinaten berechnen (relativ zur Match-Größe)
+        abs_x0 = mx + int(mw * cl / 100)
+        abs_y0 = my + int(mh * co / 100)
+        abs_x1 = mx + mw - int(mw * cr / 100)
+        abs_y1 = my + mh - int(mh * cu / 100)
+
+        # Sicherheits-Check: Innerhalb der Screenshot-Grenzen bleiben
+        sw, sh = screenshot_pil.size
+        abs_x0 = max(0, min(sw-1, abs_x0))
+        abs_y0 = max(0, min(sh-1, abs_y0))
+        abs_x1 = max(0, min(sw, abs_x1))
+        abs_y1 = max(0, min(sh, abs_y1))
+
+        if abs_x1 <= abs_x0 or abs_y1 <= abs_y0:
+            return ("", (0,0,0,0, None)) if debug else ""
+
+        # Zuschneiden
+        ausschnitt_pil = screenshot_pil.crop((abs_x0, abs_y0, abs_x1, abs_y1))
+        
+        # 2. In NumPy-Array konvertieren
+        ausschnitt_np = np.array(ausschnitt_pil)
+        if len(ausschnitt_np.shape) == 3:
+            ausschnitt_cv = cv2.cvtColor(ausschnitt_np, cv2.COLOR_RGB2BGR)
+        else:
+            ausschnitt_cv = ausschnitt_np
+
+        # 3. Vorbereitung (Optimiert für EasyOCR)
+        upscale    = region.get("upscale", 5.0)
+        contrast   = region.get("contrast", 1.0)
+        brightness = region.get("brightness", 0)
+        sharpness  = region.get("sharpness", 1.0)
+        
+        color_filter = region.get("color_filter", False)
+        target_color = region.get("target_color", [255, 255, 255]) # RGB
+        color_tol    = region.get("color_tolerance", 30)
+
+        # Upscaling
+        roi_resized = cv2.resize(ausschnitt_cv, (0, 0), fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
+        
+        # Kontrast und Helligkeit IMMER anwenden (bevor gefiltert wird)
+        roi_resized = cv2.convertScaleAbs(roi_resized, alpha=contrast, beta=brightness)
+
+        if color_filter:
+            # Farbbasierte Filterung auf dem bereits kontrastoptimierten Bild
+            target_bgr = np.array([target_color[2], target_color[1], target_color[0]])
+            lower = np.clip(target_bgr - color_tol, 0, 255)
+            upper = np.clip(target_bgr + color_tol, 0, 255)
+            
+            mask = cv2.inRange(roi_resized, lower, upper)
+            thresh = cv2.bitwise_not(mask)
+        else:
+            # Standard Graustufen + OTSU
+            grau = cv2.cvtColor(roi_resized, cv2.COLOR_BGR2GRAY)
+
+            if sharpness > 0:
+                s = sharpness
+                kernel = np.array([[-s, -s, -s], [-s, 8*s + 1, -s], [-s, -s, -s]])
+                grau = cv2.filter2D(grau, -1, kernel)
+
+            avg_bright = np.mean(grau)
+            std_dev = np.std(grau)
+            hell_auf_dunkel = avg_bright < 127
+            
+            if std_dev < 5:
+                thresh = np.full_like(grau, 255)
+            else:
+                _, thresh = cv2.threshold(grau, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                if hell_auf_dunkel:
+                    thresh = cv2.bitwise_not(thresh)
+            
+        # Noise reduction
+        thresh = cv2.medianBlur(thresh, 3)
+
+        # Padding (Weißer Rand)
+        ocr_input = cv2.copyMakeBorder(thresh, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=255)
+
+        # Debug-Bild speichern
+        if self.debug_filter != "Aus":
+            if self.debug_filter == "Alle" or name == self.debug_filter:
+                cv2.imwrite(f"debug/{name}.png", ocr_input)
+
+        # 4. EasyOCR ausführen
+        allowlist = None
+        if modus == "Zahl":
+            allowlist = "0123456789+"
+        elif modus == "Timer":
+            allowlist = "0123456789:"
+
+        # Im Debug-Modus geben wir (Text, Koordinaten, Debug-Bild) zurück
+        debug_info = (abs_x0, abs_y0, abs_x1, abs_y1, ocr_input.copy()) if debug else None
+        
+        try:
+            ergebnisse = self.reader.readtext(ocr_input, allowlist=allowlist)
+            
+            # Filtere nach Konfidenz (mind. 0.35)
+            text_teile = []
+            for res in ergebnisse:
+                if res[2] >= 0.35:
+                    text_teile.append(res[1])
+            
+            text = " ".join(text_teile)
+            ergebnis = self._bereinigen(text, modus)
+            
+            if debug:
+                return ergebnis, debug_info
+            return ergebnis
+        except Exception as e:
+            if debug:
+                return f"[Fehler: {e}]", debug_info
+            return f"[Fehler: {e}]"
+
+    def _bereinigen(self, text, modus):
+        """Bereinigt OCR-Text je nach Modus mit Regex."""
+        if modus == "Timer":
+            m = re.search(r"\d{1,2}:\d{2}(:\d{2})?", text)
+            return m.group(0) if m else ""
+        elif modus == "Zahl":
+            # Unterstützt jetzt auch Vorzeichen wie +100
+            m = re.search(r"[+-]?\d+", text)
+            return m.group(0) if m else ""
+        else:
+            return text.strip()
+
+    def alle_scannen(self, screenshot_pil):
+        """Scannt alle definierten Regionen und gibt Ergebnisse direkt zurück."""
+        ergebnisse = {}
+        for name, region in self.regionen.items():
+            region["name"] = name
+            ergebnisse[name] = self.region_scannen(screenshot_pil, region)
+        return ergebnisse
+
+    # ── Template-gebundene OCR ───────────────────────────────────────────────
+
+    def _template_ocr_laden(self):
+        """Lädt Template-OCR-Konfigurationen aus JSON (gecacht)."""
+        if self._template_ocr_cache is None:
+            if os.path.exists(TEMPLATE_OCR_DATEI):
+                try:
+                    with open(TEMPLATE_OCR_DATEI, "r", encoding="utf-8") as f:
+                        self._template_ocr_cache = json.load(f)
+                except Exception:
+                    self._template_ocr_cache = {}
+            else:
+                self._template_ocr_cache = {}
+        return self._template_ocr_cache
+
+    def _template_ocr_speichern(self, konfigurationen):
+        """Speichert Template-OCR-Konfigurationen als JSON und aktualisiert Cache."""
+        with open(TEMPLATE_OCR_DATEI, "w", encoding="utf-8") as f:
+            json.dump(konfigurationen, f, ensure_ascii=False, indent=2)
+        self._template_ocr_cache = konfigurationen
+
+    def template_ocr_aktivieren(self, eintrag_name, template_name, modus,
+                                crop_oben=0, crop_unten=0, crop_links=0, crop_rechts=0,
+                                contrast=1.0, brightness=0, sharpness=1.0, upscale=5.0,
+                                color_filter=False, target_color=[255, 255, 255], color_tolerance=30,
+                                dialog_rand=0):
+        """Fügt einen benannten OCR-Eintrag für ein Template hinzu."""
+        konfig = self._template_ocr_laden()
+        konfig[eintrag_name] = {
+            "template":    template_name,
+            "modus":       modus,
+            "crop_oben":   crop_oben,
+            "crop_unten":  crop_unten,
+            "crop_links":  crop_links,
+            "crop_rechts": crop_rechts,
+            "contrast":    contrast,
+            "brightness":  brightness,
+            "sharpness":   sharpness,
+            "upscale":     upscale,
+            "color_filter": color_filter,
+            "target_color": target_color,
+            "color_tolerance": color_tolerance,
+            "dialog_rand": dialog_rand
+        }
+        self._template_ocr_speichern(konfig)
+
+    def template_ocr_deaktivieren(self, eintrag_name):
+        """Entfernt einen OCR-Eintrag."""
+        konfig = self._template_ocr_laden()
+        konfig.pop(eintrag_name, None)
+        self._template_ocr_speichern(konfig)
+
+    def template_ocr_alle_loeschen(self, template_name):
+        """Löscht alle OCR-Einträge, die zu einem bestimmten Template gehören."""
+        konfig = self._template_ocr_laden()
+        # Einträge finden, bei denen das Feld 'template' übereinstimmt
+        zu_loeschen = [k for k, v in konfig.items() if v.get("template") == template_name]
+        for k in zu_loeschen:
+            konfig.pop(k)
+        self._template_ocr_speichern(konfig)
+
+    def template_ocr_konfigurationen(self):
+        """Gibt alle aktiven Template-OCR-Konfigurationen zurück."""
+        return self._template_ocr_laden()
+
+    def match_scannen(self, screenshot_pil, x, y, breite, hoehe, modus, name="match_ocr", **kwargs):
+        """Scannt einen erkannten Match-Bereich direkt.
+        x, y, breite, hoehe in MEMUPlayer-Koordinaten.
+        """
+        region = {
+            "name": name, "x": x, "y": y, "breite": breite, "hoehe": hoehe, "modus": modus,
+            "crop_oben":   kwargs.get("crop_oben", 0),
+            "crop_unten":  kwargs.get("crop_unten", 0),
+            "crop_links":  kwargs.get("crop_links", 0),
+            "crop_rechts": kwargs.get("crop_rechts", 0),
+            "contrast":    kwargs.get("contrast", 1.0),
+            "brightness":  kwargs.get("brightness", 0),
+            "sharpness":   kwargs.get("sharpness", 1.0),
+            "upscale":     kwargs.get("upscale", 5.0),
+        }
+        return self.region_scannen(screenshot_pil, region)
