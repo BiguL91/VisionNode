@@ -1,33 +1,41 @@
 import tkinter as tk
-from tkinter import simpledialog
 from core.daten_manager import (
-    spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren,
-    spalte_loeschen, liste_umbenennen, liste_intervall_setzen, liste_loeschen
+    spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
+    zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
+    liste_umbenennen, liste_intervall_setzen, liste_loeschen
 )
 
 
 class DatenListeEditor:
     def __init__(self, parent, bot, liste, on_gespeichert=None):
-        """
-        parent        : Tkinter-Elternfenster
-        bot           : TilesBot-Instanz (für OCR-Variablen)
-        liste         : dict mit id, name, update_intervall
-        on_gespeichert: Callback nach Speichern
-        """
         self.parent = parent
         self.bot = bot
         self.liste = liste
         self.on_gespeichert = on_gespeichert
 
-        # Lokale Kopie der Spalten (wird erst beim Speichern in DB geschrieben)
         self._spalten = spalten_der_liste(liste["id"])
+        self._zeilen = zeilen_der_liste(liste["id"])
         self._ocr_vars = self._ocr_vars_laden()
 
         self._setup_fenster()
 
     def _ocr_vars_laden(self):
-        """Gibt alle verfügbaren OCR-Variablen als Liste zurück."""
-        namen = list(getattr(self.bot.ocr_engine, "regionen", {}).keys())
+        """Globale OCR-Regionen + Template-OCR-Variablen sammeln."""
+        namen = set()
+
+        # Globale OCR-Regionen
+        namen.update(getattr(self.bot.ocr_engine, "regionen", {}).keys())
+
+        # Template-OCR-Variablen (aus ocr_engine Konfigurationen)
+        if hasattr(self.bot.ocr_engine, "template_ocr_konfigurationen"):
+            for key in self.bot.ocr_engine.template_ocr_konfigurationen().keys():
+                namen.add(key)
+
+        # Aktuell bekannte OCR-Werte aus State (runtime)
+        if hasattr(self.bot, "app"):
+            namen.update(self.bot.app.state.ocr_values.keys())
+            namen.update(self.bot.app.state.template_ocr_values.keys())
+
         return sorted(namen)
 
     def _setup_fenster(self):
@@ -38,23 +46,21 @@ class DatenListeEditor:
         self.fenster.transient(self.parent)
         self.fenster.grab_set()
 
-        # Fenstergröße und Position
-        self.fenster.geometry("560x480")
-        x = self.parent.winfo_x() + (self.parent.winfo_width() - 560) // 2
-        y = self.parent.winfo_y() + (self.parent.winfo_height() - 480) // 2
+        self.fenster.geometry("620x560")
+        x = self.parent.winfo_x() + (self.parent.winfo_width() - 620) // 2
+        y = self.parent.winfo_y() + (self.parent.winfo_height() - 560) // 2
         self.fenster.geometry(f"+{max(0,x)}+{max(0,y)}")
 
         self._kopf_aufbauen()
-        self._spalten_bereich_aufbauen()
+        self._tabs_aufbauen()
         self._buttons_aufbauen()
 
-    # ── Kopfbereich (Name + Intervall) ───────────────────────────────────────
+    # ── Kopfbereich ──────────────────────────────────────────────────────────
 
     def _kopf_aufbauen(self):
         kopf = tk.Frame(self.fenster, bg="#252525")
         kopf.pack(fill=tk.X, padx=12, pady=(12, 8))
 
-        # Listen-Name
         tk.Label(kopf, text="Name:", bg="#252525", fg="#888888",
                  font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w", padx=(0, 6))
         self._name_var = tk.StringVar(value=self.liste["name"])
@@ -62,7 +68,6 @@ class DatenListeEditor:
                  insertbackground="white", font=("Segoe UI", 9), relief=tk.FLAT,
                  bd=4, width=22).grid(row=0, column=1, sticky="ew", padx=(0, 16))
 
-        # Update-Intervall
         tk.Label(kopf, text="Update alle:", bg="#252525", fg="#888888",
                  font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w", padx=(0, 6))
         self._intervall_var = tk.StringVar(value=str(self.liste["update_intervall"]))
@@ -73,32 +78,125 @@ class DatenListeEditor:
                  font=("Segoe UI", 9)).grid(row=0, column=4, sticky="w", padx=(2, 0))
 
         kopf.columnconfigure(1, weight=1)
+        tk.Frame(self.fenster, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=12, pady=(0, 6))
 
-        # Trennlinie
-        tk.Frame(self.fenster, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=12, pady=(0, 8))
+    # ── Tabs: Zeilen | Spalten ───────────────────────────────────────────────
 
-    # ── Spalten-Bereich ───────────────────────────────────────────────────────
+    def _tabs_aufbauen(self):
+        tab_leiste = tk.Frame(self.fenster, bg="#2d2d2d")
+        tab_leiste.pack(fill=tk.X, padx=12)
 
-    def _spalten_bereich_aufbauen(self):
-        bereich = tk.Frame(self.fenster, bg="#2d2d2d")
-        bereich.pack(fill=tk.BOTH, expand=True, padx=12)
+        self._tab_inhalt = tk.Frame(self.fenster, bg="#2d2d2d")
+        self._tab_inhalt.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 4))
 
-        # Kopfzeile der Spalten-Tabelle
-        header = tk.Frame(bereich, bg="#1e1e1e")
-        header.pack(fill=tk.X, pady=(0, 2))
-        for text, breite in [("Name", 14), ("Typ", 9), ("OCR-Variable", 14), ("Formel", 12), ("", 3)]:
+        self._aktiver_tab = tk.StringVar(value="zeilen")
+        self._tab_btns = {}
+
+        for key, label in [("zeilen", "Zeilen"), ("spalten", "Spalten")]:
+            btn = tk.Button(tab_leiste, text=label, font=("Segoe UI", 9),
+                            relief=tk.FLAT, padx=14, pady=4, cursor="hand2",
+                            command=lambda k=key: self._tab_wechseln(k))
+            btn.pack(side=tk.LEFT, padx=(0, 2))
+            self._tab_btns[key] = btn
+
+        self._tab_wechseln("zeilen")
+
+    def _tab_wechseln(self, key):
+        self._aktiver_tab.set(key)
+        for k, btn in self._tab_btns.items():
+            if k == key:
+                btn.config(bg="#3a3a3a", fg="#ffffff")
+            else:
+                btn.config(bg="#252525", fg="#666666")
+
+        for w in self._tab_inhalt.winfo_children():
+            w.destroy()
+
+        if key == "zeilen":
+            self._zeilen_tab_aufbauen(self._tab_inhalt)
+        else:
+            self._spalten_tab_aufbauen(self._tab_inhalt)
+
+    # ── Tab: Zeilen ──────────────────────────────────────────────────────────
+
+    def _zeilen_tab_aufbauen(self, parent):
+        tk.Button(parent, text="+ Zeile hinzufügen", bg="#1a3a1a", fg="#2ea043",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._zeile_hinzufuegen).pack(anchor="w", pady=(4, 6))
+
+        # Scrollbarer Bereich
+        canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)
+        scroll = tk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._zeilen_container = tk.Frame(canvas, bg="#2d2d2d")
+        cw = canvas.create_window((0, 0), window=self._zeilen_container, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
+        self._zeilen_container.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        self._zeilen_zeilen_aufbauen()
+
+    def _zeilen_zeilen_aufbauen(self):
+        for w in self._zeilen_container.winfo_children():
+            w.destroy()
+
+        if not self._zeilen:
+            tk.Label(self._zeilen_container, text="Keine Zeilen — füge eine hinzu.",
+                     bg="#2d2d2d", fg="#555555", font=("Segoe UI", 9)).pack(anchor="w", padx=8, pady=8)
+            return
+
+        for z in self._zeilen:
+            zeile = tk.Frame(self._zeilen_container, bg="#1a1a1a")
+            zeile.pack(fill=tk.X, pady=1)
+
+            name_var = tk.StringVar(value=z["name"])
+            tk.Entry(zeile, textvariable=name_var, bg="#252525", fg="#cccccc",
+                     insertbackground="white", font=("Segoe UI", 9), relief=tk.FLAT,
+                     bd=3, width=30).pack(side=tk.LEFT, padx=(6, 4), pady=4)
+
+            def _on_name_change(*_, zid=z["id"], nv=name_var):
+                for zz in self._zeilen:
+                    if zz["id"] == zid:
+                        zz["name"] = nv.get()
+                        break
+
+            name_var.trace_add("write", _on_name_change)
+
+            tk.Button(zeile, text="✕", bg="#1a1a1a", fg="#555555",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6,
+                      cursor="hand2",
+                      command=lambda zid=z["id"]: self._zeile_loeschen(zid)).pack(side=tk.LEFT, padx=4)
+
+    def _zeile_hinzufuegen(self):
+        neue_id = zeile_hinzufuegen(self.liste["id"], "Neu")
+        self._zeilen = zeilen_der_liste(self.liste["id"])
+        self._zeilen_zeilen_aufbauen()
+
+    def _zeile_loeschen(self, zeile_id):
+        zeile_loeschen(zeile_id)
+        self._zeilen = [z for z in self._zeilen if z["id"] != zeile_id]
+        self._zeilen_zeilen_aufbauen()
+
+    # ── Tab: Spalten ─────────────────────────────────────────────────────────
+
+    def _spalten_tab_aufbauen(self, parent):
+        # Header
+        header = tk.Frame(parent, bg="#1e1e1e")
+        header.pack(fill=tk.X, pady=(4, 2))
+        for text, breite in [("Name", 15), ("Typ", 10), ("OCR-Variable", 20), ("", 3)]:
             tk.Label(header, text=text, bg="#1e1e1e", fg="#666666",
                      font=("Segoe UI", 8, "bold"), width=breite, anchor="w",
                      padx=4, pady=3).pack(side=tk.LEFT)
 
-        # "+ Spalte hinzufügen" Button
-        tk.Button(bereich, text="+ Spalte hinzufügen", bg="#1a1a1a", fg="#555555",
+        tk.Button(parent, text="+ Spalte hinzufügen", bg="#1a1a1a", fg="#555555",
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._spalte_hinzufuegen).pack(anchor="w", pady=(0, 6))
+                  cursor="hand2", command=self._spalte_hinzufuegen).pack(anchor="w", pady=(0, 4))
 
-        # Scrollbarer Bereich für Spalten-Zeilen
-        canvas = tk.Canvas(bereich, bg="#2d2d2d", highlightthickness=0)
-        scroll = tk.Scrollbar(bereich, orient=tk.VERTICAL, command=canvas.yview)
+        canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)
+        scroll = tk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
         canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -112,73 +210,54 @@ class DatenListeEditor:
         self._spalten_zeilen_aufbauen()
 
     def _spalten_zeilen_aufbauen(self):
-        """Zeichnet alle Spalten-Zeilen neu."""
         for w in self._spalten_container.winfo_children():
             w.destroy()
-
         for sp in self._spalten:
             self._spalten_zeile_erstellen(sp)
 
     def _spalten_zeile_erstellen(self, sp):
-        """Erstellt eine editierbare Zeile für eine Spalte."""
         zeile = tk.Frame(self._spalten_container, bg="#1a1a1a")
         zeile.pack(fill=tk.X, pady=1)
 
-        # Name
         name_var = tk.StringVar(value=sp["name"])
         tk.Entry(zeile, textvariable=name_var, bg="#252525", fg="#cccccc",
                  insertbackground="white", font=("Segoe UI", 8), relief=tk.FLAT,
-                 bd=3, width=14).pack(side=tk.LEFT, padx=(4, 2), pady=3)
+                 bd=3, width=13).pack(side=tk.LEFT, padx=(4, 2), pady=3)
 
-        # Typ-Dropdown
         typ_var = tk.StringVar(value=sp["typ"])
-        typ_menu = tk.OptionMenu(zeile, typ_var, "zahl", "text", "berechnet")
+        typ_menu = tk.OptionMenu(zeile, typ_var, "zahl", "text")
         typ_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
                         relief=tk.FLAT, bd=0, width=8, highlightthickness=0,
                         activebackground="#3a3a3a", cursor="hand2")
         typ_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
         typ_menu.pack(side=tk.LEFT, padx=2)
 
-        # OCR-Variable Dropdown
         ocr_var = tk.StringVar(value=sp.get("ocr_var") or "")
         ocr_optionen = [""] + self._ocr_vars
-        ocr_menu = tk.OptionMenu(zeile, ocr_var, *ocr_optionen)
+        ocr_menu = tk.OptionMenu(zeile, ocr_var, *ocr_optionen if ocr_optionen else [""])
         ocr_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
-                        relief=tk.FLAT, bd=0, width=13, highlightthickness=0,
+                        relief=tk.FLAT, bd=0, width=18, highlightthickness=0,
                         activebackground="#3a3a3a", cursor="hand2")
         ocr_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
         ocr_menu.pack(side=tk.LEFT, padx=2)
 
-        # Formel-Eingabe (nur relevant bei typ=berechnet)
-        formel_var = tk.StringVar(value=sp.get("formel") or "")
-        tk.Entry(zeile, textvariable=formel_var, bg="#252525", fg="#4fc3f7",
-                 insertbackground="white", font=("Consolas", 8), relief=tk.FLAT,
-                 bd=3, width=14).pack(side=tk.LEFT, padx=2)
-
-        # Löschen-Button
         tk.Button(zeile, text="✕", bg="#1a1a1a", fg="#555555",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=4,
-                  cursor="hand2",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=4, cursor="hand2",
                   command=lambda sid=sp["id"]: self._spalte_loeschen(sid)).pack(side=tk.LEFT, padx=(4, 2))
 
-        # Änderungen sofort in lokaler Kopie merken
-        def _on_aenderung(*_, sid=sp["id"], nv=name_var, tv=typ_var, ov=ocr_var, fv=formel_var):
+        def _on_aenderung(*_, sid=sp["id"], nv=name_var, tv=typ_var, ov=ocr_var):
             for s in self._spalten:
                 if s["id"] == sid:
                     s["name"] = nv.get()
                     s["typ"] = tv.get()
                     s["ocr_var"] = ov.get() or None
-                    s["formel"] = fv.get() or None
                     break
 
-        for var in (name_var, typ_var, ocr_var, formel_var):
+        for var in (name_var, typ_var, ocr_var):
             var.trace_add("write", _on_aenderung)
 
-    # ── Spalten hinzufügen / löschen ────────────────────────────────────────
-
     def _spalte_hinzufuegen(self):
-        """Schreibt sofort eine neue leere Spalte in die DB und zeigt sie an."""
-        neue_id = spalte_hinzufuegen(self.liste["id"], "Neu", typ="zahl")
+        spalte_hinzufuegen(self.liste["id"], "Neu", typ="zahl")
         self._spalten = spalten_der_liste(self.liste["id"])
         self._spalten_zeilen_aufbauen()
 
@@ -187,20 +266,17 @@ class DatenListeEditor:
         self._spalten = [s for s in self._spalten if s["id"] != spalte_id]
         self._spalten_zeilen_aufbauen()
 
-    # ── Buttons (Speichern / Löschen / Abbrechen) ────────────────────────────
+    # ── Buttons ──────────────────────────────────────────────────────────────
 
     def _buttons_aufbauen(self):
-        tk.Frame(self.fenster, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=12, pady=(8, 0))
-
+        tk.Frame(self.fenster, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=12, pady=(4, 0))
         btn_leiste = tk.Frame(self.fenster, bg="#252525")
         btn_leiste.pack(fill=tk.X, padx=12, pady=8)
 
-        # Liste löschen (links)
         tk.Button(btn_leiste, text="✕ Liste löschen", bg="#3a1a1a", fg="#da3633",
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=8, pady=4,
                   cursor="hand2", command=self._liste_loeschen).pack(side=tk.LEFT)
 
-        # Abbrechen + Speichern (rechts)
         tk.Button(btn_leiste, text="Abbrechen", bg="#3a3a3a", fg="#aaaaaa",
                   font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=4,
                   cursor="hand2", command=self.fenster.destroy).pack(side=tk.RIGHT, padx=(4, 0))
@@ -210,12 +286,10 @@ class DatenListeEditor:
                   cursor="hand2", command=self._speichern).pack(side=tk.RIGHT)
 
     def _speichern(self):
-        """Schreibt alle Änderungen in die DB."""
         # Listen-Name + Intervall
         neuer_name = self._name_var.get().strip()
         if neuer_name and neuer_name != self.liste["name"]:
             liste_umbenennen(self.liste["id"], neuer_name)
-
         try:
             intervall = int(self._intervall_var.get())
             if intervall > 0:
@@ -223,14 +297,17 @@ class DatenListeEditor:
         except ValueError:
             pass
 
-        # Spalten-Änderungen
+        # Zeilen-Namen in DB schreiben
+        for z in self._zeilen:
+            zeile_umbenennen(z["id"], z["name"])
+
+        # Spalten-Änderungen in DB schreiben
         for sp in self._spalten:
             spalte_aktualisieren(
                 sp["id"],
                 name=sp["name"],
                 typ=sp["typ"],
-                ocr_var=sp.get("ocr_var"),
-                formel=sp.get("formel")
+                ocr_var=sp.get("ocr_var")
             )
 
         self.fenster.destroy()
@@ -238,7 +315,6 @@ class DatenListeEditor:
             self.on_gespeichert()
 
     def _liste_loeschen(self):
-        """Löscht die gesamte Liste nach Bestätigung."""
         from tkinter import messagebox
         if messagebox.askyesno("Liste löschen",
                                f"Liste '{self.liste['name']}' wirklich löschen?\nAlle Daten gehen verloren.",

@@ -34,6 +34,15 @@ def datenbank_initialisieren():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS zeilen (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                listen_id INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
+                name      TEXT NOT NULL,
+                position  INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(listen_id, name)
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS eintraege (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
@@ -82,6 +91,50 @@ def alle_listen():
     """Gibt alle Listen zurück als Liste von dicts."""
     with _verbinden() as conn:
         rows = conn.execute("SELECT * FROM listen ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── Zeilen ──────────────────────────────────────────────────────────────────
+
+def zeile_hinzufuegen(listen_id, name):
+    """Legt eine neue Zeile an. Gibt die ID zurück."""
+    with _verbinden() as conn:
+        pos = conn.execute(
+            "SELECT COUNT(*) FROM zeilen WHERE listen_id=?", (listen_id,)
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO zeilen (listen_id, name, position) VALUES (?,?,?)",
+            (listen_id, name, pos)
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def zeile_umbenennen(zeile_id, neuer_name):
+    with _verbinden() as conn:
+        conn.execute("UPDATE zeilen SET name=? WHERE id=?", (neuer_name, zeile_id))
+        conn.commit()
+
+
+def zeile_loeschen(zeile_id):
+    with _verbinden() as conn:
+        # Zugehörige Einträge werden über zeile_name referenziert → manuell löschen
+        zeile = conn.execute("SELECT listen_id, name FROM zeilen WHERE id=?", (zeile_id,)).fetchone()
+        if zeile:
+            conn.execute(
+                "DELETE FROM eintraege WHERE listen_id=? AND zeile_name=?",
+                (zeile["listen_id"], zeile["name"])
+            )
+        conn.execute("DELETE FROM zeilen WHERE id=?", (zeile_id,))
+        conn.commit()
+
+
+def zeilen_der_liste(listen_id):
+    """Gibt alle Zeilen einer Liste sortiert nach Position zurück."""
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT * FROM zeilen WHERE listen_id=? ORDER BY position", (listen_id,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
 

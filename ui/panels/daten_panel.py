@@ -1,8 +1,6 @@
 import tkinter as tk
-import time
 from core.daten_manager import (
-    datenbank_initialisieren, alle_listen, spalten_der_liste,
-    liste_lesen, berechneten_wert_ermitteln
+    datenbank_initialisieren, alle_listen, spalten_der_liste, zeilen_der_liste
 )
 
 
@@ -128,7 +126,13 @@ class DatenPanel:
             w.destroy()
 
         spalten = spalten_der_liste(l["id"])
-        zeilen = liste_lesen(l["id"])
+        zeilen_namen = zeilen_der_liste(l["id"])
+
+        # Aktuelle OCR-Werte aus Bot-State
+        ocr_werte = {}
+        if hasattr(self.bot, "app"):
+            ocr_werte.update(self.bot.app.state.ocr_values)
+            ocr_werte.update(self.bot.app.state.template_ocr_values)
 
         if not spalten:
             tk.Label(parent, text="Keine Spalten — Edit zum Konfigurieren.",
@@ -146,41 +150,31 @@ class DatenPanel:
                      font=("Segoe UI", 7, "bold"), padx=6, pady=2, anchor="e",
                      width=8).pack(side=tk.LEFT)
 
-        # Datenzeilen
-        if not zeilen:
-            tk.Label(parent, text="(Keine Daten)", bg="#2d2d2d", fg="#444444",
-                     font=("Segoe UI", 8), padx=6, pady=3).pack(anchor="w")
+        # Datenzeilen (aus konfigurierten Zeilen-Namen)
+        if not zeilen_namen:
+            tk.Label(parent, text="(Keine Zeilen — Edit zum Konfigurieren)", bg="#2d2d2d",
+                     fg="#444444", font=("Segoe UI", 8), padx=6, pady=3).pack(anchor="w")
             return
 
-        for r, zeile in enumerate(zeilen):
+        for r, z in enumerate(zeilen_namen):
             hg = "#1a1a1a" if r % 2 == 0 else "#212121"
             zeile_row = tk.Frame(parent, bg=hg)
             zeile_row.pack(fill=tk.X, pady=1)
 
-            tk.Label(zeile_row, text=zeile["zeile_name"], bg=hg, fg="#cccccc",
+            tk.Label(zeile_row, text=z["name"], bg=hg, fg="#cccccc",
                      font=("Segoe UI", 8), padx=6, pady=2, anchor="w",
                      width=10).pack(side=tk.LEFT)
 
             for sp in spalten:
-                if sp["typ"] == "berechnet":
-                    wert = berechneten_wert_ermitteln(zeile, sp, zeile)
-                    farbe = "#4fc3f7"
-                else:
-                    wert = zeile.get(sp["name"], "—")
-                    farbe = "#cccccc"
+                ocr_var = sp.get("ocr_var")
+                wert = ocr_werte.get(ocr_var, "—") if ocr_var else "—"
 
-                tk.Label(zeile_row, text=wert, bg=hg, fg=farbe,
+                tk.Label(zeile_row, text=wert, bg=hg, fg="#cccccc",
                          font=("Consolas", 8), padx=6, pady=2, anchor="e",
                          width=8).pack(side=tk.LEFT)
 
     def _scan_label_aktualisieren(self, lbl, listen_id):
-        """Setzt den 'Letzter Scan' Text."""
-        zeilen = liste_lesen(listen_id)
-        if zeilen:
-            neuester = max(z.get("gescant_am") or 0 for z in zeilen)
-            if neuester:
-                ts = time.strftime("%H:%M:%S", time.localtime(neuester))
-                lbl.config(text=f"  Scan: {ts}")
+        pass  # Scan-Timestamp entfällt — Werte kommen direkt aus OCR-State
 
     # ── Dropdown ────────────────────────────────────────────────────────────
 
