@@ -296,7 +296,10 @@ def _zu_zahl(wert):
 # ── Werte-Cache ─────────────────────────────────────────────────────────────
 
 def cache_schreiben(listen_id, var_name, wert):
-    """Speichert einen Wert im Cache (upsert)."""
+    """Speichert einen Wert im Cache (upsert). Ungültige Werte werden ignoriert."""
+    if str(wert) in ("", "—", "?") or wert is None:
+        return
+
     with _verbinden() as conn:
         conn.execute("""
             INSERT INTO werte_cache (listen_id, var_name, wert, gespeichert_am)
@@ -370,15 +373,11 @@ def berechnungen_der_liste(listen_id):
 def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
     """
     Wertet eine Formel aus.
-    formel_json: [{"var": "holz_vorrat_zahl"}, {"op": "+"}, {"var": "holz_prod_zahl"}, ...]
-    verfuegbare_werte: dict mit allen Variablen (transformiert + berechnet)
-    update_intervall: Update-Intervall der Liste in Sekunden (als Variable 'update_intervall' verfügbar)
-    Gibt den Ergebnis-String zurück.
+    Gibt den Ergebnis-String zurück oder "?" bei Fehlern/fehlenden Variablen.
     """
     if not formel_json:
         return "—"
 
-    # Formel als Ausdruck zusammenbauen
     ausdruck_teile = []
     for teil in formel_json:
         if "op" in teil:
@@ -387,14 +386,23 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
             var_name = teil["var"]
             if var_name == "update_intervall":
                 ausdruck_teile.append(str(update_intervall))
+            elif var_name == "":
+                return "?"
             else:
-                wert = verfuegbare_werte.get(var_name, "0")
+                wert = verfuegbare_werte.get(var_name)
+                # Strikte Prüfung: Wenn eine Variable fehlt oder ungültig ist,
+                # kann die gesamte Formel nicht berechnet werden.
+                if str(wert) in ("", "—", "?") or wert is None:
+                    return "?"
                 try:
                     ausdruck_teile.append(str(float(str(wert).replace(",", "."))))
                 except (ValueError, TypeError):
-                    ausdruck_teile.append("0")
+                    return "?"
         elif "zahl" in teil:
             ausdruck_teile.append(str(teil["zahl"]))
+
+    if not ausdruck_teile:
+        return "?"
 
     ausdruck = " ".join(ausdruck_teile)
     try:
@@ -469,17 +477,41 @@ def _einheit_zu_zahl(text):
     if not text:
         return "—"
 
-    # Komma als Dezimaltrenner ersetzen
-    text = text.replace(",", ".")
-
-    # Zahl + optionale Einheit extrahieren
-    treffer = re.search(r"([\d.]+)\s*(Mio\.?|Mrd\.?|K|T|M|B)?", text, re.IGNORECASE)
-    if not treffer:
+    # 1. Zahl und Einheit trennen
+    # Wir suchen nach der ersten Zahl (inkl. Vorzeichen, Trennern) 
+    # und dem was danach kommt (die Einheit)
+    match = re.search(r"([+-]?[\d,.]+)\s*([a-zA-Z.]+)?", text)
+    if not match:
         return text
 
-    zahl = float(treffer.group(1))
-    einheit = (treffer.group(2) or "").upper().rstrip(".")
+    num_str = match.group(1)
+    unit_str = (match.group(2) or "").upper().rstrip(".")
 
+    # 2. Number-String bereinigen
+    # Wenn sowohl Punkt als auch Komma vorkommen:
+    if "." in num_str and "," in num_str:
+        # Der letzte ist wahrscheinlich der Dezimaltrenner
+        if num_str.rfind(".") > num_str.rfind(","):
+            num_str = num_str.replace(",", "")  # Komma ist Tausender
+        else:
+            num_str = num_str.replace(".", "")  # Punkt ist Tausender
+            num_str = num_str.replace(",", ".")  # Komma zu Punkt
+    # Wenn nur ein Typ vorkommt, aber mehrfach (Tausendertrenner):
+    elif num_str.count(".") > 1:
+        num_str = num_str.replace(".", "")
+    elif num_str.count(",") > 1:
+        num_str = num_str.replace(",", "")
+    # Wenn nur einer vorkommt, und zwar einmal:
+    # Bei Spielwerten wie "27,10" ist das Komma fast immer der Dezimaltrenner
+    else:
+        num_str = num_str.replace(",", ".")
+
+    try:
+        zahl = float(num_str)
+    except ValueError:
+        return text
+
+    # 3. Faktor anwenden
     faktoren = {
         "K": 1_000,
         "T": 1_000,
@@ -489,7 +521,7 @@ def _einheit_zu_zahl(text):
         "B": 1_000_000_000,
     }
 
-    faktor = faktoren.get(einheit, 1)
+    faktor = faktoren.get(unit_str, 1)
     ergebnis = zahl * faktor
 
     # Ganzzahl wenn möglich

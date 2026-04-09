@@ -133,54 +133,75 @@ class DatenPanel:
         spalten = spalten_der_liste(l["id"])
         zeilen_namen = zeilen_der_liste(l["id"])
         transformationen = transformationen_der_liste(l["id"])
-
-        # Aktuelle OCR-Rohwerte aus Bot-State
-        ocr_roh = {}
-        if hasattr(self.bot, "app"):
-            ocr_roh.update(self.bot.app.state.ocr_values)
-            ocr_roh.update(self.bot.app.state.template_ocr_values)
-
-        # Cache laden als Fallback für Transformer-Ausgaben
-        db_cache = cache_lesen(l["id"])
-
-        # ocr_werte enthält NUR Transformer-Ausgaben (keine rohen OCR-Werte)
-        ocr_werte = {}
-        neue_cache_werte = {}
-
-        # Transformer: OCR verfügbar → transformieren + cachen
-        #              OCR weg       → letzten gecachten Transformer-Ausgabewert nutzen
-        for t in transformationen:
-            rohwert = ocr_roh.get(t["ocr_var"])
-            if rohwert is not None and str(rohwert).strip() not in ("", "—"):
-                wert = transformation_anwenden(rohwert, t["typ"])
-                neue_cache_werte[t["name"]] = wert
-            else:
-                wert = db_cache.get(t["name"], "—")
-            ocr_werte[t["name"]] = wert
-
-        # Berechnungen: Zwischenberechnungen zuerst, dann Ausgabe
         berechnungen = berechnungen_der_liste(l["id"])
-        berechnungen_sortiert = (
+
+        # 1. Gedächtnis laden: Alles aus Cache als Basis
+        db_cache = cache_lesen(l["id"])
+        ocr_werte = {k: v for k, v in db_cache.items()}
+
+        # 2. Aktuelle OCR-Rohwerte (Live)
+        ocr_roh_live = {}
+        if hasattr(self.bot, "app"):
+            ocr_roh_live.update(self.bot.app.state.ocr_values)
+            ocr_roh_live.update(self.bot.app.state.template_ocr_values)
+
+        # 3. Live-OCR erzwingen (Reset auf '—' bei Wegfall)
+        # Wir sammeln Namen, die von Transformern/Berechnungen erzeugt werden
+        ausgabe_namen = {t["name"] for t in transformationen}
+        ausgabe_namen.update({b["name"] for b in berechnungen})
+
+        # Wir sammeln alle Namen von möglichen OCR-Quellen
+        alle_ocr_namen = set(self.bot.ocr_engine.regionen.keys())
+        alle_ocr_namen.update(self.bot.ocr_engine.template_ocr_konfigurationen().keys())
+
+        # Nur für diese REINEN OCR-Variablen erzwingen wir den Live-Status
+        # Aber nur, wenn sie NICHT auch als Transformer-Ausgabe dienen
+        for name in alle_ocr_namen:
+            if name in ausgabe_namen:
+                continue
+            val = ocr_roh_live.get(name)
+            ocr_werte[name] = val if val not in (None, "") else "—"
+
+        # Debug-Log Setting
+        log_debug = self.bot.app.settings.get("log_daten_berechnungen", False)
+
+        # 4. Transformer anwenden
+        neue_cache_werte = {}
+        for t in transformationen:
+            rohwert = ocr_roh_live.get(t["ocr_var"])
+            if rohwert not in (None, "", "—"):
+                wert = transformation_anwenden(rohwert, t["typ"])
+                if wert not in ("", "—", "?"):
+                    # Logging bei Änderung
+                    if log_debug and str(wert) != str(db_cache.get(t["name"])):
+                        self.bot.app._log(f"[Transform] {t['name']}: {rohwert} -> {wert}")
+                    
+                    ocr_werte[t["name"]] = wert
+                    neue_cache_werte[t["name"]] = wert
+            else:
+                # Transformer MERKT sich den letzten Stand aus dem Cache
+                # (Wert ist durch Schritt 1 bereits in ocr_werte drin)
+                pass
+
+        # 5. Berechnungen anwenden (Zwischenberechnungen zuerst)
+        berech_sortiert = (
             [b for b in berechnungen if b.get("typ") == "zwischen"] +
             [b for b in berechnungen if b.get("typ") != "zwischen"]
         )
-        for b in berechnungen_sortiert:
-            alle_inputs_ok = all(
-                ocr_werte.get(teil.get("var"), "—") != "—"
-                for teil in b["formel_json"]
-                if "var" in teil and teil["var"] not in ("update_intervall", "")
-            )
-            if alle_inputs_ok:
-                ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, l["update_intervall"])
-                if ergebnis not in ("?", "—"):
-                    neue_cache_werte[b["name"]] = ergebnis
-                else:
-                    ergebnis = db_cache.get(b["name"], "—")
+        for b in berech_sortiert:
+            ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, l["update_intervall"])
+            if ergebnis in ("?", "—") or not b["formel_json"]:
+                # Fallback auf Cache (schon in ocr_werte drin)
+                pass
             else:
-                ergebnis = db_cache.get(b["name"], "—")
-            ocr_werte[b["name"]] = ergebnis
+                # Logging bei Änderung
+                if log_debug and str(ergebnis) != str(db_cache.get(b["name"])):
+                    self.bot.app._log(f"[Berechnung] {b['name']}: {ergebnis}")
+                
+                ocr_werte[b["name"]] = ergebnis
+                neue_cache_werte[b["name"]] = ergebnis
 
-        # Neue Werte in Cache schreiben (nur wenn frische Daten vorhanden)
+        # Neue Werte in Cache schreiben
         for var_name, wert in neue_cache_werte.items():
             cache_schreiben(l["id"], var_name, wert)
 
@@ -206,6 +227,9 @@ class DatenPanel:
                      fg="#444444", font=("Segoe UI", 8), padx=6, pady=3).pack(anchor="w")
             return
 
+        # Berechnungs-Namen für farbliche Markierung sammeln
+        berech_namen = {b["name"] for b in berechnungen}
+
         for r, z in enumerate(zeilen_namen):
             hg = "#1a1a1a" if r % 2 == 0 else "#212121"
             zeile_row = tk.Frame(parent, bg=hg)
@@ -218,8 +242,11 @@ class DatenPanel:
             for sp in spalten:
                 ocr_var = sp.get("ocr_var")
                 wert = ocr_werte.get(ocr_var, "—") if ocr_var else "—"
+                
+                # Farbe: Berechnungen in Blau, Transformationen/OCR in Grau
+                farbe = "#4fc3f7" if ocr_var in berech_namen else "#cccccc"
 
-                tk.Label(zeile_row, text=wert, bg=hg, fg="#cccccc",
+                tk.Label(zeile_row, text=wert, bg=hg, fg=farbe,
                          font=("Consolas", 8), padx=6, pady=2, anchor="e",
                          width=8).pack(side=tk.LEFT)
 

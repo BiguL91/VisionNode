@@ -321,6 +321,7 @@ class DialogeMixin:
             ("log_ocr_debug",  "OCR Debug-Bilder speichern"),
             ("log_matching",   "Matching-Timing"),
             ("log_capture",    "Capture-Timing"),
+            ("log_daten_berechnungen", "Log Daten-Berechnungen (Transform/Formeln)"),
         ]
         log_vars = {}
         for key, label in log_keys:

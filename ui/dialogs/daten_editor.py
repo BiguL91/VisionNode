@@ -6,7 +6,7 @@ from core.daten_manager import (
     transformationen_der_liste, transformation_hinzufuegen,
     transformation_aktualisieren, transformation_loeschen, transformation_anwenden,
     berechnungen_der_liste, berechnung_hinzufuegen, berechnung_aktualisieren,
-    berechnung_loeschen, berechnung_auswerten
+    berechnung_loeschen, berechnung_auswerten, cache_lesen
 )
 
 
@@ -22,6 +22,9 @@ class DatenListeEditor:
         self._transformationen = transformationen_der_liste(liste["id"])
         self._berechnungen = berechnungen_der_liste(liste["id"])
         self._ocr_vars = self._ocr_vars_laden()
+        
+        # Cache für Previews
+        self._db_cache = cache_lesen(liste["id"])
 
         # Original-Namen merken für Umbenennung-Erkennung beim Speichern
         self._orig_transform_namen = {t["id"]: t["name"] for t in self._transformationen}
@@ -361,18 +364,33 @@ class DatenListeEditor:
         neu_zeichnen_cb()
 
     def _berech_ergebnis_aktualisieren(self, formel, ergebnis_lbl):
-        """Zeigt das Live-Ergebnis der Berechnung an."""
+        """Zeigt das Live-Ergebnis der Berechnung an (inkl. Zwischenberechnungen)."""
         # Aktuelle transformierte Werte sammeln
         ocr_roh = {}
         if hasattr(self.bot, "app"):
             ocr_roh.update(self.bot.app.state.ocr_values)
             ocr_roh.update(self.bot.app.state.template_ocr_values)
 
-        werte = {}
+        # 1. Alles aus Cache laden als Basis
+        werte = {k: v for k, v in self._db_cache.items()}
+
+        # 2. Transformationen ausführen (überschreibt Cache bei Live-Daten)
         for t in self._transformationen:
             rohwert = ocr_roh.get(t["ocr_var"])
-            werte[t["name"]] = transformation_anwenden(rohwert, t["typ"])
+            if rohwert not in (None, "", "—"):
+                werte[t["name"]] = transformation_anwenden(rohwert, t["typ"])
 
+        # 3. Berechnungen ausführen (Zwischen zuerst, dann Rest)
+        berech_sortiert = (
+            [b for b in self._berechnungen if b.get("typ") == "zwischen"] +
+            [b for b in self._berechnungen if b.get("typ") != "zwischen"]
+        )
+        for b in berech_sortiert:
+            ergebnis = berechnung_auswerten(b["formel_json"], werte, self.liste.get("update_intervall", 30))
+            if ergebnis not in ("?", "—") and b["formel_json"]:
+                werte[b["name"]] = ergebnis
+
+        # 4. Das eigentliche Ergebnis für DIESE Formel anzeigen
         ergebnis = berechnung_auswerten(formel, werte, self.liste.get("update_intervall", 30))
         ergebnis_lbl.config(text=f"= {ergebnis}")
 
@@ -624,15 +642,21 @@ class DatenListeEditor:
         aus_lbl.pack(side=tk.LEFT)
 
         # Live-Update Funktion
-        def _live_update(*_, ov=ocr_var, rl=roh_lbl, al=aus_lbl):
+        def _live_update(*_, ov=ocr_var, rl=roh_lbl, al=aus_lbl, t_name=t["name"]):
             ocr_name = ov.get()
             rohwert = "—"
             if ocr_name and hasattr(self.bot, "app"):
                 rohwert = self.bot.app.state.ocr_values.get(ocr_name) or \
                           self.bot.app.state.template_ocr_values.get(ocr_name) or "—"
             rl.config(text=str(rohwert))
-            ausgabe = transformation_anwenden(rohwert if rohwert != "—" else None, "einheit_zu_zahl")
-            al.config(text=ausgabe)
+            
+            # Wenn Rohwert da ist: transformieren. Wenn weg: Cache zeigen.
+            if rohwert not in (None, "", "—"):
+                ausgabe = transformation_anwenden(rohwert, "einheit_zu_zahl")
+            else:
+                ausgabe = self._db_cache.get(t_name, "—")
+            
+            al.config(text=str(ausgabe))
 
         ocr_var.trace_add("write", _live_update)
         _live_update()  # Einmal sofort ausführen

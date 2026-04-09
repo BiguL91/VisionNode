@@ -106,7 +106,8 @@ class TilesBotApp:
             "log_workflow": True,
             "log_ocr_debug": False,
             "log_matching": False,
-            "log_capture": False
+            "log_capture": False,
+            "log_daten_berechnungen": False
         }
         if os.path.exists(self.settings_path):
             try:
@@ -289,8 +290,8 @@ class TilesBotApp:
                 # Template OCR (mit Varianten-Support)
                 ocr_konfig = self.ocr_engine.template_ocr_konfigurationen()
                 
-                # Wir behalten alte Werte bei, damit sie nicht flackern oder verschwinden
-                neue_t_ocr = self.state.template_ocr_values.copy()
+                # Wir fangen frisch an, damit Werte von verschwundenen Templates "wegfallen"
+                neue_t_ocr = {}
                 
                 # Alle aktuell gefundenen Basis-Namen
                 gefundene_basis_namen = {m[0] for m in self.state.active_matches}
