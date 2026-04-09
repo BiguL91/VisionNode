@@ -166,7 +166,7 @@ class DatenListeEditor:
         if not nur_zwischen:
             # Ausgabe-Berechnungen auch (für Verkettung)
             namen += [b["name"] for b in self._berechnungen if b.get("name") and b.get("typ") == "ausgabe"]
-        return namen + ["update_intervall"]
+        return namen + ["update_intervall", "zeit_h", "zeit_m", "zeit_s"]
 
     def _berechnung_tab_aufbauen(self, parent):
         canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)

@@ -90,17 +90,38 @@ def datenbank_initialisieren():
             )
         """)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS eintraege (
+            CREATE TABLE IF NOT EXISTS zuordnungen (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
                 zeile_name  TEXT NOT NULL,
                 spalte_id   INTEGER NOT NULL REFERENCES spalten(id) ON DELETE CASCADE,
-                wert        TEXT,
-                gescant_am  REAL,
+                ocr_var     TEXT,
                 UNIQUE(listen_id, zeile_name, spalte_id)
             )
         """)
         conn.commit()
+
+
+# ── Zuordnungen ─────────────────────────────────────────────────────────────
+
+def zuordnung_speichern(listen_id, zeile_name, spalte_id, ocr_var):
+    with _verbinden() as conn:
+        conn.execute("""
+            INSERT INTO zuordnungen (listen_id, zeile_name, spalte_id, ocr_var)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(listen_id, zeile_name, spalte_id)
+            DO UPDATE SET ocr_var=excluded.ocr_var
+        """, (listen_id, zeile_name, spalte_id, ocr_var))
+        conn.commit()
+
+
+def zuordnungen_der_liste(listen_id):
+    """Gibt alle spezifischen Zuordnungen einer Liste zurück."""
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT * FROM zuordnungen WHERE listen_id=?", (listen_id,)
+        ).fetchall()
+    return {(r["zeile_name"], r["spalte_id"]): r["ocr_var"] for r in rows}
 
 
 # ── Listen ──────────────────────────────────────────────────────────────────
@@ -412,6 +433,9 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
             var_name = teil["var"]
             if var_name == "update_intervall":
                 ausdruck_teile.append(str(update_intervall))
+            elif var_name in ("zeit_h", "zeit_m", "zeit_s"):
+                # Platzhalter — wird später im kontext aufgelöst
+                ausdruck_teile.append(var_name)
             elif var_name == "":
                 return "?"
             else:
@@ -442,18 +466,19 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
     # Kontext für eval
     kontext = {"__builtins__": {}}
     
-    # elapsed_h berechnen (Basis: Das neuste Update der beteiligten Variablen)
+    # zeit_h/m/s berechnen — Basis: ältester Timestamp der beteiligten Variablen
+    # (ältester = Zeitpunkt des Basis-Scans, von dem aus projiziert wird)
     ts_liste = [v[1] for k, v in verfuegbare_werte.items() if isinstance(v, (tuple, list)) and v[1]]
     if ts_liste:
-        ts_basis = max(ts_liste)
-        elapsed_s = jetzt - ts_basis
-        kontext["elapsed_h"] = elapsed_s / 3600.0
-        kontext["elapsed_s"] = elapsed_s
-        kontext["elapsed_m"] = elapsed_s / 60.0
+        ts_basis = min(ts_liste)
+        vergangen_s = jetzt - ts_basis
+        kontext["zeit_h"] = vergangen_s / 3600.0
+        kontext["zeit_m"] = vergangen_s / 60.0
+        kontext["zeit_s"] = vergangen_s
     else:
-        kontext["elapsed_h"] = 0
-        kontext["elapsed_s"] = 0
-        kontext["elapsed_m"] = 0
+        kontext["zeit_h"] = 0
+        kontext["zeit_m"] = 0
+        kontext["zeit_s"] = 0
 
     try:
         ergebnis = eval(ausdruck, kontext, {})  # noqa: S307
