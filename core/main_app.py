@@ -313,10 +313,7 @@ class TilesBotApp:
                         wert = self.ocr_engine.template_match_scannen(
                             self.current_screenshot_pil, entry_name, match
                         )
-                        # Einfacher Name (Abwärtskompatibilität)
                         neue_t_ocr[entry_name] = wert
-                        # Präfix-Name (für {row} Mapping)
-                        neue_t_ocr[f"{p_name}_{entry_name}"] = wert
                 
                 # 3. Optional: Werte von Templates entfernen, die gar nicht mehr da sind
                 # Wir machen das hier NICHT hart, damit Werte im Log/Workflow stabil bleiben.
