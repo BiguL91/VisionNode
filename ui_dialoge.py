@@ -348,6 +348,106 @@ class DialogeMixin:
         tk.Button(btn_f, text="Abbrechen", bg="#444", fg="white", command=dialog.destroy).pack(side=tk.RIGHT, padx=(4, 0))
         tk.Button(btn_f, text="Speichern", bg="#2ea043", fg="white", command=save).pack(side=tk.RIGHT)
 
+    def _einheiten_dialog(self):
+        """Öffnet den Dialog zum Verwalten globaler Einheiten und Faktoren."""
+        from core.daten_manager import _einheiten_laden, _einheiten_speichern
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Globale Einheiten & Faktoren")
+        dialog.configure(bg="#2d2d2d")
+        dialog.grab_set()
+        dialog.geometry("420x500")
+        dialog.resizable(False, False)
+
+        inhalt = tk.Frame(dialog, bg="#2d2d2d")
+        inhalt.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+
+        tk.Label(inhalt, text="Zuweisung: Kürzel → Multiplikator", bg="#2d2d2d", fg="#ffca28",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 4))
+        tk.Label(inhalt, text="Beispiel: 'Mio.' → 1.000.000 oder 'Tsd.' → 1.000",
+                 bg="#2d2d2d", fg="#666666", font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 10))
+
+        # Scrollbare Liste
+        list_frame = tk.Frame(inhalt, bg="#1a1a1a", bd=1, relief=tk.SOLID)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(list_frame, bg="#1a1a1a", highlightthickness=0)
+        scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=canvas.yview, bg="#1a1a1a")
+        scrollable_frame = tk.Frame(canvas, bg="#1a1a1a")
+
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def zeile_bauen(k, v):
+            row = tk.Frame(scrollable_frame, bg="#1a1a1a")
+            row.pack(fill=tk.X, pady=2, padx=4)
+            
+            tk.Label(row, text=k, bg="#1a1a1a", fg="#ffffff", font=("Segoe UI", 9, "bold"),
+                     width=15, anchor="w").pack(side=tk.LEFT)
+            tk.Label(row, text=f"× {v:,.0f}".replace(",", "."), bg="#1a1a1a", fg="#aaaaaa",
+                     font=("Consolas", 9)).pack(side=tk.LEFT)
+            
+            def loeschen():
+                if k in aktuelle_einheiten:
+                    del aktuelle_einheiten[k]
+                    refresh_liste()
+
+            tk.Button(row, text="✕", bg="#1a1a1a", fg="#da3633", relief=tk.FLAT,
+                      padx=6, pady=0, command=loeschen).pack(side=tk.RIGHT)
+
+        aktuelle_einheiten = _einheiten_laden()
+
+        def refresh_liste():
+            for w in scrollable_frame.winfo_children():
+                w.destroy()
+            for k, v in sorted(aktuelle_einheiten.items()):
+                zeile_bauen(k, v)
+
+        refresh_liste()
+
+        # Eingabebereich
+        eingabe_f = tk.Frame(inhalt, bg="#252525", pady=10)
+        eingabe_f.pack(fill=tk.X, pady=(12, 0))
+
+        tk.Label(eingabe_f, text="Kürzel:", bg="#252525", fg="#888888", font=("Segoe UI", 8)).grid(row=0, column=0, sticky="w", padx=10)
+        tk.Label(eingabe_f, text="Faktor:", bg="#252525", fg="#888888", font=("Segoe UI", 8)).grid(row=0, column=1, sticky="w", padx=10)
+
+        k_var = tk.StringVar()
+        f_var = tk.StringVar()
+
+        k_ent = tk.Entry(eingabe_f, textvariable=k_var, bg="#1a1a1a", fg="#ffffff", insertbackground="white", width=15)
+        k_ent.grid(row=1, column=0, padx=10, pady=(0, 5))
+        f_ent = tk.Entry(eingabe_f, textvariable=f_var, bg="#1a1a1a", fg="#ffffff", insertbackground="white", width=15)
+        f_ent.grid(row=1, column=1, padx=10, pady=(0, 5))
+
+        def hinzufuegen():
+            k = k_var.get().strip().upper().rstrip(".")
+            f = f_var.get().strip().replace(".", "").replace(",", "")
+            if k and f.isdigit():
+                aktuelle_einheiten[k] = int(f)
+                k_var.set(""); f_var.set("")
+                refresh_liste()
+
+        tk.Button(eingabe_f, text="+ Hinzufügen / Update", bg="#1a3a1a", fg="#2ea043", 
+                  relief=tk.FLAT, font=("Segoe UI", 9, "bold"), padx=10, command=hinzufuegen).grid(row=2, column=0, columnspan=2, pady=5)
+
+        # Footer Buttons
+        btn_f = tk.Frame(dialog, bg="#2d2d2d")
+        btn_f.pack(fill=tk.X, padx=20, pady=(0, 20))
+
+        def save():
+            _einheiten_speichern(aktuelle_einheiten)
+            dialog.destroy()
+
+        tk.Button(btn_f, text="Speichern", bg="#2ea043", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief=tk.FLAT, padx=16, pady=6, command=save).pack(side=tk.RIGHT, padx=(6, 0))
+        tk.Button(btn_f, text="Abbrechen", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 10),
+                  relief=tk.FLAT, padx=16, pady=6, command=dialog.destroy).pack(side=tk.RIGHT)
+
     def _zustand_manager_dialog(self, template_name):
         """Öffnet den Zustände-Dialog für ein Template direkt aus dem Haupt-Panel."""
         settings = self.template_engine.settings.get(template_name, {})

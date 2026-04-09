@@ -38,7 +38,11 @@ class DatenPanel:
 
         tk.Button(kopf, text="✎ Edit", bg="#3a3a3a", fg="#aaaaaa",
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._liste_bearbeiten).pack(side=tk.LEFT)
+                  cursor="hand2", command=self._liste_bearbeiten).pack(side=tk.LEFT, padx=(0, 4))
+
+        tk.Button(kopf, text="⚖️ Einheiten", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=lambda: self.bot._einheiten_dialog()).pack(side=tk.LEFT)
 
         # Scrollbarer Bereich für alle Listen
         scroll_container = tk.Frame(self.parent, bg="#2d2d2d")

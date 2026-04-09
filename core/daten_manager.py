@@ -1,8 +1,12 @@
 import sqlite3
 import os
 import time
+import json
 
 DB_PFAD = os.path.join(os.path.dirname(__file__), "..", "daten_listen.db")
+EINHEITEN_DATEI = os.path.join(os.path.dirname(__file__), "..", "einheiten.json")
+
+_EINHEITEN_CACHE = None
 
 
 def _verbinden():
@@ -468,41 +472,76 @@ def transformation_anwenden(rohwert, typ):
     return rohwert
 
 
+# ── Einheiten / Faktoren ──────────────────────────────────────────────────
+
+def _einheiten_laden():
+    """Lädt die globalen Einheiten-Faktoren aus JSON (gecached)."""
+    global _EINHEITEN_CACHE
+    if _EINHEITEN_CACHE is not None:
+        return _EINHEITEN_CACHE
+
+    defaults = {
+        "K": 1000,
+        "TSD": 1000,
+        "M": 1000000,
+        "MIO": 1000000,
+        "MRD": 1000000000,
+        "B": 1000000000,
+    }
+    
+    if os.path.exists(EINHEITEN_DATEI):
+        try:
+            with open(EINHEITEN_DATEI, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Normalisierung: Upper und Punkt entfernen
+                _EINHEITEN_CACHE = {k.upper().rstrip("."): v for k, v in data.items() if k.strip()}
+                return _EINHEITEN_CACHE
+        except Exception:
+            pass
+    
+    _EINHEITEN_CACHE = defaults
+    return _EINHEITEN_CACHE
+
+def _einheiten_speichern(einheiten):
+    """Speichert die globalen Einheiten-Faktoren als JSON."""
+    global _EINHEITEN_CACHE
+    # Keys vereinheitlichen (Upper und Punkt entfernen)
+    data = {k.upper().strip().rstrip("."): v for k, v in einheiten.items() if k.strip()}
+    with open(EINHEITEN_DATEI, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    _EINHEITEN_CACHE = data
+
+
 def _einheit_zu_zahl(text):
     """
     Wandelt Spielwerte mit Einheit in Zahlen um.
-    Beispiele: "23.97Mio." → "23970000", "1.5K" → "1500", "450" → "450"
+    Nutzt das globale Einheiten-Wörterbuch aus einheiten.json.
     """
     import re
     if not text:
         return "—"
 
     # 1. Zahl und Einheit trennen
-    # Wir suchen nach der ersten Zahl (inkl. Vorzeichen, Trennern) 
-    # und dem was danach kommt (die Einheit)
-    match = re.search(r"([+-]?[\d,.]+)\s*([a-zA-Z.]+)?", text)
+    # Regex: (Vorzeichen? Zahl-Trenner) Leerzeichen? (Rest des Strings)
+    match = re.search(r"([+-]?[\d,.]+)\s*(.*)", text)
     if not match:
         return text
 
     num_str = match.group(1)
-    unit_str = (match.group(2) or "").upper().rstrip(".")
+    # Einheit ist alles, was nach der Zahl kommt (Upper + rstrip "." für Vergleich)
+    unit_str = match.group(2).strip().upper().rstrip(".")
 
     # 2. Number-String bereinigen
-    # Wenn sowohl Punkt als auch Komma vorkommen:
     if "." in num_str and "," in num_str:
-        # Der letzte ist wahrscheinlich der Dezimaltrenner
         if num_str.rfind(".") > num_str.rfind(","):
-            num_str = num_str.replace(",", "")  # Komma ist Tausender
+            num_str = num_str.replace(",", "")
         else:
-            num_str = num_str.replace(".", "")  # Punkt ist Tausender
-            num_str = num_str.replace(",", ".")  # Komma zu Punkt
-    # Wenn nur ein Typ vorkommt, aber mehrfach (Tausendertrenner):
+            num_str = num_str.replace(".", "")
+            num_str = num_str.replace(",", ".")
     elif num_str.count(".") > 1:
         num_str = num_str.replace(".", "")
     elif num_str.count(",") > 1:
         num_str = num_str.replace(",", "")
-    # Wenn nur einer vorkommt, und zwar einmal:
-    # Bei Spielwerten wie "27,10" ist das Komma fast immer der Dezimaltrenner
     else:
         num_str = num_str.replace(",", ".")
 
@@ -511,20 +550,12 @@ def _einheit_zu_zahl(text):
     except ValueError:
         return text
 
-    # 3. Faktor anwenden
-    faktoren = {
-        "K": 1_000,
-        "T": 1_000,
-        "M": 1_000_000,
-        "MIO": 1_000_000,
-        "MRD": 1_000_000_000,
-        "B": 1_000_000_000,
-    }
-
+    # 3. Faktor aus globalem Wörterbuch anwenden
+    faktoren = _einheiten_laden()
     faktor = faktoren.get(unit_str, 1)
+    
     ergebnis = zahl * faktor
 
-    # Ganzzahl wenn möglich
     if ergebnis == int(ergebnis):
         return str(int(ergebnis))
     return str(round(ergebnis, 2))
