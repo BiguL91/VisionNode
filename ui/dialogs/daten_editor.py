@@ -1,5 +1,6 @@
 import tkinter as tk
 import time
+from tkinter import ttk
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
     zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
@@ -7,7 +8,8 @@ from core.daten_manager import (
     transformationen_der_liste, transformation_hinzufuegen,
     transformation_aktualisieren, transformation_loeschen, transformation_anwenden,
     berechnungen_der_liste, berechnung_hinzufuegen, berechnung_aktualisieren,
-    berechnung_loeschen, berechnung_auswerten, cache_lesen
+    berechnung_loeschen, berechnung_auswerten, cache_lesen,
+    zuordnungen_der_liste, zuordnung_speichern
 )
 
 
@@ -65,6 +67,15 @@ class DatenListeEditor:
         y = self.parent.winfo_y() + (self.parent.winfo_height() - 560) // 2
         self.fenster.geometry(f"+{max(0,x)}+{max(0,y)}")
 
+        # Style für Comboboxen (Dunkel)
+        style = ttk.Style(self.fenster)
+        style.theme_use("clam")
+        style.configure("TCombobox", fieldbackground="#252525", background="#3a3a3a", 
+                        foreground="#cccccc", arrowcolor="#cccccc", bordercolor="#3a3a3a")
+        self.fenster.option_add("*TCombobox*Listbox.background", "#252525")
+        self.fenster.option_add("*TCombobox*Listbox.foreground", "#cccccc")
+        self.fenster.option_add("*TCombobox*Listbox.selectBackground", "#3a3a3a")
+
         self._kopf_aufbauen()
         self._tabs_aufbauen()
         self._buttons_aufbauen()
@@ -107,7 +118,7 @@ class DatenListeEditor:
         self._tab_btns = {}
 
         for key, label in [("transform", "OCR Transform"), ("berechnung", "Berechnung"),
-                           ("zeilen", "Zeilen"), ("spalten", "Spalten")]:
+                           ("struktur", "Struktur"), ("mapping", "Mapping")]:
             btn = tk.Button(tab_leiste, text=label, font=("Segoe UI", 9),
                             relief=tk.FLAT, padx=14, pady=4, cursor="hand2",
                             command=lambda k=key: self._tab_wechseln(k))
@@ -134,13 +145,13 @@ class DatenListeEditor:
             self._transformationen = transformationen_der_liste(self.liste["id"])
             self._orig_transform_namen = {t["id"]: t["name"] for t in self._transformationen}
             self._berechnung_tab_aufbauen(self._tab_inhalt)
-        elif key == "zeilen":
-            self._zeilen_tab_aufbauen(self._tab_inhalt)
-        else:
-            # Transformationen + Berechnungen neu laden für aktuelles Dropdown
+        elif key == "struktur":
+            self._struktur_tab_aufbauen(self._tab_inhalt)
+        elif key == "mapping":
+            # Transformationen + Berechnungen neu laden für Mapping-Optionen
             self._transformationen = transformationen_der_liste(self.liste["id"])
             self._berechnungen = berechnungen_der_liste(self.liste["id"])
-            self._spalten_tab_aufbauen(self._tab_inhalt)
+            self._mapping_tab_aufbauen(self._tab_inhalt)
 
     # ── Tab: Berechnung ──────────────────────────────────────────────────────
 
@@ -412,63 +423,72 @@ class DatenListeEditor:
         self._berechnungen = [b for b in self._berechnungen if b["id"] != berech_id]
         self._berech_zeilen_aufbauen()
 
-    # ── Tab: Zeilen ──────────────────────────────────────────────────────────
+    # ── Tab: Struktur (Zeilen & Spalten) ──────────────────────────────────────
 
-    def _zeilen_tab_aufbauen(self, parent):
-        tk.Button(parent, text="+ Zeile hinzufügen", bg="#1a3a1a", fg="#2ea043",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._zeile_hinzufuegen).pack(anchor="w", pady=(4, 6))
+    def _struktur_tab_aufbauen(self, parent):
+        main = tk.Frame(parent, bg="#2d2d2d")
+        main.pack(fill=tk.BOTH, expand=True)
 
-        # Scrollbarer Bereich
-        canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)
-        scroll = tk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
-        canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Linke Seite: Zeilen
+        links = tk.Frame(main, bg="#2d2d2d", width=250)
+        links.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        links.pack_propagate(False)
 
-        self._zeilen_container = tk.Frame(canvas, bg="#2d2d2d")
-        cw = canvas.create_window((0, 0), window=self._zeilen_container, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
-        self._zeilen_container.bind("<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        tk.Label(links, text="ZEILEN", bg="#2d2d2d", fg="#888888", font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        tk.Button(links, text="+ Zeile", bg="#1a3a1a", fg="#2ea043", font=("Segoe UI", 8),
+                  relief=tk.FLAT, padx=6, command=self._zeile_hinzufuegen).pack(anchor="w", pady=4)
+
+        z_canvas = tk.Canvas(links, bg="#2d2d2d", highlightthickness=0)
+        z_scroll = tk.Scrollbar(links, orient=tk.VERTICAL, command=z_canvas.yview)
+        z_canvas.configure(yscrollcommand=z_scroll.set)
+        z_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        z_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._zeilen_container = tk.Frame(z_canvas, bg="#2d2d2d")
+        zc_win = z_canvas.create_window((0, 0), window=self._zeilen_container, anchor="nw")
+        z_canvas.bind("<Configure>", lambda e: z_canvas.itemconfig(zc_win, width=e.width))
+        self._zeilen_container.bind("<Configure>", lambda e: z_canvas.configure(scrollregion=z_canvas.bbox("all")))
+
+        # Rechte Seite: Spalten
+        rechts = tk.Frame(main, bg="#2d2d2d")
+        rechts.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        tk.Label(rechts, text="SPALTEN", bg="#2d2d2d", fg="#888888", font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        tk.Button(rechts, text="+ Spalte", bg="#1a1a1a", fg="#aaaaaa", font=("Segoe UI", 8),
+                  relief=tk.FLAT, padx=6, command=self._spalte_hinzufuegen).pack(anchor="w", pady=4)
+
+        s_canvas = tk.Canvas(rechts, bg="#2d2d2d", highlightthickness=0)
+        s_scroll = tk.Scrollbar(rechts, orient=tk.VERTICAL, command=s_canvas.yview)
+        s_canvas.configure(yscrollcommand=s_scroll.set)
+        s_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        s_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._spalten_container = tk.Frame(s_canvas, bg="#2d2d2d")
+        sc_win = s_canvas.create_window((0, 0), window=self._spalten_container, anchor="nw")
+        s_canvas.bind("<Configure>", lambda e: s_canvas.itemconfig(sc_win, width=e.width))
+        self._spalten_container.bind("<Configure>", lambda e: s_canvas.configure(scrollregion=s_canvas.bbox("all")))
 
         self._zeilen_zeilen_aufbauen()
+        self._spalten_zeilen_aufbauen()
 
     def _zeilen_zeilen_aufbauen(self):
-        for w in self._zeilen_container.winfo_children():
-            w.destroy()
-
-        if not self._zeilen:
-            tk.Label(self._zeilen_container, text="Keine Zeilen — füge eine hinzu.",
-                     bg="#2d2d2d", fg="#555555", font=("Segoe UI", 9)).pack(anchor="w", padx=8, pady=8)
-            return
-
+        for w in self._zeilen_container.winfo_children(): w.destroy()
         for z in self._zeilen:
-            zeile = tk.Frame(self._zeilen_container, bg="#1a1a1a")
-            zeile.pack(fill=tk.X, pady=1)
-
-            name_var = tk.StringVar(value=z["name"])
-            tk.Entry(zeile, textvariable=name_var, bg="#252525", fg="#cccccc",
-                     insertbackground="white", font=("Segoe UI", 9), relief=tk.FLAT,
-                     bd=3, width=30).pack(side=tk.LEFT, padx=(6, 4), pady=4)
-
-            def _on_name_change(*_, zid=z["id"], nv=name_var):
+            f = tk.Frame(self._zeilen_container, bg="#1a1a1a")
+            f.pack(fill=tk.X, pady=1)
+            nv = tk.StringVar(value=z["name"])
+            e = tk.Entry(f, textvariable=nv, bg="#252525", fg="#cccccc", font=("Segoe UI", 8), relief=tk.FLAT, bd=2)
+            e.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=2)
+            def _on_z_change(*_, zid=z["id"], var=nv):
                 for zz in self._zeilen:
                     if zz["id"] == zid:
-                        neuer_name = nv.get()
-                        zz["name"] = neuer_name
-                        zeile_umbenennen(zid, neuer_name)
-                        break
-
-            name_var.trace_add("write", _on_name_change)
-
-            tk.Button(zeile, text="✕", bg="#1a1a1a", fg="#555555",
-                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6,
-                      cursor="hand2",
-                      command=lambda zid=z["id"]: self._zeile_loeschen(zid)).pack(side=tk.LEFT, padx=4)
+                        zz["name"] = var.get(); zeile_umbenennen(zid, var.get()); break
+            nv.trace_add("write", _on_z_change)
+            tk.Button(f, text="✕", bg="#1a1a1a", fg="#555555", font=("Segoe UI", 7), relief=tk.FLAT,
+                      command=lambda zid=z["id"]: self._zeile_loeschen(zid)).pack(side=tk.RIGHT, padx=2)
 
     def _zeile_hinzufuegen(self):
-        neue_id = zeile_hinzufuegen(self.liste["id"], "Neu")
+        zeile_hinzufuegen(self.liste["id"], "Neu")
         self._zeilen = zeilen_der_liste(self.liste["id"])
         self._zeilen_zeilen_aufbauen()
 
@@ -477,102 +497,47 @@ class DatenListeEditor:
         self._zeilen = [z for z in self._zeilen if z["id"] != zeile_id]
         self._zeilen_zeilen_aufbauen()
 
-    # ── Tab: Spalten ─────────────────────────────────────────────────────────
-
-    def _spalten_tab_aufbauen(self, parent):
-        # Header
-        header = tk.Frame(parent, bg="#1e1e1e")
-        header.pack(fill=tk.X, pady=(4, 2))
-        for text, breite in [("Name", 13), ("Typ", 8), ("OCR-Variable", 18), ("Format", 10), ("", 3)]:
-            tk.Label(header, text=text, bg="#1e1e1e", fg="#666666",
-                     font=("Segoe UI", 8, "bold"), width=breite, anchor="w",
-                     padx=4, pady=3).pack(side=tk.LEFT)
-
-        tk.Button(parent, text="+ Spalte hinzufügen", bg="#1a1a1a", fg="#555555",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._spalte_hinzufuegen).pack(anchor="w", pady=(0, 4))
-
-        canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)
-        scroll = tk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
-        canvas.configure(yscrollcommand=scroll.set)
-        scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self._spalten_container = tk.Frame(canvas, bg="#2d2d2d")
-        cw = canvas.create_window((0, 0), window=self._spalten_container, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
-        self._spalten_container.bind("<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
-        self._spalten_zeilen_aufbauen()
-
     def _spalten_zeilen_aufbauen(self):
-        for w in self._spalten_container.winfo_children():
-            w.destroy()
+        for w in self._spalten_container.winfo_children(): w.destroy()
+        # Mini-Header
+        h = tk.Frame(self._spalten_container, bg="#1e1e1e")
+        h.pack(fill=tk.X, pady=(0, 2))
+        for t, b in [("Name", 12), ("Typ", 6), ("Format", 10)]:
+            tk.Label(h, text=t, bg="#1e1e1e", fg="#666666", font=("Segoe UI", 7, "bold"), width=b, anchor="w").pack(side=tk.LEFT, padx=2)
+
         for sp in self._spalten:
             self._spalten_zeile_erstellen(sp)
 
     def _spalten_zeile_erstellen(self, sp):
-        zeile = tk.Frame(self._spalten_container, bg="#1a1a1a")
-        zeile.pack(fill=tk.X, pady=1)
+        f = tk.Frame(self._spalten_container, bg="#1a1a1a")
+        f.pack(fill=tk.X, pady=1)
 
-        name_var = tk.StringVar(value=sp["name"])
-        tk.Entry(zeile, textvariable=name_var, bg="#252525", fg="#cccccc",
-                 insertbackground="white", font=("Segoe UI", 8), relief=tk.FLAT,
-                 bd=3, width=13).pack(side=tk.LEFT, padx=(4, 2), pady=3)
+        nv = tk.StringVar(value=sp["name"])
+        tk.Entry(f, textvariable=nv, bg="#252525", fg="#cccccc", font=("Segoe UI", 8), relief=tk.FLAT, bd=2, width=12).pack(side=tk.LEFT, padx=2, pady=2)
 
-        typ_var = tk.StringVar(value=sp["typ"])
-        typ_menu = tk.OptionMenu(zeile, typ_var, "zahl", "text")
-        typ_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
-                        relief=tk.FLAT, bd=0, width=8, highlightthickness=0,
-                        activebackground="#3a3a3a", cursor="hand2")
-        typ_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
-        typ_menu.pack(side=tk.LEFT, padx=2)
+        tv = tk.StringVar(value=sp["typ"])
+        tm = tk.OptionMenu(f, tv, "zahl", "text")
+        tm.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7), relief=tk.FLAT, bd=0, width=5, highlightthickness=0)
+        tm["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7))
+        tm.pack(side=tk.LEFT, padx=2)
 
-        # Nur Transformationen + Ausgabe-Berechnungen im Spalten-Tab
-        verarbeitete_vars = (
-            [t["name"] for t in self._transformationen if t.get("name")] +
-            [b["name"] for b in self._berechnungen if b.get("name") and b.get("typ") != "zwischen"]
-        )
-        ocr_var = tk.StringVar(value=sp.get("ocr_var") or "")
-        ocr_optionen = [""] + verarbeitete_vars
-        ocr_menu = tk.OptionMenu(zeile, ocr_var, *ocr_optionen if ocr_optionen else [""])
-        ocr_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
-                        relief=tk.FLAT, bd=0, width=18, highlightthickness=0,
-                        activebackground="#3a3a3a", cursor="hand2")
-        ocr_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
-        ocr_menu.pack(side=tk.LEFT, padx=2)
+        fv = tk.StringVar(value=sp.get("format") or "standard")
+        fo = ["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)"]
+        fm = tk.OptionMenu(f, fv, *fo)
+        fm.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7), relief=tk.FLAT, bd=0, width=10, highlightthickness=0)
+        fm["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7))
+        fm.pack(side=tk.LEFT, padx=2)
 
-        format_var = tk.StringVar(value=sp.get("format") or "standard")
-        format_options = ["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)"]
-        format_menu = tk.OptionMenu(zeile, format_var, *format_options)
-        format_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
-                           relief=tk.FLAT, bd=0, width=10, highlightthickness=0,
-                           activebackground="#3a3a3a", cursor="hand2")
-        format_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
-        format_menu.pack(side=tk.LEFT, padx=2)
+        tk.Button(f, text="✕", bg="#1a1a1a", fg="#555555", font=("Segoe UI", 7), relief=tk.FLAT,
+                  command=lambda sid=sp["id"]: self._spalte_loeschen(sid)).pack(side=tk.RIGHT, padx=2)
 
-        tk.Button(zeile, text="✕", bg="#1a1a1a", fg="#555555",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=4, cursor="hand2",
-                  command=lambda sid=sp["id"]: self._spalte_loeschen(sid)).pack(side=tk.LEFT, padx=(4, 2))
-
-        def _on_aenderung(*_, sid=sp["id"], nv=name_var, tv=typ_var, ov=ocr_var, fv=format_var):
-            neuer_name = nv.get().strip()
-            neuer_typ = tv.get()
-            neue_ocr = ov.get() or None
-            neues_format = fv.get()
+        def _on_s_change(*_, sid=sp["id"], name=nv, typ=tv, fmt=fv):
             for s in self._spalten:
                 if s["id"] == sid:
-                    s["name"] = neuer_name
-                    s["typ"] = neuer_typ
-                    s["ocr_var"] = neue_ocr
-                    s["format"] = neues_format
-                    # Sofort in DB schreiben
-                    spalte_aktualisieren(sid, name=neuer_name, typ=neuer_typ, ocr_var=neue_ocr, format=neues_format)
+                    s["name"] = name.get(); s["typ"] = typ.get(); s["format"] = fmt.get()
+                    spalte_aktualisieren(sid, name=name.get(), typ=typ.get(), format=fmt.get())
                     break
-
-        for var in (name_var, typ_var, ocr_var, format_var):
-            var.trace_add("write", _on_aenderung)
+        for v in (nv, tv, fv): v.trace_add("write", _on_s_change)
 
     def _spalte_hinzufuegen(self):
         spalte_hinzufuegen(self.liste["id"], "Neu", typ="zahl")
@@ -583,6 +548,75 @@ class DatenListeEditor:
         spalte_loeschen(spalte_id)
         self._spalten = [s for s in self._spalten if s["id"] != spalte_id]
         self._spalten_zeilen_aufbauen()
+
+    # ── Tab: Mapping ─────────────────────────────────────────────────────────
+
+    def _mapping_tab_aufbauen(self, parent):
+        tk.Label(parent, text="Spezifische Zuordnung: Welcher Wert für welche Zelle?",
+                 bg="#2d2d2d", fg="#888888", font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 6))
+
+        # Scrollbarer Bereich
+        canvas = tk.Canvas(parent, bg="#2d2d2d", highlightthickness=0)
+        scroll_x = tk.Scrollbar(parent, orient=tk.HORIZONTAL, command=canvas.xview)
+        scroll_y = tk.Scrollbar(parent, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(xscrollcommand=scroll_x.set, yscrollcommand=scroll_y.set)
+        
+        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        matrix = tk.Frame(canvas, bg="#2d2d2d")
+        canvas.create_window((0, 0), window=matrix, anchor="nw")
+        matrix.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        # Header: Spalten
+        tk.Label(matrix, text="Zeile / Spalte", bg="#1a1a1a", fg="#666666",
+                 font=("Segoe UI", 7, "bold"), width=12, padx=4, pady=4).grid(row=0, column=0, padx=1, pady=1)
+        
+        for c, sp in enumerate(self._spalten):
+            tk.Label(matrix, text=sp["name"], bg="#1a1a1a", fg="#666666",
+                     font=("Segoe UI", 7, "bold"), width=14, padx=4, pady=4).grid(row=0, column=c+1, padx=1, pady=1)
+
+        # Daten: Zeilen
+        zuordnungen = zuordnungen_der_liste(self.liste["id"])
+        
+        # Nur Transform-Ausgaben + Berechnungs-Ausgaben (keine rohen OCR-Vars)
+        optionen = [""] \
+            + [t["name"] for t in self._transformationen if t.get("name")] \
+            + [b["name"] for b in self._berechnungen if b.get("name")]
+
+        for r, zeile in enumerate(self._zeilen):
+            # Zeilenkopf
+            tk.Label(matrix, text=zeile["name"], bg="#252525", fg="#cccccc",
+                     font=("Segoe UI", 8), width=12, anchor="w", padx=6).grid(row=r+1, column=0, sticky="nsew", padx=1, pady=1)
+            
+            for c, sp in enumerate(self._spalten):
+                val = zuordnungen.get((zeile["name"], sp["id"]), "")
+                var = tk.StringVar(value=val)
+                
+                # Wenn in Spalte ein {row} Placeholder ist, zeigen wir das als Info
+                placeholder = ""
+                if sp.get("ocr_var") and "{row}" in sp["ocr_var"]:
+                    placeholder = sp["ocr_var"].replace("{row}", zeile["name"])
+
+                menu = tk.OptionMenu(matrix, var, *optionen)
+                menu.config(bg="#1a1a1a", fg="#4fc3f7" if val else "#555555", 
+                            font=("Segoe UI", 7), relief=tk.FLAT, bd=0, width=12, 
+                            highlightthickness=0, anchor="w")
+                menu["menu"].config(bg="#1a1a1a", fg="#cccccc", font=("Segoe UI", 7))
+                menu.grid(row=r+1, column=c+1, padx=1, pady=1, sticky="nsew")
+
+                # Wenn ein globaler Placeholder existiert, aber keine spezifische Zuordnung, 
+                # zeigen wir den Placeholder-Namen ausgegraut an.
+                if not val and placeholder:
+                    menu.config(fg="#334433", text=f"({placeholder})")
+
+                def _save(v=var, zn=zeile["name"], sid=sp["id"], m=menu):
+                    val = v.get()
+                    zuordnung_speichern(self.liste["id"], zn, sid, val)
+                    m.config(fg="#4fc3f7" if val else "#555555")
+
+                var.trace_add("write", lambda *args, f=_save: f())
 
     # ── Tab: OCR Transformation ──────────────────────────────────────────────
 
@@ -767,12 +801,6 @@ class DatenListeEditor:
                         geaendert = True
                 if geaendert:
                     berechnung_aktualisieren(b["id"], formel_json=b["formel_json"])
-
-        # Spalten: ocr_var ebenfalls umbenennen falls betroffen
-        for sp in self._spalten:
-            if sp.get("ocr_var") in umbenennungen:
-                sp["ocr_var"] = umbenennungen[sp["ocr_var"]]
-                spalte_aktualisieren(sp["id"], ocr_var=sp["ocr_var"])
 
         # Cache-Keys umbenennen
         if umbenennungen:
