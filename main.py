@@ -315,6 +315,102 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         tk.Button(d, text="Hinzufügen", bg="#2ea043", fg="white", relief=tk.FLAT, 
                   padx=15, pady=5, font=("Segoe UI", 9, "bold"), command=add).pack(pady=5)
 
+    def _state_variable_umbenennen_dialog(self, alter_name):
+        """Öffnet einen Dialog zum Umbenennen einer State-Variable."""
+        d = tk.Toplevel(self.root)
+        d.title("Zustand umbenennen")
+        d.geometry("300x150")
+        d.configure(bg="#2d2d2d")
+        d.transient(self.root)
+        d.grab_set()
+
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
+        d.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+        tk.Label(d, text="Neuer Name:", bg="#2d2d2d", fg="#cccccc",
+                 font=("Segoe UI", 9)).pack(pady=(20, 5))
+
+        name_var = tk.StringVar(value=alter_name)
+        entry = tk.Entry(d, textvariable=name_var, bg="#1a1a1a", fg="#ffffff",
+                         insertbackground="white", font=("Segoe UI", 10), relief=tk.FLAT, bd=4)
+        entry.pack(padx=30, fill=tk.X)
+        entry.focus()
+        entry.select_range(0, tk.END)
+        entry.bind("<Return>", lambda e: umbenennen())
+
+        def umbenennen():
+            neuer_name = name_var.get().strip()
+            if not neuer_name or neuer_name == alter_name:
+                d.destroy()
+                return
+
+            # Laufzeit-State umbenennen
+            alter_wert = self.app.state.game_states.pop(alter_name, False)
+            self.app.state.game_states[neuer_name] = alter_wert
+
+            # In allen Template-Settings condition_states und set_states aktualisieren
+            for t_settings in self.template_engine.settings.values():
+                # condition_states: Liste von Dicts (OR-Gruppen mit AND-Bedingungen)
+                conds = t_settings.get("condition_states", [])
+                if isinstance(conds, list):
+                    for gruppe in conds:
+                        if isinstance(gruppe, dict) and alter_name in gruppe:
+                            gruppe[neuer_name] = gruppe.pop(alter_name)
+                elif isinstance(conds, dict) and alter_name in conds:
+                    conds[neuer_name] = conds.pop(alter_name)
+
+                # set_states: einfaches Dict {state_name: bool}
+                ss = t_settings.get("set_states", {})
+                if isinstance(ss, dict) and alter_name in ss:
+                    ss[neuer_name] = ss.pop(alter_name)
+
+            # Settings auf Disk speichern
+            import json
+            with open("template_settings.json", "w", encoding="utf-8") as f:
+                json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+
+            # State-Panel im State-Panel die Auswahl auf den neuen Namen setzen
+            if hasattr(self, "state_panel"):
+                self.state_panel.ausgewaehlt = neuer_name
+
+            self._state_panel_aktualisieren()
+            self._log(f"State-Variable umbenannt: {alter_name} → {neuer_name}")
+            d.destroy()
+
+        tk.Button(d, text="Umbenennen", bg="#2ea043", fg="white", relief=tk.FLAT,
+                  padx=15, pady=5, font=("Segoe UI", 9, "bold"), command=umbenennen).pack(pady=10)
+
+    def _state_variable_loeschen(self, name):
+        """Löscht eine State-Variable und entfernt alle Referenzen aus Template-Settings."""
+        import json
+
+        # Aus Laufzeit-State entfernen
+        self.app.state.game_states.pop(name, None)
+
+        # Aus allen Template-Settings entfernen
+        for t_settings in self.template_engine.settings.values():
+            # condition_states
+            conds = t_settings.get("condition_states", [])
+            if isinstance(conds, list):
+                for gruppe in conds:
+                    if isinstance(gruppe, dict):
+                        gruppe.pop(name, None)
+            elif isinstance(conds, dict):
+                conds.pop(name, None)
+
+            # set_states
+            ss = t_settings.get("set_states", {})
+            if isinstance(ss, dict):
+                ss.pop(name, None)
+
+        # Settings auf Disk speichern
+        with open("template_settings.json", "w", encoding="utf-8") as f:
+            json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+
+        self._state_panel_aktualisieren()
+        self._log(f"State-Variable gelöscht: {name}")
+
     def beenden(self):
         self.app.shutdown()
         self.root.destroy()

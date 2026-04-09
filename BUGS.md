@@ -4,6 +4,9 @@
 
 ## Priorität: Hoch
 
+
+- ✅ State Template Umbennung, greift nicht an allen Stellen, (State Variablen)
+
 - Ignorie-Bereiche im Template-Editor werden nicht korekt mit dem GPU-Vorschau Syncroniesiert, Vermutung: Da die GPU Vorschau Zugeschnitten wird fehlt dieser Factor. (Betrifft nur die Anzeige, Auschnitt Größe,Position passt)
 
 - Alle Möglichkeite wo man was Markieren / Einrahmen kann soll der Mauszeiger das Vorschau Fenster nicht Verlassen. (Template-Editor -> Livevorschau, Templateeditor -> Ausschnittvorschau,GPUvorschau, Templateeditor -> Scannbereiche) 
