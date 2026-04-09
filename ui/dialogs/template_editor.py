@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from PIL import Image, ImageTk
 from ui.dialogs.roi_editor import ROIEditor
+from helpers import cursor_einschraenken, cursor_freigeben
 
 class TemplateEditor:
     def __init__(self, root, bot, bearbeiten_name=None, aktueller_ausschnitt=None,
@@ -899,6 +900,7 @@ class TemplateEditor:
             self._klick_setzen(e)
             return
         self.drag_start = (e.x, e.y)
+        cursor_einschraenken(e.widget)
 
     def _canvas_zu_hg(self, x, y):
         """Wandelt canvas-Pixelkoordinaten (Original) in canvas_hg-Koordinaten um."""
@@ -926,6 +928,7 @@ class TemplateEditor:
             hx0, hy0, hx1, hy1, outline="#ff4444", width=2, fill="#ff4444", stipple="gray25"))
 
     def _on_release(self, e):
+        cursor_freigeben()
         if self.farb_modus_aktiv or self.canvas_modus.get() == "klick" or not self.drag_start:
             return
         x0, y0 = self.drag_start

@@ -1,5 +1,6 @@
 import tkinter as tk
 from PIL import ImageTk, ImageDraw, Image
+from helpers import cursor_einschraenken, cursor_freigeben
 
 class EinlernMixin:
     def _canvas_maus_binden(self):
@@ -52,6 +53,7 @@ class EinlernMixin:
             return
         self.auswahl_start = (event.x, event.y)
         self._auswahl_entfernen()
+        cursor_einschraenken(event.widget)
 
     def _lupe_aktualisieren(self, event):
         """Zeichnet eine vergrößerte Ansicht (Lupe) um den Mauszeiger."""
@@ -116,6 +118,7 @@ class EinlernMixin:
 
     def _auswahl_ende(self, event):
         """Beendet die Auswahl."""
+        cursor_freigeben()
         if not self.einlern_modus and not self.ocr_modus: return
         if not self.auswahl_start: return
         

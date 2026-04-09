@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, ImageTk
 from ui.dialogs.roi_editor import ROIEditor
 from ui.dialogs.template_editor import TemplateEditor
+from helpers import cursor_einschraenken, cursor_freigeben
 
 class DialogeMixin:
     def _modus_dialog(self, template_name):
@@ -58,6 +59,7 @@ class DialogeMixin:
             tabelle_aktualisieren()
 
         def drag_start_cb(e):
+            cursor_einschraenken(e.widget)
             if pick_mode_var.get() and "bg_ref" in cv_info:
                 bg = cv_info["bg_ref"]; s = cv_info["skala"]; tx, ty = int(e.x / s), int(e.y / s)
                 if 0 <= tx < bg.width and 0 <= ty < bg.height:
@@ -77,6 +79,7 @@ class DialogeMixin:
             if aktuell_rect[0]: canvas.delete(aktuell_rect[0])
             aktuell_rect[0] = canvas.create_rectangle(drag_start[0][0], drag_start[0][1], e.x, e.y, outline=FARBEN[len(eintraege)%len(FARBEN)], width=2, dash=(4, 2))
         def drag_end_cb(e):
+            cursor_freigeben()
             if not drag_start[0]: return
             if abs(e.x - drag_start[0][0]) > 4: auswahl[0] = (min(drag_start[0][0], e.x), min(drag_start[0][1], e.y), max(drag_start[0][0], e.x), max(drag_start[0][1], e.y)); ocr_vorschau_starten()
             drag_start[0] = None

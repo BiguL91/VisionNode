@@ -1,3 +1,5 @@
+import ctypes
+import ctypes.wintypes
 import win32gui
 import numpy as np
 from PIL import Image
@@ -10,6 +12,25 @@ _RAHMEN_FARBEN = [
     "#ef5350", "#ab47bc", "#42a5f5", "#26c6da",
     "#66bb6a", "#ffca28", "#ff7043", "#8d6e63",
 ]
+
+def cursor_einschraenken(widget):
+    """Schränkt den Mauszeiger auf den Bereich eines tkinter-Widgets ein (Windows)."""
+    try:
+        x = widget.winfo_rootx()
+        y = widget.winfo_rooty()
+        w = widget.winfo_width()
+        h = widget.winfo_height()
+        rect = ctypes.wintypes.RECT(x, y, x + w, y + h)
+        ctypes.windll.user32.ClipCursor(ctypes.byref(rect))
+    except Exception:
+        pass
+
+def cursor_freigeben():
+    """Gibt den Mauszeiger wieder frei."""
+    try:
+        ctypes.windll.user32.ClipCursor(None)
+    except Exception:
+        pass
 
 def _template_farbe(name):
     """Gibt eine konsistente Farbe für einen Template-Namen zurück."""

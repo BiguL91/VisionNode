@@ -4,6 +4,7 @@ import os
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+from helpers import cursor_einschraenken, cursor_freigeben
 
 class ROIEditor:
     def __init__(self, parent, t_name, initial_regions, get_live_snap_func):
@@ -167,6 +168,7 @@ class ROIEditor:
 
     def _on_press(self, e):
         self.drag_start = (e.x, e.y)
+        cursor_einschraenken(e.widget)
 
     def _on_motion(self, e):
         if not self.drag_start: return
@@ -175,6 +177,7 @@ class ROIEditor:
         self.live_rect_id = self.canvas.create_rectangle(x0, y0, e.x, e.y, outline="#ffff00", width=2)
 
     def _on_release(self, e):
+        cursor_freigeben()
         if not self.drag_start: return
         x0, y0 = self.drag_start
         x1, y1 = e.x, e.y
