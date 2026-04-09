@@ -40,6 +40,8 @@ class TemplateEditor:
 
         self.drag_start = None
         self.live_rect_ids = []
+        self.live_rect_ids_hg = []
+        self._hg_preview_bbox = None
         self.ignore_regionen = []
 
         self.ignore_ids_orig = []
@@ -877,20 +879,14 @@ class TemplateEditor:
             self.klick_ids_hg.append(self.canvas_hg.create_line(px, py-10, px, py+10, fill="#ff6600", width=2))
         for rid in self.ignore_ids_orig:
             self.canvas.delete(rid)
-        for rid in self.ignore_ids_hg:
-            self.canvas_hg.delete(rid)
         self.ignore_ids_orig.clear()
-        self.ignore_ids_hg.clear()
+        # canvas_hg wird in _hg_vorschau_aktualisieren mit bbox-korrekten Koordinaten gezeichnet
         for (ix0, iy0, ix1, iy1) in self.ignore_regionen:
             s = self.aktuell_skala
             rid_o = self.canvas.create_rectangle(
                 int(ix0*s), int(iy0*s), int(ix1*s), int(iy1*s),
                 outline="#ff4444", width=2, fill="#ff4444", stipple="gray25")
-            rid_h = self.canvas_hg.create_rectangle(
-                int(ix0*s), int(iy0*s), int(ix1*s), int(iy1*s),
-                outline="#ff4444", width=2, fill="#ff4444", stipple="gray25")
             self.ignore_ids_orig.append(rid_o)
-            self.ignore_ids_hg.append(rid_h)
 
     # ------------------------------------------------------------------ #
     #  Canvas-Events                                                       #
@@ -904,18 +900,30 @@ class TemplateEditor:
             return
         self.drag_start = (e.x, e.y)
 
+    def _canvas_zu_hg(self, x, y):
+        """Wandelt canvas-Pixelkoordinaten (Original) in canvas_hg-Koordinaten um."""
+        ab, ah, s = self.aktuell_b, self.aktuell_h, self.aktuell_skala
+        if self._hg_preview_bbox:
+            bx, by, bw, bh = self._hg_preview_bbox
+            return int((x / s - bx) * (ab / bw)), int((y / s - by) * (ah / bh))
+        return x, y
+
     def _on_motion(self, e):
         if self.farb_modus_aktiv or self.canvas_modus.get() == "klick" or not self.drag_start:
             return
         for rid in self.live_rect_ids:
             self.canvas.delete(rid)
+        for rid in self.live_rect_ids_hg:
             self.canvas_hg.delete(rid)
         self.live_rect_ids.clear()
+        self.live_rect_ids_hg.clear()
         x0, y0 = self.drag_start
         self.live_rect_ids.append(self.canvas.create_rectangle(
             x0, y0, e.x, e.y, outline="#ff4444", width=2, fill="#ff4444", stipple="gray25"))
-        self.live_rect_ids.append(self.canvas_hg.create_rectangle(
-            x0, y0, e.x, e.y, outline="#ff4444", width=2, fill="#ff4444", stipple="gray25"))
+        hx0, hy0 = self._canvas_zu_hg(x0, y0)
+        hx1, hy1 = self._canvas_zu_hg(e.x, e.y)
+        self.live_rect_ids_hg.append(self.canvas_hg.create_rectangle(
+            hx0, hy0, hx1, hy1, outline="#ff4444", width=2, fill="#ff4444", stipple="gray25"))
 
     def _on_release(self, e):
         if self.farb_modus_aktiv or self.canvas_modus.get() == "klick" or not self.drag_start:
@@ -926,8 +934,10 @@ class TemplateEditor:
         if abs(x1 - x0) < 4 or abs(y1 - y0) < 4:
             for rid in self.live_rect_ids:
                 self.canvas.delete(rid)
+            for rid in self.live_rect_ids_hg:
                 self.canvas_hg.delete(rid)
             self.live_rect_ids.clear()
+            self.live_rect_ids_hg.clear()
             return
         ab, ah, s = self.aktuell_b, self.aktuell_h, self.aktuell_skala
         self.ignore_regionen.append((
@@ -935,8 +945,10 @@ class TemplateEditor:
             int(min(ab, max(x0, x1)) / s), int(min(ah, max(y0, y1)) / s)))
         for rid in self.live_rect_ids:
             self.canvas.delete(rid)
+        for rid in self.live_rect_ids_hg:
             self.canvas_hg.delete(rid)
         self.live_rect_ids.clear()
+        self.live_rect_ids_hg.clear()
         self._overlays_zeichnen()
         self._hg_vorschau_aktualisieren()
 
@@ -971,6 +983,11 @@ class TemplateEditor:
                 n_tmp, self.orig_bild_ref, self.hg_var.get(),
                 list(self.ignore_regionen), hintergrund_toleranz=self.hg_tol_var.get(),
                 gruppe="temp_preview")
+
+            # Bbox für bbox-korrekte Darstellung auf canvas_hg lesen und speichern
+            bbox = self.template_engine.templates.get(n_tmp, {}).get("bbox")
+            self._hg_preview_bbox = bbox
+
             preview = self.template_engine.get_mathematik_vorschau(n_tmp)
             if preview:
                 if preview.mode == "RGBA":
@@ -986,6 +1003,27 @@ class TemplateEditor:
                 self.canvas_hg.create_image(0, 0, anchor="nw", image=self.foto_hg_ref, tags="img_hg")
                 self.canvas_hg.image = self.foto_hg_ref
                 self.canvas_hg.tag_lower("img_hg")
+
+                # Ignore-Regionen auf canvas_hg mit bbox-korrekten Koordinaten neu zeichnen
+                for rid in self.ignore_ids_hg:
+                    self.canvas_hg.delete(rid)
+                self.ignore_ids_hg.clear()
+                for (ix0, iy0, ix1, iy1) in self.ignore_regionen:
+                    if bbox:
+                        bx, by, bw, bh = bbox
+                        sx, sy = ab / bw, ah / bh
+                        rx0 = int((ix0 - bx) * sx)
+                        ry0 = int((iy0 - by) * sy)
+                        rx1 = int((ix1 - bx) * sx)
+                        ry1 = int((iy1 - by) * sy)
+                    else:
+                        s = self.aktuell_skala
+                        rx0, ry0 = int(ix0 * s), int(iy0 * s)
+                        rx1, ry1 = int(ix1 * s), int(iy1 * s)
+                    rid_h = self.canvas_hg.create_rectangle(
+                        rx0, ry0, rx1, ry1,
+                        outline="#ff4444", width=2, fill="#ff4444", stipple="gray25")
+                    self.ignore_ids_hg.append(rid_h)
         except Exception as e:
             self.bot._log(f"Vorschau-Fehler: {e}")
         finally:
