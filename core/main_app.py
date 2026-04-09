@@ -71,6 +71,9 @@ class TilesBotApp:
         self.action_engine = ActionEngine()
         self.workflow_engine = WorkflowEngine()
         self.action_engine.verbinden()
+
+        # Alle bekannten State-Variablen aus Template-Settings mit False vorbelegen
+        self._states_initialisieren()
         
         # Screenshots
         self.current_screenshot_np = None
@@ -82,6 +85,13 @@ class TilesBotApp:
         self.matching_proc = None
         self.frame_q = mp.Queue(maxsize=1)
         self.result_q = mp.Queue(maxsize=2)
+
+    def _states_initialisieren(self):
+        """Setzt alle bekannten State-Variablen aus Template-Settings auf False."""
+        for t_settings in self.template_engine.settings.values():
+            for name in t_settings.get("set_states", {}).keys():
+                if name and name not in self.state.game_states:
+                    self.state.game_states[name] = False
 
     def _log(self, msg):
         if self.log_callback: self.log_callback(msg)
