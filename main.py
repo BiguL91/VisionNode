@@ -68,11 +68,19 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         haupt = tk.Frame(self.root, bg="#1e1e1e")
         haupt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        # Links: Vorschau
-        links = tk.Frame(haupt, bg="#2d2d2d", relief=tk.FLAT, bd=1)
-        links.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
-        
-        self.vorschau_canvas = tk.Canvas(links, bg="#1a1a1a", highlightthickness=0)
+        # Spalte 1 (links): Workflows & Schedule
+        spalte_links = tk.Frame(haupt, bg="#1e1e1e", width=260)
+        spalte_links.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 4))
+        spalte_links.pack_propagate(False)
+
+        self._aktiver_template_panel = None
+        self._panel_erstellen(spalte_links, "WORKFLOWS", self._workflows_panel, expand=True)
+
+        # Mitte: Live-Vorschau (flexibel)
+        mitte = tk.Frame(haupt, bg="#2d2d2d", relief=tk.FLAT, bd=1)
+        mitte.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
+
+        self.vorschau_canvas = tk.Canvas(mitte, bg="#1a1a1a", highlightthickness=0)
         self.vorschau_canvas.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
         self.canvas_bild_id = self.vorschau_canvas.create_image(0, 0, anchor="nw", tags="bild")
         self.canvas_status_id = self.vorschau_canvas.create_text(
@@ -80,22 +88,31 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
             font=("Segoe UI", 11), anchor="center", tags="status"
         )
 
-        # Rechts: Panels
-        rechts = tk.Frame(haupt, bg="#1e1e1e", width=340)
-        rechts.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(4, 0))
-        rechts.pack_propagate(False)
+        # Spalte 2 (rechts): Templates, OCR, State, Log
+        spalte_rechts1 = tk.Frame(haupt, bg="#1e1e1e", width=320)
+        spalte_rechts1.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 4))
+        spalte_rechts1.pack_propagate(False)
 
-        self._aktiver_template_panel = None
-
-        self._panel_erstellen(rechts, "WORKFLOWS", self._workflows_panel)
-        self._panel_erstellen(rechts, "WORKFLOW TEMPLATES", self._templates_panel, expand=True)
-        self._panel_erstellen(rechts, "STATE TEMPLATES", self._state_templates_panel)
-        self._template_buttons_bereich(rechts)
-        self._panel_erstellen(rechts, "OCR VARIABLEN", self._ocr_panel, 
+        self._panel_erstellen(spalte_rechts1, "WORKFLOW TEMPLATES", self._templates_panel, expand=True)
+        self._panel_erstellen(spalte_rechts1, "STATE TEMPLATES", self._state_templates_panel)
+        self._template_buttons_bereich(spalte_rechts1)
+        self._panel_erstellen(spalte_rechts1, "OCR VARIABLEN", self._ocr_panel,
                               kopf_extra=self._variablen_kopf_extra)
-        self._panel_erstellen(rechts, "STATE VARIABLEN", self._state_panel,
+        self._panel_erstellen(spalte_rechts1, "STATE VARIABLEN", self._state_panel,
                               kopf_extra=self._state_kopf_extra)
-        self._panel_erstellen(rechts, "LOG", self._log_panel, expand=True)
+        self._panel_erstellen(spalte_rechts1, "LOG", self._log_panel, expand=True)
+
+        # Spalte 3 (ganz rechts): Daten-Listen (Platzhalter)
+        spalte_rechts2 = tk.Frame(haupt, bg="#1e1e1e", width=280)
+        spalte_rechts2.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 0))
+        spalte_rechts2.pack_propagate(False)
+
+        platzhalter = tk.Frame(spalte_rechts2, bg="#2d2d2d", relief=tk.FLAT, bd=1)
+        platzhalter.pack(fill=tk.BOTH, expand=True)
+        tk.Label(platzhalter, text="DATEN-LISTEN", bg="#252525", fg="#888888",
+                 font=("Segoe UI", 8, "bold"), anchor="w", padx=8, pady=4).pack(fill=tk.X)
+        tk.Label(platzhalter, text="(coming soon)", bg="#2d2d2d", fg="#333333",
+                 font=("Segoe UI", 9)).pack(expand=True)
 
         # Unten: Buttons
         leiste = tk.Frame(self.root, bg="#252525", height=45)

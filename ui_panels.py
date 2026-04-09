@@ -8,14 +8,20 @@ from ui.panels.log_panel import LogPanel
 
 class PanelsMixin:
     def _panel_erstellen(self, parent, titel, inhalt_func, expand=False, kopf_extra=None):
-        """Erstellt ein beschriftetes Panel."""
+        """Erstellt ein beschriftetes Panel mit Collapse-Funktion."""
         rahmen = tk.Frame(parent, bg="#2d2d2d", relief=tk.FLAT, bd=1)
         rahmen.pack(fill=tk.BOTH, expand=expand, pady=(0, 4))
 
         kopf_frame = tk.Frame(rahmen, bg="#252525")
         kopf_frame.pack(fill=tk.X)
+
+        # Pfeil-Button zum Ein-/Ausklappen
+        collapse_btn = tk.Label(kopf_frame, text="▼", bg="#252525", fg="#555555",
+                                font=("Segoe UI", 8), cursor="hand2", padx=4)
+        collapse_btn.pack(side=tk.LEFT, pady=4)
+
         tk.Label(kopf_frame, text=titel, bg="#252525", fg="#888888",
-                 font=("Segoe UI", 8, "bold"), anchor="w", padx=8, pady=4).pack(side=tk.LEFT)
+                 font=("Segoe UI", 8, "bold"), anchor="w", padx=4, pady=4).pack(side=tk.LEFT)
         if kopf_extra:
             kopf_extra(kopf_frame)
 
@@ -23,6 +29,18 @@ class PanelsMixin:
         inhalt.pack(fill=tk.BOTH, expand=expand, padx=6, pady=4)
 
         inhalt_func(inhalt)
+
+        def _toggle(event=None):
+            if inhalt.winfo_ismapped():
+                inhalt.pack_forget()
+                rahmen.pack_configure(expand=False)
+                collapse_btn.config(text="▶")
+            else:
+                inhalt.pack(fill=tk.BOTH, expand=expand, padx=6, pady=4)
+                rahmen.pack_configure(expand=expand)
+                collapse_btn.config(text="▼")
+
+        collapse_btn.bind("<Button-1>", _toggle)
 
     def _workflows_panel(self, parent):
         self.workflow_panel = WorkflowPanel(parent, self)
