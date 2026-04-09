@@ -34,9 +34,16 @@ def datenbank_initialisieren():
                 typ       TEXT NOT NULL DEFAULT 'zahl',
                 ocr_var   TEXT,
                 formel    TEXT,
+                format    TEXT NOT NULL DEFAULT 'standard',
                 position  INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # format-Spalte nachrüsten falls DB schon existiert
+        try:
+            conn.execute("ALTER TABLE spalten ADD COLUMN format TEXT NOT NULL DEFAULT 'standard'")
+            conn.commit()
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS zeilen (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,9 +158,12 @@ def zeile_hinzufuegen(listen_id, name):
 
 
 def zeile_umbenennen(zeile_id, neuer_name):
-    with _verbinden() as conn:
-        conn.execute("UPDATE zeilen SET name=? WHERE id=?", (neuer_name, zeile_id))
-        conn.commit()
+    try:
+        with _verbinden() as conn:
+            conn.execute("UPDATE zeilen SET name=? WHERE id=?", (neuer_name, zeile_id))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        pass
 
 
 def zeile_loeschen(zeile_id):
@@ -180,32 +190,37 @@ def zeilen_der_liste(listen_id):
 
 # ── Spalten ─────────────────────────────────────────────────────────────────
 
-def spalte_hinzufuegen(listen_id, name, typ="zahl", ocr_var=None, formel=None):
+def spalte_hinzufuegen(listen_id, name, typ="zahl", ocr_var=None, formel=None, format="standard"):
     """Fügt eine Spalte zur Liste hinzu. Gibt die Spalten-ID zurück."""
     with _verbinden() as conn:
         pos = conn.execute(
             "SELECT COUNT(*) FROM spalten WHERE listen_id=?", (listen_id,)
         ).fetchone()[0]
         cur = conn.execute(
-            "INSERT INTO spalten (listen_id, name, typ, ocr_var, formel, position) VALUES (?,?,?,?,?,?)",
-            (listen_id, name, typ, ocr_var, formel, pos)
+            "INSERT INTO spalten (listen_id, name, typ, ocr_var, formel, format, position) VALUES (?,?,?,?,?,?,?)",
+            (listen_id, name, typ, ocr_var, formel, format, pos)
         )
         conn.commit()
         return cur.lastrowid
 
 
-def spalte_aktualisieren(spalte_id, name=None, typ=None, ocr_var=None, formel=None):
+def spalte_aktualisieren(spalte_id, name=None, typ=None, ocr_var=None, formel=None, format=None):
     """Aktualisiert einzelne Felder einer Spalte."""
-    with _verbinden() as conn:
-        if name is not None:
-            conn.execute("UPDATE spalten SET name=? WHERE id=?", (name, spalte_id))
-        if typ is not None:
-            conn.execute("UPDATE spalten SET typ=? WHERE id=?", (typ, spalte_id))
-        if ocr_var is not None:
-            conn.execute("UPDATE spalten SET ocr_var=? WHERE id=?", (ocr_var, spalte_id))
-        if formel is not None:
-            conn.execute("UPDATE spalten SET formel=? WHERE id=?", (formel, spalte_id))
-        conn.commit()
+    try:
+        with _verbinden() as conn:
+            if name is not None:
+                conn.execute("UPDATE spalten SET name=? WHERE id=?", (name, spalte_id))
+            if typ is not None:
+                conn.execute("UPDATE spalten SET typ=? WHERE id=?", (typ, spalte_id))
+            if ocr_var is not None:
+                conn.execute("UPDATE spalten SET ocr_var=? WHERE id=?", (ocr_var, spalte_id))
+            if formel is not None:
+                conn.execute("UPDATE spalten SET formel=? WHERE id=?", (formel, spalte_id))
+            if format is not None:
+                conn.execute("UPDATE spalten SET format=? WHERE id=?", (format, spalte_id))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        pass
 
 
 def spalte_loeschen(spalte_id):
@@ -315,12 +330,12 @@ def cache_schreiben(listen_id, var_name, wert):
 
 
 def cache_lesen(listen_id):
-    """Gibt alle gecachten Werte einer Liste als dict zurück: var_name → wert."""
+    """Gibt alle gecachten Werte einer Liste als dict zurück: var_name → (wert, zeit)."""
     with _verbinden() as conn:
         rows = conn.execute(
-            "SELECT var_name, wert FROM werte_cache WHERE listen_id=?", (listen_id,)
+            "SELECT var_name, wert, gespeichert_am FROM werte_cache WHERE listen_id=?", (listen_id,)
         ).fetchall()
-    return {r["var_name"]: r["wert"] for r in rows}
+    return {r["var_name"]: (r["wert"], r["gespeichert_am"]) for r in rows}
 
 
 # ── Berechnungen ────────────────────────────────────────────────────────────
@@ -339,15 +354,18 @@ def berechnung_hinzufuegen(listen_id, name, typ="ausgabe"):
 
 def berechnung_aktualisieren(berech_id, name=None, formel_json=None, typ=None):
     import json
-    with _verbinden() as conn:
-        if name is not None:
-            conn.execute("UPDATE berechnungen SET name=? WHERE id=?", (name, berech_id))
-        if formel_json is not None:
-            conn.execute("UPDATE berechnungen SET formel_json=? WHERE id=?",
-                         (json.dumps(formel_json), berech_id))
-        if typ is not None:
-            conn.execute("UPDATE berechnungen SET typ=? WHERE id=?", (typ, berech_id))
-        conn.commit()
+    try:
+        with _verbinden() as conn:
+            if name is not None:
+                conn.execute("UPDATE berechnungen SET name=? WHERE id=?", (name, berech_id))
+            if formel_json is not None:
+                conn.execute("UPDATE berechnungen SET formel_json=? WHERE id=?",
+                             (json.dumps(formel_json), berech_id))
+            if typ is not None:
+                conn.execute("UPDATE berechnungen SET typ=? WHERE id=?", (typ, berech_id))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        pass
 
 
 def berechnung_loeschen(berech_id):
@@ -377,10 +395,14 @@ def berechnungen_der_liste(listen_id):
 def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
     """
     Wertet eine Formel aus.
+    verfuegbare_werte: dict {name: (wert, zeit)} oder {name: wert}
     Gibt den Ergebnis-String zurück oder "?" bei Fehlern/fehlenden Variablen.
     """
     if not formel_json:
         return "—"
+
+    # Jetzt = Zeit für elapsed-Berechnung
+    jetzt = time.time()
 
     ausdruck_teile = []
     for teil in formel_json:
@@ -393,9 +415,16 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
             elif var_name == "":
                 return "?"
             else:
-                wert = verfuegbare_werte.get(var_name)
-                # Strikte Prüfung: Wenn eine Variable fehlt oder ungültig ist,
-                # kann die gesamte Formel nicht berechnet werden.
+                entry = verfuegbare_werte.get(var_name)
+                if entry is None:
+                    return "?"
+                
+                # Support für (wert, zeit) Tupel oder reiner wert
+                if isinstance(entry, (tuple, list)):
+                    wert, ts = entry
+                else:
+                    wert, ts = entry, jetzt
+                
                 if str(wert) in ("", "—", "?") or wert is None:
                     return "?"
                 try:
@@ -409,8 +438,25 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
         return "?"
 
     ausdruck = " ".join(ausdruck_teile)
+    
+    # Kontext für eval
+    kontext = {"__builtins__": {}}
+    
+    # elapsed_h berechnen (Basis: Das neuste Update der beteiligten Variablen)
+    ts_liste = [v[1] for k, v in verfuegbare_werte.items() if isinstance(v, (tuple, list)) and v[1]]
+    if ts_liste:
+        ts_basis = max(ts_liste)
+        elapsed_s = jetzt - ts_basis
+        kontext["elapsed_h"] = elapsed_s / 3600.0
+        kontext["elapsed_s"] = elapsed_s
+        kontext["elapsed_m"] = elapsed_s / 60.0
+    else:
+        kontext["elapsed_h"] = 0
+        kontext["elapsed_s"] = 0
+        kontext["elapsed_m"] = 0
+
     try:
-        ergebnis = eval(ausdruck, {"__builtins__": {}}, {})  # noqa: S307
+        ergebnis = eval(ausdruck, kontext, {})  # noqa: S307
         if ergebnis == int(ergebnis):
             return str(int(ergebnis))
         return str(round(ergebnis, 2))
@@ -432,14 +478,17 @@ def transformation_hinzufuegen(listen_id, name, ocr_var, typ="einheit_zu_zahl"):
 
 
 def transformation_aktualisieren(trans_id, name=None, ocr_var=None, typ=None):
-    with _verbinden() as conn:
-        if name is not None:
-            conn.execute("UPDATE transformationen SET name=? WHERE id=?", (name, trans_id))
-        if ocr_var is not None:
-            conn.execute("UPDATE transformationen SET ocr_var=? WHERE id=?", (ocr_var, trans_id))
-        if typ is not None:
-            conn.execute("UPDATE transformationen SET typ=? WHERE id=?", (typ, trans_id))
-        conn.commit()
+    try:
+        with _verbinden() as conn:
+            if name is not None:
+                conn.execute("UPDATE transformationen SET name=? WHERE id=?", (name, trans_id))
+            if ocr_var is not None:
+                conn.execute("UPDATE transformationen SET ocr_var=? WHERE id=?", (ocr_var, trans_id))
+            if typ is not None:
+                conn.execute("UPDATE transformationen SET typ=? WHERE id=?", (typ, trans_id))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        pass
 
 
 def transformation_loeschen(trans_id):

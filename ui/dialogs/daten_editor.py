@@ -1,4 +1,5 @@
 import tkinter as tk
+import time
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
     zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
@@ -239,8 +240,10 @@ class DatenListeEditor:
             self._berech_ergebnis_aktualisieren(fl, el)
             for bb in self._berechnungen:
                 if bb["id"] == bid:
-                    bb["name"] = nv.get()
+                    cur_name = nv.get()
+                    bb["name"] = cur_name
                     bb["formel_json"] = fl
+                    berechnung_aktualisieren(bid, name=cur_name, formel_json=fl)
                     break
 
         def _name_geaendert(*_, bid=b["id"], nv=name_var):
@@ -372,13 +375,17 @@ class DatenListeEditor:
             ocr_roh.update(self.bot.app.state.template_ocr_values)
 
         # 1. Alles aus Cache laden als Basis
+        self._db_cache = cache_lesen(self.liste["id"])
         werte = {k: v for k, v in self._db_cache.items()}
+        jetzt = time.time()
 
         # 2. Transformationen ausführen (überschreibt Cache bei Live-Daten)
         for t in self._transformationen:
             rohwert = ocr_roh.get(t["ocr_var"])
             if rohwert not in (None, "", "—"):
-                werte[t["name"]] = transformation_anwenden(rohwert, t["typ"])
+                ausgabe = transformation_anwenden(rohwert, t["typ"])
+                if ausgabe not in (None, "", "—", "?"):
+                    werte[t["name"]] = (ausgabe, jetzt)
 
         # 3. Berechnungen ausführen (Zwischen zuerst, dann Rest)
         berech_sortiert = (
@@ -388,7 +395,7 @@ class DatenListeEditor:
         for b in berech_sortiert:
             ergebnis = berechnung_auswerten(b["formel_json"], werte, self.liste.get("update_intervall", 30))
             if ergebnis not in ("?", "—") and b["formel_json"]:
-                werte[b["name"]] = ergebnis
+                werte[b["name"]] = (ergebnis, jetzt)
 
         # 4. Das eigentliche Ergebnis für DIESE Formel anzeigen
         ergebnis = berechnung_auswerten(formel, werte, self.liste.get("update_intervall", 30))
@@ -448,7 +455,9 @@ class DatenListeEditor:
             def _on_name_change(*_, zid=z["id"], nv=name_var):
                 for zz in self._zeilen:
                     if zz["id"] == zid:
-                        zz["name"] = nv.get()
+                        neuer_name = nv.get()
+                        zz["name"] = neuer_name
+                        zeile_umbenennen(zid, neuer_name)
                         break
 
             name_var.trace_add("write", _on_name_change)
@@ -474,7 +483,7 @@ class DatenListeEditor:
         # Header
         header = tk.Frame(parent, bg="#1e1e1e")
         header.pack(fill=tk.X, pady=(4, 2))
-        for text, breite in [("Name", 15), ("Typ", 10), ("OCR-Variable", 20), ("", 3)]:
+        for text, breite in [("Name", 13), ("Typ", 8), ("OCR-Variable", 18), ("Format", 10), ("", 3)]:
             tk.Label(header, text=text, bg="#1e1e1e", fg="#666666",
                      font=("Segoe UI", 8, "bold"), width=breite, anchor="w",
                      padx=4, pady=3).pack(side=tk.LEFT)
@@ -534,19 +543,35 @@ class DatenListeEditor:
         ocr_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
         ocr_menu.pack(side=tk.LEFT, padx=2)
 
+        format_var = tk.StringVar(value=sp.get("format") or "standard")
+        format_options = ["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)"]
+        format_menu = tk.OptionMenu(zeile, format_var, *format_options)
+        format_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
+                           relief=tk.FLAT, bd=0, width=10, highlightthickness=0,
+                           activebackground="#3a3a3a", cursor="hand2")
+        format_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
+        format_menu.pack(side=tk.LEFT, padx=2)
+
         tk.Button(zeile, text="✕", bg="#1a1a1a", fg="#555555",
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=4, cursor="hand2",
                   command=lambda sid=sp["id"]: self._spalte_loeschen(sid)).pack(side=tk.LEFT, padx=(4, 2))
 
-        def _on_aenderung(*_, sid=sp["id"], nv=name_var, tv=typ_var, ov=ocr_var):
+        def _on_aenderung(*_, sid=sp["id"], nv=name_var, tv=typ_var, ov=ocr_var, fv=format_var):
+            neuer_name = nv.get().strip()
+            neuer_typ = tv.get()
+            neue_ocr = ov.get() or None
+            neues_format = fv.get()
             for s in self._spalten:
                 if s["id"] == sid:
-                    s["name"] = nv.get()
-                    s["typ"] = tv.get()
-                    s["ocr_var"] = ov.get() or None
+                    s["name"] = neuer_name
+                    s["typ"] = neuer_typ
+                    s["ocr_var"] = neue_ocr
+                    s["format"] = neues_format
+                    # Sofort in DB schreiben
+                    spalte_aktualisieren(sid, name=neuer_name, typ=neuer_typ, ocr_var=neue_ocr, format=neues_format)
                     break
 
-        for var in (name_var, typ_var, ocr_var):
+        for var in (name_var, typ_var, ocr_var, format_var):
             var.trace_add("write", _on_aenderung)
 
     def _spalte_hinzufuegen(self):
@@ -654,7 +679,8 @@ class DatenListeEditor:
             if rohwert not in (None, "", "—"):
                 ausgabe = transformation_anwenden(rohwert, "einheit_zu_zahl")
             else:
-                ausgabe = self._db_cache.get(t_name, "—")
+                entry = self._db_cache.get(t_name, ("—", 0))
+                ausgabe = entry[0]
             
             al.config(text=str(ausgabe))
 
@@ -720,11 +746,7 @@ class DatenListeEditor:
         except ValueError:
             pass
 
-        # Zeilen-Namen in DB schreiben
-        for z in self._zeilen:
-            zeile_umbenennen(z["id"], z["name"])
-
-        # Umbenennungs-Map erstellen: alter Name → neuer Name
+        # Umbenennungs-Map erstellen: alter Name → neuer Name (für Formel-Update)
         umbenennungen = {}
         for t in self._transformationen:
             alter = self._orig_transform_namen.get(t["id"])
@@ -738,29 +760,19 @@ class DatenListeEditor:
         # Referenzen in Berechnungs-Formeln aktualisieren
         if umbenennungen:
             for b in self._berechnungen:
+                geaendert = False
                 for teil in b["formel_json"]:
                     if "var" in teil and teil["var"] in umbenennungen:
                         teil["var"] = umbenennungen[teil["var"]]
-
-        # Transformationen in DB schreiben
-        for t in self._transformationen:
-            transformation_aktualisieren(t["id"], name=t["name"], ocr_var=t["ocr_var"])
-
-        # Berechnungen in DB schreiben
-        for b in self._berechnungen:
-            berechnung_aktualisieren(b["id"], name=b["name"],
-                                     formel_json=b["formel_json"], typ=b.get("typ", "ausgabe"))
+                        geaendert = True
+                if geaendert:
+                    berechnung_aktualisieren(b["id"], formel_json=b["formel_json"])
 
         # Spalten: ocr_var ebenfalls umbenennen falls betroffen
         for sp in self._spalten:
             if sp.get("ocr_var") in umbenennungen:
                 sp["ocr_var"] = umbenennungen[sp["ocr_var"]]
-            spalte_aktualisieren(
-                sp["id"],
-                name=sp["name"],
-                typ=sp["typ"],
-                ocr_var=sp.get("ocr_var")
-            )
+                spalte_aktualisieren(sp["id"], ocr_var=sp["ocr_var"])
 
         # Cache-Keys umbenennen
         if umbenennungen:

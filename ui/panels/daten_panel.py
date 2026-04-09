@@ -1,4 +1,5 @@
 import tkinter as tk
+import time
 from core.daten_manager import (
     datenbank_initialisieren, alle_listen, spalten_der_liste,
     zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
@@ -140,7 +141,7 @@ class DatenPanel:
         berechnungen = berechnungen_der_liste(l["id"])
 
         # 1. Gedächtnis laden: Alles aus Cache als Basis
-        db_cache = cache_lesen(l["id"])
+        db_cache = cache_lesen(l["id"]) # var_name -> (wert, zeit)
         ocr_werte = {k: v for k, v in db_cache.items()}
 
         # 2. Aktuelle OCR-Rohwerte (Live)
@@ -150,21 +151,19 @@ class DatenPanel:
             ocr_roh_live.update(self.bot.app.state.template_ocr_values)
 
         # 3. Live-OCR erzwingen (Reset auf '—' bei Wegfall)
-        # Wir sammeln Namen, die von Transformern/Berechnungen erzeugt werden
         ausgabe_namen = {t["name"] for t in transformationen}
         ausgabe_namen.update({b["name"] for b in berechnungen})
-
-        # Wir sammeln alle Namen von möglichen OCR-Quellen
         alle_ocr_namen = set(self.bot.ocr_engine.regionen.keys())
         alle_ocr_namen.update(self.bot.ocr_engine.template_ocr_konfigurationen().keys())
 
-        # Nur für diese REINEN OCR-Variablen erzwingen wir den Live-Status
-        # Aber nur, wenn sie NICHT auch als Transformer-Ausgabe dienen
+        jetzt = time.time()
         for name in alle_ocr_namen:
-            if name in ausgabe_namen:
-                continue
+            if name in ausgabe_namen: continue
             val = ocr_roh_live.get(name)
-            ocr_werte[name] = val if val not in (None, "") else "—"
+            if val not in (None, ""):
+                ocr_werte[name] = (val, jetzt)
+            elif name not in ocr_werte:
+                ocr_werte[name] = ("—", jetzt)
 
         # Debug-Log Setting
         log_debug = self.bot.app.settings.get("log_daten_berechnungen", False)
@@ -177,14 +176,14 @@ class DatenPanel:
                 wert = transformation_anwenden(rohwert, t["typ"])
                 if wert not in ("", "—", "?"):
                     # Logging bei Änderung
-                    if log_debug and str(wert) != str(db_cache.get(t["name"])):
+                    alt_wert = db_cache.get(t["name"], ("—", 0))[0]
+                    if log_debug and str(wert) != str(alt_wert):
                         self.bot.app._log(f"[Transform] {t['name']}: {rohwert} -> {wert}")
                     
-                    ocr_werte[t["name"]] = wert
+                    ocr_werte[t["name"]] = (wert, jetzt)
                     neue_cache_werte[t["name"]] = wert
             else:
                 # Transformer MERKT sich den letzten Stand aus dem Cache
-                # (Wert ist durch Schritt 1 bereits in ocr_werte drin)
                 pass
 
         # 5. Berechnungen anwenden (Zwischenberechnungen zuerst)
@@ -195,14 +194,13 @@ class DatenPanel:
         for b in berech_sortiert:
             ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, l["update_intervall"])
             if ergebnis in ("?", "—") or not b["formel_json"]:
-                # Fallback auf Cache (schon in ocr_werte drin)
                 pass
             else:
-                # Logging bei Änderung
-                if log_debug and str(ergebnis) != str(db_cache.get(b["name"])):
+                alt_wert = db_cache.get(b["name"], ("—", 0))[0]
+                if log_debug and str(ergebnis) != str(alt_wert):
                     self.bot.app._log(f"[Berechnung] {b['name']}: {ergebnis}")
                 
-                ocr_werte[b["name"]] = ergebnis
+                ocr_werte[b["name"]] = (ergebnis, jetzt)
                 neue_cache_werte[b["name"]] = ergebnis
 
         # Neue Werte in Cache schreiben
@@ -245,14 +243,53 @@ class DatenPanel:
 
             for sp in spalten:
                 ocr_var = sp.get("ocr_var")
-                wert = ocr_werte.get(ocr_var, "—") if ocr_var else "—"
+                # Placeholder Support: {row} durch Zeilenname ersetzen
+                if ocr_var and "{row}" in ocr_var:
+                    ocr_var = ocr_var.replace("{row}", z["name"])
+                
+                entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
+                wert = entry[0]
+                
+                # Formatierung anwenden
+                format_typ = sp.get("format", "standard")
+                anzeige_wert = self._format_wert(wert, format_typ)
                 
                 # Farbe: Berechnungen in Blau, Transformationen/OCR in Grau
                 farbe = "#4fc3f7" if ocr_var in berech_namen else "#cccccc"
 
-                tk.Label(zeile_row, text=wert, bg=hg, fg=farbe,
+                tk.Label(zeile_row, text=anzeige_wert, bg=hg, fg=farbe,
                          font=("Consolas", 8), padx=6, pady=2, anchor="e",
                          width=8).pack(side=tk.LEFT)
+
+    def _format_wert(self, wert, format_typ):
+        """Formatiert einen Wert für die UI-Anzeige."""
+        if wert in (None, "", "—", "?"):
+            return str(wert)
+        
+        try:
+            num = float(str(wert).replace(",", "."))
+        except (ValueError, TypeError):
+            return str(wert)
+
+        if format_typ == "K/M/B":
+            if abs(num) >= 10**9:
+                return f"{num / 10**9:.1f}B"
+            if abs(num) >= 10**6:
+                return f"{num / 10**6:.1f}M"
+            if abs(num) >= 10**3:
+                return f"{num / 10**3:.1f}K"
+            return str(round(num, 1))
+        
+        if format_typ == "0 (Ganzzahl)":
+            return str(int(round(num)))
+        
+        if format_typ == ".2 (2 Nachkomma)":
+            return f"{num:.2f}"
+        
+        # Standard: Wenn Ganzzahl dann ohne .0, sonst 1 Nachkommastelle
+        if num == int(num):
+            return str(int(num))
+        return str(round(num, 1))
 
     def _scan_label_aktualisieren(self, lbl, listen_id):
         pass  # Scan-Timestamp entfällt — Werte kommen direkt aus OCR-State
