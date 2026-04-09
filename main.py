@@ -102,17 +102,12 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
                               kopf_extra=self._state_kopf_extra)
         self._panel_erstellen(spalte_rechts1, "LOG", self._log_panel, expand=True)
 
-        # Spalte 3 (ganz rechts): Daten-Listen (Platzhalter)
+        # Spalte 3 (ganz rechts): Daten-Listen
         spalte_rechts2 = tk.Frame(haupt, bg="#1e1e1e", width=280)
         spalte_rechts2.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 0))
         spalte_rechts2.pack_propagate(False)
 
-        platzhalter = tk.Frame(spalte_rechts2, bg="#2d2d2d", relief=tk.FLAT, bd=1)
-        platzhalter.pack(fill=tk.BOTH, expand=True)
-        tk.Label(platzhalter, text="DATEN-LISTEN", bg="#252525", fg="#888888",
-                 font=("Segoe UI", 8, "bold"), anchor="w", padx=8, pady=4).pack(fill=tk.X)
-        tk.Label(platzhalter, text="(coming soon)", bg="#2d2d2d", fg="#333333",
-                 font=("Segoe UI", 9)).pack(expand=True)
+        self._panel_erstellen(spalte_rechts2, "DATEN-LISTEN", self._daten_panel, expand=True)
 
         # Unten: Buttons
         leiste = tk.Frame(self.root, bg="#252525", height=45)

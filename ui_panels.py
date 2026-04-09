@@ -5,6 +5,7 @@ from ui.panels.workflow_panel import WorkflowPanel
 from ui.panels.variable_panel import VariablePanel as OCRPanel
 from ui.panels.state_panel import StatePanel
 from ui.panels.log_panel import LogPanel
+from ui.panels.daten_panel import DatenPanel
 
 class PanelsMixin:
     def _panel_erstellen(self, parent, titel, inhalt_func, expand=False, kopf_extra=None):
@@ -161,6 +162,9 @@ class PanelsMixin:
 
     def _state_panel(self, parent):
         self.state_panel = StatePanel(parent, self)
+
+    def _daten_panel(self, parent):
+        self.daten_panel = DatenPanel(parent, self)
 
     def _log_panel(self, parent):
         self.log_panel_obj = LogPanel(parent)
