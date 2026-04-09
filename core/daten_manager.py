@@ -13,6 +13,7 @@ def _verbinden():
     """Öffnet eine Verbindung zur SQLite-Datenbank."""
     conn = sqlite3.connect(os.path.abspath(DB_PFAD))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -122,6 +123,42 @@ def zuordnungen_der_liste(listen_id):
             "SELECT * FROM zuordnungen WHERE listen_id=?", (listen_id,)
         ).fetchall()
     return {(r["zeile_name"], r["spalte_id"]): r["ocr_var"] for r in rows}
+
+
+def variable_umbenennen(listen_id, alter_name, neuer_name):
+    """
+    Benennt eine Variable in allen Referenzen einer Liste um:
+    - Berechnungs-Formeln (formel_json)
+    - Zuordnungen (ocr_var)
+    """
+    if not alter_name or alter_name == neuer_name:
+        return
+    # Berechnungs-Formeln aktualisieren
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT id, formel_json FROM berechnungen WHERE listen_id=?", (listen_id,)
+        ).fetchall()
+        for row in rows:
+            try:
+                formel = json.loads(row["formel_json"])
+                geaendert = False
+                for teil in formel:
+                    if "var" in teil and teil["var"] == alter_name:
+                        teil["var"] = neuer_name
+                        geaendert = True
+                if geaendert:
+                    conn.execute(
+                        "UPDATE berechnungen SET formel_json=? WHERE id=?",
+                        (json.dumps(formel), row["id"])
+                    )
+            except Exception:
+                pass
+        # Zuordnungen aktualisieren
+        conn.execute(
+            "UPDATE zuordnungen SET ocr_var=? WHERE listen_id=? AND ocr_var=?",
+            (neuer_name, listen_id, alter_name)
+        )
+        conn.commit()
 
 
 # ── Listen ──────────────────────────────────────────────────────────────────

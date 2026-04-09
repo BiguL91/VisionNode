@@ -9,7 +9,7 @@ from core.daten_manager import (
     transformation_aktualisieren, transformation_loeschen, transformation_anwenden,
     berechnungen_der_liste, berechnung_hinzufuegen, berechnung_aktualisieren,
     berechnung_loeschen, berechnung_auswerten, cache_lesen,
-    zuordnungen_der_liste, zuordnung_speichern
+    zuordnungen_der_liste, zuordnung_speichern, variable_umbenennen
 )
 
 
@@ -34,6 +34,77 @@ class DatenListeEditor:
         self._orig_berech_namen    = {b["id"]: b["name"] for b in self._berechnungen}
 
         self._setup_fenster()
+
+    def _name_validieren(self, neuer, alter, alle_namen):
+        """Prüft ob ein Name leer oder bereits vergeben ist. Gibt Fehlermeldung zurück oder None."""
+        if not neuer:
+            return "Name darf nicht leer sein."
+        if neuer != alter and neuer in alle_namen:
+            return f'Name "{neuer}" existiert bereits.'
+        return None
+
+    def _hat_duplikat(self, namen):
+        """Gibt ersten doppelten Namen zurück, oder None."""
+        gesehen = set()
+        for n in namen:
+            if n in gesehen:
+                return n
+            gesehen.add(n)
+        return None
+
+    def _aktuellen_tab_sichern(self):
+        """Speichert alle Namensänderungen des aktiven Tabs in die DB. Gibt False zurück bei Fehler."""
+        from tkinter import messagebox
+        tab = self._aktiver_tab.get()
+
+        if tab == "transform":
+            duplikat = self._hat_duplikat([t["name"].strip() for t in self._transformationen])
+            if duplikat:
+                messagebox.showerror("Fehler", f'Doppelter Name: "{duplikat}"', parent=self.fenster)
+                return False
+            for t in self._transformationen:
+                alter = self._orig_transform_namen.get(t["id"], t["name"])
+                neuer = t["name"].strip()
+                if not neuer:
+                    continue
+                if alter != neuer:
+                    transformation_aktualisieren(t["id"], name=neuer)
+                    variable_umbenennen(self.liste["id"], alter, neuer)
+                    self._orig_transform_namen[t["id"]] = neuer
+
+        elif tab == "berechnung":
+            duplikat = self._hat_duplikat([b["name"].strip() for b in self._berechnungen])
+            if duplikat:
+                messagebox.showerror("Fehler", f'Doppelter Name: "{duplikat}"', parent=self.fenster)
+                return False
+            for b in self._berechnungen:
+                alter = self._orig_berech_namen.get(b["id"], b["name"])
+                neuer = b["name"].strip()
+                if not neuer:
+                    continue
+                if alter != neuer:
+                    berechnung_aktualisieren(b["id"], name=neuer)
+                    variable_umbenennen(self.liste["id"], alter, neuer)
+                    self._orig_berech_namen[b["id"]] = neuer
+
+        elif tab == "struktur":
+            duplikat = self._hat_duplikat([z["name"].strip() for z in self._zeilen])
+            if duplikat:
+                messagebox.showerror("Fehler", f'Doppelter Zeilen-Name: "{duplikat}"', parent=self.fenster)
+                return False
+            for z in self._zeilen:
+                if z["name"].strip():
+                    zeile_umbenennen(z["id"], z["name"].strip())
+
+            duplikat = self._hat_duplikat([s["name"].strip() for s in self._spalten])
+            if duplikat:
+                messagebox.showerror("Fehler", f'Doppelter Spalten-Name: "{duplikat}"', parent=self.fenster)
+                return False
+            for s in self._spalten:
+                if s["name"].strip():
+                    spalte_aktualisieren(s["id"], name=s["name"].strip())
+
+        return True
 
     def _ocr_vars_laden(self):
         """Globale OCR-Regionen + Template-OCR-Variablen sammeln."""
@@ -128,6 +199,8 @@ class DatenListeEditor:
         self._tab_wechseln("transform")
 
     def _tab_wechseln(self, key):
+        if not self._aktuellen_tab_sichern():
+            return  # Tab-Wechsel abbrechen bei Duplikat-Fehler
         self._aktiver_tab.set(key)
         for k, btn in self._tab_btns.items():
             if k == key:
@@ -141,14 +214,17 @@ class DatenListeEditor:
         if key == "transform":
             self._transform_tab_aufbauen(self._tab_inhalt)
         elif key == "berechnung":
-            # Transformationen neu laden damit neue Einträge im Dropdown erscheinen
+            # Alles aus DB neu laden — stellt sicher dass Umbennungen ankommen
             self._transformationen = transformationen_der_liste(self.liste["id"])
             self._orig_transform_namen = {t["id"]: t["name"] for t in self._transformationen}
+            self._berechnungen = berechnungen_der_liste(self.liste["id"])
+            self._orig_berech_namen = {b["id"]: b["name"] for b in self._berechnungen}
             self._berechnung_tab_aufbauen(self._tab_inhalt)
         elif key == "struktur":
+            self._zeilen = zeilen_der_liste(self.liste["id"])
+            self._spalten = spalten_der_liste(self.liste["id"])
             self._struktur_tab_aufbauen(self._tab_inhalt)
         elif key == "mapping":
-            # Transformationen + Berechnungen neu laden für Mapping-Optionen
             self._transformationen = transformationen_der_liste(self.liste["id"])
             self._berechnungen = berechnungen_der_liste(self.liste["id"])
             self._mapping_tab_aufbauen(self._tab_inhalt)
@@ -224,9 +300,10 @@ class DatenListeEditor:
         tk.Label(kopf, text="Name:", bg="#1a1a1a", fg="#888888",
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
         name_var = tk.StringVar(value=b["name"])
-        tk.Entry(kopf, textvariable=name_var, bg="#252525", fg="#cccccc",
+        name_entry = tk.Entry(kopf, textvariable=name_var, bg="#252525", fg="#cccccc",
                  insertbackground="white", font=("Segoe UI", 8), relief=tk.FLAT,
-                 bd=3, width=20).pack(side=tk.LEFT, padx=(0, 8))
+                 bd=3, width=20)
+        name_entry.pack(side=tk.LEFT, padx=(0, 8))
 
         ergebnis_lbl = tk.Label(kopf, text="= —", bg="#1a1a1a", fg="#4fc3f7",
                                 font=("Consolas", 8))
@@ -257,16 +334,37 @@ class DatenListeEditor:
                     berechnung_aktualisieren(bid, name=cur_name, formel_json=fl)
                     break
 
-        def _name_geaendert(*_, bid=b["id"], nv=name_var):
-            neuer_name = nv.get().strip()
+        def _on_b_name(*_, bid=b["id"], nv=name_var):
             for bb in self._berechnungen:
                 if bb["id"] == bid:
-                    bb["name"] = neuer_name
-                    berechnung_aktualisieren(bid, name=neuer_name)
-                    self._orig_berech_namen[bid] = neuer_name
-                    break
+                    bb["name"] = nv.get(); break
+        name_var.trace_add("write", _on_b_name)
 
-        name_var.trace_add("write", _name_geaendert)
+        def _b_name_speichern(_event=None, bid=b["id"], nv=name_var):
+            neuer = nv.get().strip()
+            alter = self._orig_berech_namen.get(bid, "")
+            andere = [self._orig_berech_namen.get(bb["id"], bb["name"])
+                      for bb in self._berechnungen if bb["id"] != bid]
+            fehler = self._name_validieren(neuer, alter, andere)
+            if fehler:
+                from tkinter import messagebox
+                messagebox.showerror("Fehler", fehler, parent=self.fenster)
+                nv.set(alter)
+                return
+            if alter != neuer:
+                berechnung_aktualisieren(bid, name=neuer)
+                variable_umbenennen(self.liste["id"], alter, neuer)
+                for other in self._berechnungen:
+                    if other["id"] == bid:
+                        continue
+                    for teil in other["formel_json"]:
+                        if "var" in teil and teil["var"] == alter:
+                            teil["var"] = neuer
+                self._orig_berech_namen[bid] = neuer
+
+        name_entry.bind("<Return>", _b_name_speichern)
+        name_entry.bind("<Tab>", _b_name_speichern)
+        name_entry.bind("<FocusOut>", _b_name_speichern)
         _formel_neu_zeichnen()
 
     def _formel_builder_zeichnen(self, parent, formel, neu_zeichnen_cb, ergebnis_lbl, b_typ="ausgabe"):
@@ -416,6 +514,7 @@ class DatenListeEditor:
         name = "neue_zwischen" if typ == "zwischen" else "neue_ausgabe"
         berechnung_hinzufuegen(self.liste["id"], name, typ=typ)
         self._berechnungen = berechnungen_der_liste(self.liste["id"])
+        self._orig_berech_namen = {b["id"]: b["name"] for b in self._berechnungen}
         self._berech_zeilen_aufbauen()
 
     def _berechnung_loeschen(self, berech_id):
@@ -479,11 +578,32 @@ class DatenListeEditor:
             nv = tk.StringVar(value=z["name"])
             e = tk.Entry(f, textvariable=nv, bg="#252525", fg="#cccccc", font=("Segoe UI", 8), relief=tk.FLAT, bd=2)
             e.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=2)
-            def _on_z_change(*_, zid=z["id"], var=nv):
+
+            def _on_z_name(*_, zid=z["id"], var=nv):
                 for zz in self._zeilen:
                     if zz["id"] == zid:
-                        zz["name"] = var.get(); zeile_umbenennen(zid, var.get()); break
-            nv.trace_add("write", _on_z_change)
+                        zz["name"] = var.get(); break
+            nv.trace_add("write", _on_z_name)
+
+            def _z_speichern(event=None, zid=z["id"], var=nv):
+                neuer = var.get().strip()
+                alter = next((zz["name"] for zz in self._zeilen if zz["id"] == zid), "")
+                andere = [zz["name"] for zz in self._zeilen if zz["id"] != zid]
+                fehler = self._name_validieren(neuer, alter, andere)
+                if fehler:
+                    from tkinter import messagebox
+                    messagebox.showerror("Fehler", fehler, parent=self.fenster)
+                    var.set(alter)
+                    return
+                for zz in self._zeilen:
+                    if zz["id"] == zid:
+                        zz["name"] = neuer
+                        zeile_umbenennen(zid, neuer)
+                        break
+
+            e.bind("<Return>", _z_speichern)
+            e.bind("<Tab>", _z_speichern)
+            e.bind("<FocusOut>", _z_speichern)
             tk.Button(f, text="✕", bg="#1a1a1a", fg="#555555", font=("Segoe UI", 7), relief=tk.FLAT,
                       command=lambda zid=z["id"]: self._zeile_loeschen(zid)).pack(side=tk.RIGHT, padx=2)
 
@@ -513,7 +633,8 @@ class DatenListeEditor:
         f.pack(fill=tk.X, pady=1)
 
         nv = tk.StringVar(value=sp["name"])
-        tk.Entry(f, textvariable=nv, bg="#252525", fg="#cccccc", font=("Segoe UI", 8), relief=tk.FLAT, bd=2, width=12).pack(side=tk.LEFT, padx=2, pady=2)
+        ne = tk.Entry(f, textvariable=nv, bg="#252525", fg="#cccccc", font=("Segoe UI", 8), relief=tk.FLAT, bd=2, width=12)
+        ne.pack(side=tk.LEFT, padx=2, pady=2)
 
         tv = tk.StringVar(value=sp["typ"])
         tm = tk.OptionMenu(f, tv, "zahl", "text")
@@ -531,13 +652,39 @@ class DatenListeEditor:
         tk.Button(f, text="✕", bg="#1a1a1a", fg="#555555", font=("Segoe UI", 7), relief=tk.FLAT,
                   command=lambda sid=sp["id"]: self._spalte_loeschen(sid)).pack(side=tk.RIGHT, padx=2)
 
-        def _on_s_change(*_, sid=sp["id"], name=nv, typ=tv, fmt=fv):
+        def _on_s_name(*_, sid=sp["id"], var=nv):
             for s in self._spalten:
                 if s["id"] == sid:
-                    s["name"] = name.get(); s["typ"] = typ.get(); s["format"] = fmt.get()
-                    spalte_aktualisieren(sid, name=name.get(), typ=typ.get(), format=fmt.get())
+                    s["name"] = var.get(); break
+        nv.trace_add("write", _on_s_name)
+
+        def _s_name_speichern(event=None, sid=sp["id"], var=nv):
+            neuer = var.get().strip()
+            alter = next((s["name"] for s in self._spalten if s["id"] == sid), "")
+            andere = [s["name"] for s in self._spalten if s["id"] != sid]
+            fehler = self._name_validieren(neuer, alter, andere)
+            if fehler:
+                from tkinter import messagebox
+                messagebox.showerror("Fehler", fehler, parent=self.fenster)
+                var.set(alter)
+                return
+            for s in self._spalten:
+                if s["id"] == sid:
+                    s["name"] = neuer
+                    spalte_aktualisieren(sid, name=neuer)
                     break
-        for v in (nv, tv, fv): v.trace_add("write", _on_s_change)
+
+        ne.bind("<Return>", _s_name_speichern)
+        ne.bind("<Tab>", _s_name_speichern)
+        ne.bind("<FocusOut>", _s_name_speichern)
+
+        def _on_s_change(*_, sid=sp["id"], typ=tv, fmt=fv):
+            for s in self._spalten:
+                if s["id"] == sid:
+                    s["typ"] = typ.get(); s["format"] = fmt.get()
+                    spalte_aktualisieren(sid, typ=typ.get(), format=fmt.get())
+                    break
+        for v in (tv, fv): v.trace_add("write", _on_s_change)
 
     def _spalte_hinzufuegen(self):
         spalte_hinzufuegen(self.liste["id"], "Neu", typ="zahl")
@@ -662,9 +809,10 @@ class DatenListeEditor:
         tk.Label(zeile1, text="Name:", bg="#1a1a1a", fg="#888888",
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
         name_var = tk.StringVar(value=t["name"])
-        tk.Entry(zeile1, textvariable=name_var, bg="#252525", fg="#cccccc",
+        name_entry = tk.Entry(zeile1, textvariable=name_var, bg="#252525", fg="#cccccc",
                  insertbackground="white", font=("Segoe UI", 8), relief=tk.FLAT,
-                 bd=3, width=14).pack(side=tk.LEFT, padx=(0, 8))
+                 bd=3, width=14)
+        name_entry.pack(side=tk.LEFT, padx=(0, 8))
 
         tk.Label(zeile1, text="OCR-Var:", bg="#1a1a1a", fg="#888888",
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
@@ -721,27 +869,51 @@ class DatenListeEditor:
         ocr_var.trace_add("write", _live_update)
         _live_update()  # Einmal sofort ausführen
 
-        # Änderungen in lokaler Kopie merken
-        def _on_aenderung(*_, tid=t["id"], nv=name_var, ov=ocr_var):
-            neuer_name = nv.get().strip()
+        # OCR-Var sofort speichern (kein Konfliktpotenzial)
+        def _ocr_speichern(*_, tid=t["id"], ov=ocr_var):
             neue_ocr = ov.get()
             for tr in self._transformationen:
                 if tr["id"] == tid:
-                    alter_name = tr["name"]
-                    tr["name"] = neuer_name
                     tr["ocr_var"] = neue_ocr
-                    # Sofort in DB schreiben
-                    transformation_aktualisieren(tid, name=neuer_name, ocr_var=neue_ocr)
-                    # Orig-Namen aktualisieren
-                    self._orig_transform_namen[tid] = neuer_name
+                    transformation_aktualisieren(tid, ocr_var=neue_ocr)
                     break
+        ocr_var.trace_add("write", _ocr_speichern)
 
-        for var in (name_var, ocr_var):
-            var.trace_add("write", _on_aenderung)
+        # Name: lokaler State bei jedem Tastendruck, DB-Save bei Enter/Tab/FocusOut/Tab-Wechsel
+        def _on_t_name(*_, tid=t["id"], var=name_var):
+            for tr in self._transformationen:
+                if tr["id"] == tid:
+                    tr["name"] = var.get(); break
+        name_var.trace_add("write", _on_t_name)
+
+        def _t_name_speichern(_event=None, tid=t["id"], var=name_var):
+            neuer = var.get().strip()
+            alter = self._orig_transform_namen.get(tid, "")
+            andere = [self._orig_transform_namen.get(tr["id"], tr["name"])
+                      for tr in self._transformationen if tr["id"] != tid]
+            fehler = self._name_validieren(neuer, alter, andere)
+            if fehler:
+                from tkinter import messagebox
+                messagebox.showerror("Fehler", fehler, parent=self.fenster)
+                var.set(alter)
+                return
+            if alter != neuer:
+                transformation_aktualisieren(tid, name=neuer)
+                variable_umbenennen(self.liste["id"], alter, neuer)
+                for b in self._berechnungen:
+                    for teil in b["formel_json"]:
+                        if "var" in teil and teil["var"] == alter:
+                            teil["var"] = neuer
+                self._orig_transform_namen[tid] = neuer
+
+        name_entry.bind("<Return>", _t_name_speichern)
+        name_entry.bind("<Tab>", _t_name_speichern)
+        name_entry.bind("<FocusOut>", _t_name_speichern)
 
     def _transformation_hinzufuegen(self):
-        neue_id = transformation_hinzufuegen(self.liste["id"], "neu_transform", "", "einheit_zu_zahl")
+        transformation_hinzufuegen(self.liste["id"], "neu_transform", "", "einheit_zu_zahl")
         self._transformationen = transformationen_der_liste(self.liste["id"])
+        self._orig_transform_namen = {t["id"]: t["name"] for t in self._transformationen}
         self._transform_zeilen_aufbauen()
 
     def _transformation_loeschen(self, trans_id):
@@ -760,7 +932,7 @@ class DatenListeEditor:
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=8, pady=4,
                   cursor="hand2", command=self._liste_loeschen).pack(side=tk.LEFT)
 
-        tk.Button(btn_leiste, text="Abbrechen", bg="#3a3a3a", fg="#aaaaaa",
+        tk.Button(btn_leiste, text="Schließen", bg="#3a3a3a", fg="#aaaaaa",
                   font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=4,
                   cursor="hand2", command=self.fenster.destroy).pack(side=tk.RIGHT, padx=(4, 0))
 
