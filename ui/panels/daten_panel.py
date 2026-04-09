@@ -3,7 +3,8 @@ import time
 from core.daten_manager import (
     datenbank_initialisieren, alle_listen, spalten_der_liste,
     zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
-    berechnungen_der_liste, berechnung_auswerten, cache_schreiben, cache_lesen
+    berechnungen_der_liste, berechnung_auswerten, cache_schreiben, cache_lesen,
+    zuordnungen_der_liste
 )
 
 
@@ -12,6 +13,7 @@ class DatenPanel:
         self.parent = parent
         self.bot = bot
         self._update_job = None
+        self._transform_job = None
         self._listen_cache = []      # Liste aller Listen-Dicts
         self._ausgeklappt = {}       # listen_id → bool (ob aufgeklappt)
         self._tabellen_frames = {}   # listen_id → Inhalt-Frame
@@ -86,6 +88,7 @@ class DatenPanel:
             self._listen_block_erstellen(self._inner, l)
 
         self._update_starten()
+        self._transform_loop_starten()
 
     def _listen_block_erstellen(self, parent, l):
         """Erstellt einen einzelnen Listen-Block mit Header + Tabelle."""
@@ -157,19 +160,25 @@ class DatenPanel:
         alle_ocr_namen.update(self.bot.ocr_engine.template_ocr_konfigurationen().keys())
 
         jetzt = time.time()
-        for name in alle_ocr_namen:
+        neue_cache_werte = {}
+
+        # Alle aktuellen Live-Werte durchgehen und in ocr_werte / Cache übertragen
+        for name, val in ocr_roh_live.items():
             if name in ausgabe_namen: continue
-            val = ocr_roh_live.get(name)
-            if val not in (None, ""):
+            if val not in (None, "", "—"):
                 ocr_werte[name] = (val, jetzt)
-            elif name not in ocr_werte:
+                neue_cache_werte[name] = val
+
+        # Sicherstellen, dass auch konfigurierte aber gerade nicht sichtbare OCRs
+        # zumindest mit "—" initialisiert werden, falls sie noch nie im Cache waren.
+        for name in alle_ocr_namen:
+            if name not in ocr_werte and name not in ausgabe_namen:
                 ocr_werte[name] = ("—", jetzt)
 
         # Debug-Log Setting
         log_debug = self.bot.app.settings.get("log_daten_berechnungen", False)
 
         # 4. Transformer anwenden
-        neue_cache_werte = {}
         for t in transformationen:
             rohwert = ocr_roh_live.get(t["ocr_var"])
             if rohwert not in (None, "", "—"):
@@ -231,6 +240,9 @@ class DatenPanel:
 
         # Berechnungs-Namen für farbliche Markierung sammeln
         berech_namen = {b["name"] for b in berechnungen}
+        
+        # Spezifische Zell-Zuordnungen laden
+        zuordnungen = zuordnungen_der_liste(l["id"])
 
         for r, z in enumerate(zeilen_namen):
             hg = "#1a1a1a" if r % 2 == 0 else "#212121"
@@ -242,10 +254,14 @@ class DatenPanel:
                      width=10).pack(side=tk.LEFT)
 
             for sp in spalten:
-                ocr_var = sp.get("ocr_var")
-                # Placeholder Support: {row} durch Zeilenname ersetzen
-                if ocr_var and "{row}" in ocr_var:
-                    ocr_var = ocr_var.replace("{row}", z["name"])
+                # 1. Spezifische Zuordnung (Zelle) prüfen
+                ocr_var = zuordnungen.get((z["name"], sp["id"]))
+                
+                # 2. Falls keine Zelle: Globalen Spalten-Wert prüfen (inkl. Placeholder)
+                if not ocr_var:
+                    ocr_var = sp.get("ocr_var")
+                    if ocr_var and "{row}" in ocr_var:
+                        ocr_var = ocr_var.replace("{row}", z["name"])
                 
                 entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
                 wert = entry[0]
@@ -357,6 +373,48 @@ class DatenPanel:
                 self._tabelle_zeichnen(frame, l)
 
         self._update_job = self.bot.root.after(min_intervall * 1000, self._auto_update)
+
+    # ── Echtzeit-Transform-Loop ──────────────────────────────────────────────
+
+    def _transform_loop_starten(self):
+        """Startet den schnellen Transform-Loop (unabhängig vom Anzeige-Timer)."""
+        if self._transform_job:
+            self.bot.root.after_cancel(self._transform_job)
+        self._transform_job = self.bot.root.after(800, self._transform_tick)
+
+    def _transform_tick(self):
+        """OCR-Werte → Transformer → Cache für alle Listen (Echtzeit)."""
+        for l in self._listen_cache:
+            self._transforms_cachen(l)
+        self._transform_job = self.bot.root.after(800, self._transform_tick)
+
+    def _transforms_cachen(self, l):
+        """Liest Live-OCR, führt Transformer aus und schreibt Ergebnis sofort in Cache."""
+        transformationen = transformationen_der_liste(l["id"])
+        if not transformationen:
+            return
+
+        ocr_roh_live = {}
+        if hasattr(self.bot, "app"):
+            ocr_roh_live.update(self.bot.app.state.ocr_values)
+            ocr_roh_live.update(self.bot.app.state.template_ocr_values)
+
+        if not ocr_roh_live:
+            return
+
+        db_cache = cache_lesen(l["id"])
+        log_debug = hasattr(self.bot, "app") and self.bot.app.settings.get("log_daten_berechnungen", False)
+        jetzt = time.time()
+
+        for t in transformationen:
+            rohwert = ocr_roh_live.get(t["ocr_var"])
+            if rohwert not in (None, "", "—"):
+                wert = transformation_anwenden(rohwert, t["typ"])
+                if wert not in ("", "—", "?"):
+                    alt_wert = db_cache.get(t["name"], ("—", 0))[0]
+                    if log_debug and str(wert) != str(alt_wert):
+                        self.bot.app._log(f"[Transform] {t['name']}: {rohwert} → {wert}")
+                    cache_schreiben(l["id"], t["name"], wert)
 
     def listen_neu_laden(self):
         """Öffentliche Methode — nach externen Änderungen aufrufen."""
