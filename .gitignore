@@ -43,6 +43,9 @@ bug.png
 test.png
 test.py
 
+# ── Datenbank (lokale Nutzerdaten) ──────────────────────────────
+*.db
+
 # ── Sonstiges ───────────────────────────────────────────────────
 *.log
 *.tmp
