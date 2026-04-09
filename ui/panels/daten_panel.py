@@ -1,6 +1,8 @@
 import tkinter as tk
 from core.daten_manager import (
-    datenbank_initialisieren, alle_listen, spalten_der_liste, zeilen_der_liste
+    datenbank_initialisieren, alle_listen, spalten_der_liste,
+    zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
+    berechnungen_der_liste, berechnung_auswerten, cache_schreiben, cache_lesen
 )
 
 
@@ -11,6 +13,7 @@ class DatenPanel:
         self._update_job = None
         self._listen_cache = []      # Liste aller Listen-Dicts
         self._ausgeklappt = {}       # listen_id → bool (ob aufgeklappt)
+        self._tabellen_frames = {}   # listen_id → Inhalt-Frame
 
         datenbank_initialisieren()
         self._setup_ui()
@@ -59,6 +62,7 @@ class DatenPanel:
 
     def _alles_aufbauen(self):
         """Baut alle Listen-Blöcke untereinander neu auf."""
+        self._tabellen_frames = {}
         for w in self._inner.winfo_children():
             w.destroy()
 
@@ -100,6 +104,7 @@ class DatenPanel:
         inhalt = tk.Frame(block, bg="#2d2d2d")
         if aufgeklappt:
             inhalt.pack(fill=tk.X, padx=4, pady=(2, 4))
+        self._tabellen_frames[l["id"]] = inhalt
         self._tabelle_zeichnen(inhalt, l)
 
         # Letzter-Scan Label
@@ -127,12 +132,57 @@ class DatenPanel:
 
         spalten = spalten_der_liste(l["id"])
         zeilen_namen = zeilen_der_liste(l["id"])
+        transformationen = transformationen_der_liste(l["id"])
 
-        # Aktuelle OCR-Werte aus Bot-State
-        ocr_werte = {}
+        # Aktuelle OCR-Rohwerte aus Bot-State
+        ocr_roh = {}
         if hasattr(self.bot, "app"):
-            ocr_werte.update(self.bot.app.state.ocr_values)
-            ocr_werte.update(self.bot.app.state.template_ocr_values)
+            ocr_roh.update(self.bot.app.state.ocr_values)
+            ocr_roh.update(self.bot.app.state.template_ocr_values)
+
+        # Cache laden als Fallback für Transformer-Ausgaben
+        db_cache = cache_lesen(l["id"])
+
+        # ocr_werte enthält NUR Transformer-Ausgaben (keine rohen OCR-Werte)
+        ocr_werte = {}
+        neue_cache_werte = {}
+
+        # Transformer: OCR verfügbar → transformieren + cachen
+        #              OCR weg       → letzten gecachten Transformer-Ausgabewert nutzen
+        for t in transformationen:
+            rohwert = ocr_roh.get(t["ocr_var"])
+            if rohwert is not None and str(rohwert).strip() not in ("", "—"):
+                wert = transformation_anwenden(rohwert, t["typ"])
+                neue_cache_werte[t["name"]] = wert
+            else:
+                wert = db_cache.get(t["name"], "—")
+            ocr_werte[t["name"]] = wert
+
+        # Berechnungen: Zwischenberechnungen zuerst, dann Ausgabe
+        berechnungen = berechnungen_der_liste(l["id"])
+        berechnungen_sortiert = (
+            [b for b in berechnungen if b.get("typ") == "zwischen"] +
+            [b for b in berechnungen if b.get("typ") != "zwischen"]
+        )
+        for b in berechnungen_sortiert:
+            alle_inputs_ok = all(
+                ocr_werte.get(teil.get("var"), "—") != "—"
+                for teil in b["formel_json"]
+                if "var" in teil and teil["var"] not in ("update_intervall", "")
+            )
+            if alle_inputs_ok:
+                ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, l["update_intervall"])
+                if ergebnis not in ("?", "—"):
+                    neue_cache_werte[b["name"]] = ergebnis
+                else:
+                    ergebnis = db_cache.get(b["name"], "—")
+            else:
+                ergebnis = db_cache.get(b["name"], "—")
+            ocr_werte[b["name"]] = ergebnis
+
+        # Neue Werte in Cache schreiben (nur wenn frische Daten vorhanden)
+        for var_name, wert in neue_cache_werte.items():
+            cache_schreiben(l["id"], var_name, wert)
 
         if not spalten:
             tk.Label(parent, text="Keine Spalten — Edit zum Konfigurieren.",
@@ -229,19 +279,14 @@ class DatenPanel:
             self._update_job = self.bot.root.after(5000, self._auto_update)
             return
 
-        # Kürzestes Intervall aller Listen bestimmen
         min_intervall = min(l["update_intervall"] for l in self._listen_cache)
 
-        # Tabellen der aufgeklappten Listen neu zeichnen
-        for block, l in zip(self._inner.winfo_children(), self._listen_cache):
+        for l in self._listen_cache:
             if not self._ausgeklappt.get(l["id"], True):
                 continue
-            # Inhalt-Frame ist zweites Kind des Blocks (nach Header)
-            kinder = block.winfo_children()
-            if len(kinder) >= 2:
-                self._tabelle_zeichnen(kinder[1], l)
-                if len(kinder) >= 3:
-                    self._scan_label_aktualisieren(kinder[2], l["id"])
+            frame = self._tabellen_frames.get(l["id"])
+            if frame and frame.winfo_exists():
+                self._tabelle_zeichnen(frame, l)
 
         self._update_job = self.bot.root.after(min_intervall * 1000, self._auto_update)
 

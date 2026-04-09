@@ -43,6 +43,42 @@ def datenbank_initialisieren():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS transformationen (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                ocr_var     TEXT NOT NULL,
+                typ         TEXT NOT NULL DEFAULT 'einheit_zu_zahl',
+                UNIQUE(listen_id, name)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS berechnungen (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                formel_json TEXT NOT NULL DEFAULT '[]',
+                typ         TEXT NOT NULL DEFAULT 'ausgabe',
+                UNIQUE(listen_id, name)
+            )
+        """)
+        # typ-Spalte nachrüsten falls DB schon existiert
+        try:
+            conn.execute("ALTER TABLE berechnungen ADD COLUMN typ TEXT NOT NULL DEFAULT 'ausgabe'")
+            conn.commit()
+        except Exception:
+            pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS werte_cache (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                listen_id      INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
+                var_name       TEXT NOT NULL,
+                wert           TEXT,
+                gespeichert_am REAL,
+                UNIQUE(listen_id, var_name)
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS eintraege (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
@@ -255,3 +291,208 @@ def _zu_zahl(wert):
         return float(str(wert).replace(",", "."))
     except (ValueError, TypeError):
         return 0.0
+
+
+# ── Werte-Cache ─────────────────────────────────────────────────────────────
+
+def cache_schreiben(listen_id, var_name, wert):
+    """Speichert einen Wert im Cache (upsert)."""
+    with _verbinden() as conn:
+        conn.execute("""
+            INSERT INTO werte_cache (listen_id, var_name, wert, gespeichert_am)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(listen_id, var_name)
+            DO UPDATE SET wert=excluded.wert, gespeichert_am=excluded.gespeichert_am
+        """, (listen_id, var_name, str(wert), time.time()))
+        conn.commit()
+
+
+def cache_lesen(listen_id):
+    """Gibt alle gecachten Werte einer Liste als dict zurück: var_name → wert."""
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT var_name, wert FROM werte_cache WHERE listen_id=?", (listen_id,)
+        ).fetchall()
+    return {r["var_name"]: r["wert"] for r in rows}
+
+
+# ── Berechnungen ────────────────────────────────────────────────────────────
+
+def berechnung_hinzufuegen(listen_id, name, typ="ausgabe"):
+    """Legt eine neue leere Berechnung an. Gibt die ID zurück."""
+    import json
+    with _verbinden() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO berechnungen (listen_id, name, formel_json, typ) VALUES (?,?,?,?)",
+            (listen_id, name, json.dumps([{"var": ""}]), typ)
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def berechnung_aktualisieren(berech_id, name=None, formel_json=None, typ=None):
+    import json
+    with _verbinden() as conn:
+        if name is not None:
+            conn.execute("UPDATE berechnungen SET name=? WHERE id=?", (name, berech_id))
+        if formel_json is not None:
+            conn.execute("UPDATE berechnungen SET formel_json=? WHERE id=?",
+                         (json.dumps(formel_json), berech_id))
+        if typ is not None:
+            conn.execute("UPDATE berechnungen SET typ=? WHERE id=?", (typ, berech_id))
+        conn.commit()
+
+
+def berechnung_loeschen(berech_id):
+    with _verbinden() as conn:
+        conn.execute("DELETE FROM berechnungen WHERE id=?", (berech_id,))
+        conn.commit()
+
+
+def berechnungen_der_liste(listen_id):
+    """Gibt alle Berechnungen einer Liste zurück."""
+    import json
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT * FROM berechnungen WHERE listen_id=? ORDER BY id", (listen_id,)
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["formel_json"] = json.loads(d["formel_json"])
+        except Exception:
+            d["formel_json"] = [{"var": ""}]
+        result.append(d)
+    return result
+
+
+def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
+    """
+    Wertet eine Formel aus.
+    formel_json: [{"var": "holz_vorrat_zahl"}, {"op": "+"}, {"var": "holz_prod_zahl"}, ...]
+    verfuegbare_werte: dict mit allen Variablen (transformiert + berechnet)
+    update_intervall: Update-Intervall der Liste in Sekunden (als Variable 'update_intervall' verfügbar)
+    Gibt den Ergebnis-String zurück.
+    """
+    if not formel_json:
+        return "—"
+
+    # Formel als Ausdruck zusammenbauen
+    ausdruck_teile = []
+    for teil in formel_json:
+        if "op" in teil:
+            ausdruck_teile.append(teil["op"])
+        elif "var" in teil:
+            var_name = teil["var"]
+            if var_name == "update_intervall":
+                ausdruck_teile.append(str(update_intervall))
+            else:
+                wert = verfuegbare_werte.get(var_name, "0")
+                try:
+                    ausdruck_teile.append(str(float(str(wert).replace(",", "."))))
+                except (ValueError, TypeError):
+                    ausdruck_teile.append("0")
+        elif "zahl" in teil:
+            ausdruck_teile.append(str(teil["zahl"]))
+
+    ausdruck = " ".join(ausdruck_teile)
+    try:
+        ergebnis = eval(ausdruck, {"__builtins__": {}}, {})  # noqa: S307
+        if ergebnis == int(ergebnis):
+            return str(int(ergebnis))
+        return str(round(ergebnis, 2))
+    except Exception:
+        return "?"
+
+
+# ── Transformationen ─────────────────────────────────────────────────────────
+
+def transformation_hinzufuegen(listen_id, name, ocr_var, typ="einheit_zu_zahl"):
+    """Legt eine neue Transformation an. Gibt die ID zurück."""
+    with _verbinden() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO transformationen (listen_id, name, ocr_var, typ) VALUES (?,?,?,?)",
+            (listen_id, name, ocr_var, typ)
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def transformation_aktualisieren(trans_id, name=None, ocr_var=None, typ=None):
+    with _verbinden() as conn:
+        if name is not None:
+            conn.execute("UPDATE transformationen SET name=? WHERE id=?", (name, trans_id))
+        if ocr_var is not None:
+            conn.execute("UPDATE transformationen SET ocr_var=? WHERE id=?", (ocr_var, trans_id))
+        if typ is not None:
+            conn.execute("UPDATE transformationen SET typ=? WHERE id=?", (typ, trans_id))
+        conn.commit()
+
+
+def transformation_loeschen(trans_id):
+    with _verbinden() as conn:
+        conn.execute("DELETE FROM transformationen WHERE id=?", (trans_id,))
+        conn.commit()
+
+
+def transformationen_der_liste(listen_id):
+    """Gibt alle Transformationen einer Liste zurück."""
+    with _verbinden() as conn:
+        rows = conn.execute(
+            "SELECT * FROM transformationen WHERE listen_id=? ORDER BY id", (listen_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def transformation_anwenden(rohwert, typ):
+    """
+    Wendet eine Transformation auf einen Rohwert an.
+    Gibt den transformierten Wert als String zurück.
+    """
+    if rohwert is None:
+        return "—"
+    rohwert = str(rohwert).strip()
+
+    if typ == "einheit_zu_zahl":
+        return _einheit_zu_zahl(rohwert)
+
+    return rohwert
+
+
+def _einheit_zu_zahl(text):
+    """
+    Wandelt Spielwerte mit Einheit in Zahlen um.
+    Beispiele: "23.97Mio." → "23970000", "1.5K" → "1500", "450" → "450"
+    """
+    import re
+    if not text:
+        return "—"
+
+    # Komma als Dezimaltrenner ersetzen
+    text = text.replace(",", ".")
+
+    # Zahl + optionale Einheit extrahieren
+    treffer = re.search(r"([\d.]+)\s*(Mio\.?|Mrd\.?|K|T|M|B)?", text, re.IGNORECASE)
+    if not treffer:
+        return text
+
+    zahl = float(treffer.group(1))
+    einheit = (treffer.group(2) or "").upper().rstrip(".")
+
+    faktoren = {
+        "K": 1_000,
+        "T": 1_000,
+        "M": 1_000_000,
+        "MIO": 1_000_000,
+        "MRD": 1_000_000_000,
+        "B": 1_000_000_000,
+    }
+
+    faktor = faktoren.get(einheit, 1)
+    ergebnis = zahl * faktor
+
+    # Ganzzahl wenn möglich
+    if ergebnis == int(ergebnis):
+        return str(int(ergebnis))
+    return str(round(ergebnis, 2))
