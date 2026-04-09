@@ -28,10 +28,65 @@ class PanelsMixin:
         self.workflow_panel = WorkflowPanel(parent, self)
 
     def _templates_panel(self, parent):
-        self.template_panel = TemplatePanel(parent, self, filter_modus="workflow")
+        self.template_panel = TemplatePanel(parent, self, filter_modus="workflow",
+                                            show_buttons=False, on_focus=self._template_panel_fokus_setzen)
 
     def _state_templates_panel(self, parent):
-        self.state_template_panel = TemplatePanel(parent, self, filter_modus="state")
+        self.state_template_panel = TemplatePanel(parent, self, filter_modus="state",
+                                                  show_buttons=False, on_focus=self._template_panel_fokus_setzen)
+
+    def _template_panel_fokus_setzen(self, panel):
+        """Merkt sich welches Template-Panel zuletzt aktiv war."""
+        self._aktiver_template_panel = panel
+
+    def _template_buttons_bereich(self, parent):
+        """Erstellt die gemeinsame Button-Leiste für beide Template-Listen."""
+        rahmen = tk.Frame(parent, bg="#2d2d2d")
+        rahmen.pack(fill=tk.X, pady=(0, 4), padx=0)
+
+        zeile1 = tk.Frame(rahmen, bg="#2d2d2d")
+        zeile1.pack(anchor="w", pady=(2, 1))
+
+        tk.Button(zeile1, text="↺ Neu laden", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._aktive_panel_aktion("_neu_laden")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(zeile1, text="✎ Bearbeiten", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._aktive_panel_aktion("_bearbeiten")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(zeile1, text="✕ Löschen", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._aktive_panel_aktion("_loeschen")).pack(side=tk.LEFT)
+
+        zeile2 = tk.Frame(rahmen, bg="#2d2d2d")
+        zeile2.pack(anchor="w", pady=(0, 2))
+
+        tk.Button(zeile2, text="🔤 OCR", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._aktive_panel_aktion("_ocr_konfigurieren")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(zeile2, text="🖱 Klick", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._aktive_panel_aktion("_klick_konfigurieren")).pack(side=tk.LEFT, padx=(0, 4))
+        tk.Button(zeile2, text="🚩 Zustände", bg="#3a3a3a", fg="#ffca28",
+                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                  cursor="hand2", command=self._zustand_manager_shortcut).pack(side=tk.LEFT)
+
+    def _aktive_panel_aktion(self, methode):
+        """Gibt eine Funktion zurück die die Methode auf dem aktiven Panel aufruft."""
+        def aktion():
+            panel = getattr(self, "_aktiver_template_panel", None)
+            if panel:
+                getattr(panel, methode)()
+        return aktion
+
+    def _zustand_manager_shortcut(self):
+        """Öffnet den Zustand-Manager für das ausgewählte Template."""
+        panel = getattr(self, "_aktiver_template_panel", None)
+        if not panel:
+            return
+        name = panel._get_auswahl_name()
+        if not name:
+            return
+        self._zustand_manager_dialog(name)
 
     def _ocr_panel(self, parent):
 

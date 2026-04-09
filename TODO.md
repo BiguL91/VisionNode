@@ -4,6 +4,10 @@
 
 ## Priorität 1 (Next)
 
+- [x] **UI Anpassung**
+  - Buttons (Neuladen, Bearbeiten, Löschen, OCR, Klick) gemeinsam unterhalb beider Template-Listen
+  - Zustand Manager Shortcut Button (🚩 Zustände) öffnet Zustände-Dialog direkt aus dem Panel
+
 - **Phase F: Intelligence & Performance Evolution**
   - [x] **Multi-Template Support**: Erlaubt mehrere Bilder pro Template-Name (Varianten wie `Email.png`, `Email__2.png`) für robustere Erkennung.
   - [x] **OCR Farb-Präzision**: Farb-Picker & Pipette für gezielte Textisolierung (verhindert Geisterzahlen).

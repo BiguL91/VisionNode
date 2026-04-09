@@ -1,5 +1,7 @@
 import tkinter as tk
+from tkinter import ttk
 import threading
+import json
 import os
 import colorsys
 import cv2
@@ -344,4 +346,190 @@ class DialogeMixin:
             dialog.destroy()
         tk.Button(btn_f, text="Abbrechen", bg="#444", fg="white", command=dialog.destroy).pack(side=tk.RIGHT, padx=(4, 0))
         tk.Button(btn_f, text="Speichern", bg="#2ea043", fg="white", command=save).pack(side=tk.RIGHT)
+
+    def _zustand_manager_dialog(self, template_name):
+        """Öffnet den Zustände-Dialog für ein Template direkt aus dem Haupt-Panel."""
+        settings = self.template_engine.settings.get(template_name, {})
+        bekannte = sorted(self.app.state.game_states.keys())
+
+        # Condition-States migrieren (altes Format → neues Format)
+        raw = settings.get("condition_states", [])
+        if isinstance(raw, list) and raw and isinstance(raw[0], dict):
+            if "states" in raw[0] or "connector" in raw[0]:
+                start_conds = raw
+            else:
+                start_conds = [{"connector": None if i == 0 else "OR", "states": dict(item)}
+                               for i, item in enumerate(raw)]
+        else:
+            start_conds = []
+
+        start_sets = dict(settings.get("set_states", {})) if isinstance(settings.get("set_states"), dict) else {}
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Zustände — {template_name}")
+        dialog.configure(bg="#2d2d2d")
+        dialog.grab_set()
+        dialog.resizable(True, True)
+        dialog.minsize(580, 520)
+
+        # ── condition_states ───────────────────────────────────────────────
+        tk.Label(dialog, text="Aktiv wenn:", bg="#2d2d2d", fg="#ffca28",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(14, 2))
+        tk.Label(dialog,
+                 text="Bedingungen innerhalb einer Gruppe sind AND-verknüpft.\n"
+                      "Gruppen untereinander können AND oder OR verknüpft werden.",
+                 bg="#2d2d2d", fg="#666666", font=("Segoe UI", 8),
+                 justify="left").pack(anchor="w", padx=20, pady=(0, 8))
+
+        gruppen_container = tk.Frame(dialog, bg="#2d2d2d")
+        gruppen_container.pack(fill=tk.BOTH, expand=True, padx=20)
+        gruppen = []
+
+        def refresh_first_connector():
+            for i, g in enumerate(gruppen):
+                cf = g.get("connector_frame")
+                if cf and i == 0:
+                    cf.pack_forget()
+
+        def gruppe_loeschen(g):
+            gruppen.remove(g)
+            g["wrapper"].destroy()
+            refresh_first_connector()
+
+        def zeile_in_gruppe_bauen(g, state_name="", state_val=True):
+            zf = g["zeilen_frame"]
+            z = tk.Frame(zf, bg="#1a1a1a")
+            z.pack(fill=tk.X, pady=2)
+            n_var = tk.StringVar(value=state_name)
+            v_var = tk.BooleanVar(value=state_val)
+            ttk.Combobox(z, textvariable=n_var, values=bekannte, width=22,
+                         font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(6, 4), pady=4)
+            tk.Checkbutton(z, text="True", variable=v_var, bg="#1a1a1a", fg="#cccccc",
+                           selectcolor="#2d2d2d", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(0, 4))
+            t = (z, n_var, v_var)
+            g["zeilen"].append(t)
+            tk.Button(z, text="✕", bg="#1a1a1a", fg="#da3633", relief=tk.FLAT, font=("Segoe UI", 10),
+                      command=lambda ref=t: (g["zeilen"].remove(ref) if ref in g["zeilen"] else None,
+                                            z.destroy())).pack(side=tk.RIGHT, padx=6)
+
+        def gruppe_bauen(gruppe_data):
+            wrapper = tk.Frame(gruppen_container, bg="#2d2d2d")
+            wrapper.pack(fill=tk.X, pady=(0, 2))
+            g = {"wrapper": wrapper, "connector_frame": None, "connector_var": None, "zeilen": []}
+            conn_frame = tk.Frame(wrapper, bg="#2d2d2d")
+            g["connector_frame"] = conn_frame
+            cv = tk.StringVar(value=gruppe_data.get("connector") or "OR")
+            g["connector_var"] = cv
+            tk.Label(conn_frame, text="Verknüpfung:", bg="#2d2d2d", fg="#888888",
+                     font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 8))
+            for txt, clr in [("AND", "#55aaff"), ("OR", "#ffca28")]:
+                tk.Radiobutton(conn_frame, text=txt, variable=cv, value=txt,
+                               bg="#2d2d2d", fg=clr, selectcolor="#1a1a1a",
+                               activebackground="#2d2d2d", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=4)
+            conn_frame.pack(fill=tk.X, pady=(8, 3))
+            nr = len(gruppen) + 1
+            box = tk.Frame(wrapper, bg="#1a1a1a", bd=1, relief=tk.SOLID,
+                           highlightbackground="#3a3a3a", highlightthickness=1)
+            box.pack(fill=tk.X)
+            g["box"] = box
+            header = tk.Frame(box, bg="#252525")
+            header.pack(fill=tk.X)
+            tk.Label(header, text=f"  Gruppe {nr}", bg="#252525", fg="#888888",
+                     font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, pady=5)
+            tk.Button(header, text="Gruppe löschen", bg="#252525", fg="#da3633",
+                      font=("Segoe UI", 8), relief=tk.FLAT, cursor="hand2",
+                      command=lambda ref=g: gruppe_loeschen(ref)).pack(side=tk.RIGHT, padx=8, pady=3)
+            zeilen_frame = tk.Frame(box, bg="#1a1a1a")
+            zeilen_frame.pack(fill=tk.X, padx=4, pady=(4, 0))
+            g["zeilen_frame"] = zeilen_frame
+            for sn, sv in gruppe_data.get("states", {}).items():
+                zeile_in_gruppe_bauen(g, sn, sv)
+            tk.Button(box, text="+ Bedingung hinzufügen", bg="#1a1a1a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, cursor="hand2",
+                      command=lambda ref=g: zeile_in_gruppe_bauen(ref)).pack(anchor="w", padx=8, pady=6)
+            gruppen.append(g)
+            refresh_first_connector()
+
+        daten = start_conds if start_conds else [{"connector": None, "states": {}}]
+        for gd in daten:
+            gruppe_bauen(gd)
+
+        tk.Button(gruppen_container, text="＋ Neue Gruppe hinzufügen",
+                  bg="#1a3a5a", fg="#55aaff", font=("Segoe UI", 9), relief=tk.FLAT,
+                  padx=10, pady=4, cursor="hand2",
+                  command=lambda: gruppe_bauen({"connector": "OR", "states": {}})).pack(anchor="w", pady=(8, 0))
+
+        tk.Frame(dialog, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=20, pady=(14, 0))
+
+        # ── set_states ─────────────────────────────────────────────────────
+        tk.Label(dialog, text="Setzt Zustände (bei Erkennung):", bg="#2d2d2d", fg="#55ff88",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(12, 4))
+
+        set_frame = tk.Frame(dialog, bg="#1a1a1a")
+        set_frame.pack(fill=tk.X, padx=20, pady=(0, 4))
+        set_zeilen = []
+
+        def set_zeile_bauen(state_name="", state_val=True):
+            z = tk.Frame(set_frame, bg="#1a1a1a")
+            z.pack(fill=tk.X, pady=2)
+            n_var = tk.StringVar(value=state_name)
+            v_var = tk.BooleanVar(value=state_val)
+            ttk.Combobox(z, textvariable=n_var, values=bekannte, width=22,
+                         font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(6, 4), pady=4)
+            tk.Checkbutton(z, text="True", variable=v_var, bg="#1a1a1a", fg="#cccccc",
+                           selectcolor="#2d2d2d", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(0, 4))
+            t = (z, n_var, v_var)
+            set_zeilen.append(t)
+            tk.Button(z, text="✕", bg="#1a1a1a", fg="#da3633", relief=tk.FLAT, font=("Segoe UI", 10),
+                      command=lambda ref=t: (set_zeilen.remove(ref) if ref in set_zeilen else None,
+                                            z.destroy())).pack(side=tk.RIGHT, padx=6)
+
+        for sk, sv in start_sets.items():
+            set_zeile_bauen(sk, sv)
+
+        tk.Button(dialog, text="+ Zustand hinzufügen", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=3, cursor="hand2",
+                  command=set_zeile_bauen).pack(anchor="w", padx=20, pady=(4, 10))
+
+        # ── Speichern ──────────────────────────────────────────────────────
+        btn_f = tk.Frame(dialog, bg="#2d2d2d")
+        btn_f.pack(fill=tk.X, padx=20, pady=14)
+
+        def speichern():
+            condition_states = []
+            for g in gruppen:
+                states = {}
+                for _, n_var, v_var in g["zeilen"]:
+                    n = n_var.get().strip()
+                    if n:
+                        states[n] = v_var.get()
+                if states:
+                    condition_states.append({
+                        "connector": g["connector_var"].get() if g["connector_var"] else None,
+                        "states": states,
+                    })
+            if condition_states:
+                condition_states[0]["connector"] = None
+
+            set_states = {}
+            for _, n_var, v_var in set_zeilen:
+                n = n_var.get().strip()
+                if n:
+                    set_states[n] = v_var.get()
+
+            # Direkt in Template-Settings speichern
+            if template_name not in self.template_engine.settings:
+                self.template_engine.settings[template_name] = {}
+            self.template_engine.settings[template_name]["condition_states"] = condition_states
+            self.template_engine.settings[template_name]["set_states"] = set_states
+            with open("template_settings.json", "w", encoding="utf-8") as f:
+                json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self._templates_liste_aktualisieren()
+            self._log(f"Zustände gespeichert: {template_name}")
+            dialog.destroy()
+
+        tk.Button(btn_f, text="Übernehmen", bg="#2ea043", fg="white", font=("Segoe UI", 10, "bold"),
+                  relief=tk.FLAT, padx=16, pady=6, command=speichern).pack(side=tk.RIGHT, padx=(6, 0))
+        tk.Button(btn_f, text="Abbrechen", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 10),
+                  relief=tk.FLAT, padx=16, pady=6, command=dialog.destroy).pack(side=tk.RIGHT)
         self.root.wait_window(dialog)

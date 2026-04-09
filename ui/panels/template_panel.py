@@ -3,14 +3,16 @@ from collections import defaultdict
 from helpers import _template_farbe
 
 class TemplatePanel:
-    def __init__(self, parent, bot, filter_modus="all"):
+    def __init__(self, parent, bot, filter_modus="all", show_buttons=True, on_focus=None):
         self.parent = parent
         self.bot = bot
         self.template_engine = bot.template_engine
         self.ocr_engine = bot.ocr_engine
         self.action_engine = bot.action_engine
         self.filter_modus = filter_modus
-        
+        self.show_buttons = show_buttons
+        self.on_focus = on_focus
+
         self._setup_ui()
         self.aktualisieren()
 
@@ -34,33 +36,42 @@ class TemplatePanel:
         self.template_liste.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.template_liste.yview)
 
-        # Buttons Zeile 1
-        zeile1 = tk.Frame(self.frame, bg="#2d2d2d")
-        zeile1.pack(anchor="w", pady=(4, 2))
+        # Fokus-Callback: aktives Panel dem Elternteil melden
+        self.template_liste.bind("<ButtonPress-1>", self._on_fokus)
 
-        tk.Button(zeile1, text="↺ Neu laden", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._neu_laden).pack(side=tk.LEFT, padx=(0, 4))
+        if self.show_buttons:
+            # Buttons Zeile 1
+            zeile1 = tk.Frame(self.frame, bg="#2d2d2d")
+            zeile1.pack(anchor="w", pady=(4, 2))
 
-        tk.Button(zeile1, text="✎ Bearbeiten", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._bearbeiten).pack(side=tk.LEFT, padx=(0, 4))
+            tk.Button(zeile1, text="↺ Neu laden", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._neu_laden).pack(side=tk.LEFT, padx=(0, 4))
 
-        tk.Button(zeile1, text="✕ Löschen", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._loeschen).pack(side=tk.LEFT)
+            tk.Button(zeile1, text="✎ Bearbeiten", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._bearbeiten).pack(side=tk.LEFT, padx=(0, 4))
 
-        # Buttons Zeile 2
-        zeile2 = tk.Frame(self.frame, bg="#2d2d2d")
-        zeile2.pack(anchor="w", pady=(0, 0))
+            tk.Button(zeile1, text="✕ Löschen", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._loeschen).pack(side=tk.LEFT)
 
-        tk.Button(zeile2, text="🔤 OCR", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._ocr_konfigurieren).pack(side=tk.LEFT, padx=(0, 4))
+            # Buttons Zeile 2
+            zeile2 = tk.Frame(self.frame, bg="#2d2d2d")
+            zeile2.pack(anchor="w", pady=(0, 0))
 
-        tk.Button(zeile2, text="🖱 Klick", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                  cursor="hand2", command=self._klick_konfigurieren).pack(side=tk.LEFT)
+            tk.Button(zeile2, text="🔤 OCR", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._ocr_konfigurieren).pack(side=tk.LEFT, padx=(0, 4))
+
+            tk.Button(zeile2, text="🖱 Klick", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._klick_konfigurieren).pack(side=tk.LEFT)
+
+    def _on_fokus(self, e=None):
+        """Meldet dieses Panel als aktiv wenn die Liste geklickt wird."""
+        if self.on_focus:
+            self.on_focus(self)
 
     def aktualisieren(self):
         """Aktualisiert die Template-Liste im Panel."""
