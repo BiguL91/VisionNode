@@ -9,6 +9,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# ── Lokale App-Konfiguration (Fenstergröße etc.) ────────────────
+app_config.json
+
 # ── Benutzerdaten (spielspezifisch, nicht ins Repo) ─────────────
 templates/
 snapshots/
