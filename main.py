@@ -12,12 +12,14 @@ from ui_dialoge import DialogeMixin
 from einlern import EinlernMixin
 from helpers import _template_farbe
 
+APP_CONFIG_DATEI = "app_config.json"
+
 class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
     def __init__(self, root):
         self.root = root
         self.root.title("Ai-Bot")
-        self.root.geometry("1150x750")
         self.root.configure(bg="#1e1e1e")
+        self._fenster_automatisch_skaliert = False
 
         # Core App initialisieren
         self.app = TilesBotApp(log_callback=self._log)
@@ -44,6 +46,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self.auswahl_rect_id = None
 
         self._gui_aufbauen()
+        self._fenster_groesse_initialisieren()
         self._canvas_maus_binden()
         
         # Start Sequenz
@@ -189,6 +192,14 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         if cb < 50 or ch < 10: return
 
         h_orig, w_orig = frame_bgr.shape[:2]
+
+        # Beim ersten Frame: Fensterbreite so anpassen dass Canvas = Bildbreite
+        if not self._fenster_automatisch_skaliert:
+            self._fenster_automatisch_skaliert = True
+            delta = w_orig - cb
+            if abs(delta) > 10:
+                neue_breite = self.root.winfo_width() + delta
+                self.root.geometry(f"{neue_breite}x{self.root.winfo_height()}")
         skala = min(cb / w_orig, ch / h_orig)
         anzeige_b, anzeige_h = int(w_orig * skala), int(h_orig * skala)
         
@@ -411,7 +422,38 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self._state_panel_aktualisieren()
         self._log(f"State-Variable gelöscht: {name}")
 
+    def _fenster_groesse_initialisieren(self):
+        """Stellt die Fenstergröße beim Start ein: gespeicherte Geometrie oder Max-Höhe."""
+        self.root.update_idletasks()
+        try:
+            with open(APP_CONFIG_DATEI, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            geo = config.get("fenster_geometrie")
+            if geo:
+                self.root.geometry(geo)
+                self._fenster_automatisch_skaliert = True  # gespeicherte Geometrie → nicht nochmal anpassen
+                return
+        except Exception:
+            pass
+        # Kein gespeicherter Zustand: Fenster auf Max-Bildschirmhöhe setzen
+        screen_h = self.root.winfo_screenheight()
+        self.root.geometry(f"1150x{screen_h}")
+
+    def _fenster_geometrie_speichern(self):
+        """Speichert Fenstergröße und -position in app_config.json."""
+        try:
+            config = {}
+            if os.path.exists(APP_CONFIG_DATEI):
+                with open(APP_CONFIG_DATEI, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            config["fenster_geometrie"] = self.root.geometry()
+            with open(APP_CONFIG_DATEI, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass
+
     def beenden(self):
+        self._fenster_geometrie_speichern()
         self.app.shutdown()
         self.root.destroy()
 

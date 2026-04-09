@@ -14,7 +14,7 @@
 
 ## Priorität: Mittel
 
-- Beim öffnen soll sich das Programm gleich in der größe öffnen, das 
+- ✅ Beim öffnen soll sich das Programm gleich in der größe öffnen, das 
   1. Das Programm die Max Display höche verwenden. 
   2. Der Live Bereich automatisch so Breit ist wie das gecapturte bild.  
   3. evtl. kann mann das Programm so machen, dass es sich den letzen Skallierung und Position am desktop Merkt und abspeichert. 
