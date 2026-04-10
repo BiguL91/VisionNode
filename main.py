@@ -132,9 +132,9 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
                                    relief=tk.FLAT, padx=10, command=self._debug_umschalten)
         self.debug_btn.pack(side=tk.RIGHT, padx=5)
 
-        self.einlern_btn = tk.Button(leiste, text="+ Template", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9), 
+        # Button existiert für Status-Updates (einlern.py), wird aber nicht angezeigt
+        self.einlern_btn = tk.Button(leiste, text="+ Template", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9),
                                      relief=tk.FLAT, padx=10, command=self._einlern_modus_umschalten)
-        self.einlern_btn.pack(side=tk.RIGHT, padx=5)
 
         self.snapshot_btn = tk.Button(leiste, text="📸 Snapshot", bg="#3a3a3a", fg="#cccccc",
                                       font=("Segoe UI", 9), relief=tk.FLAT, padx=12,
