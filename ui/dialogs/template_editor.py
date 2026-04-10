@@ -243,17 +243,18 @@ class TemplateEditor:
                                           style="TCombobox")
         self._gruppe_combo.pack(fill=tk.X, padx=16)
 
-        # aktiv_gruppe: Gruppe-Feld verstecken (sie IST die Gruppe)
-        if self.typ == "aktiv_gruppe":
-            self._gruppe_frame.pack_forget()
+        # Gruppe-Feld initial nach Typ anpassen (wird auch später via _typ_anwenden aktualisiert)
+        self._typ_anwenden()
 
         # --- Schwellwert ---
-        tk.Label(self.window, text="Match-Schwellwert:", bg="#2d2d2d", fg="#cccccc", font=("Segoe UI", 9),
-                 anchor="w").pack(fill=tk.X, padx=16, pady=(8, 2))
+        self._schwellwert_frame = tk.Frame(self.window, bg="#2d2d2d")
+        self._schwellwert_frame.pack(fill=tk.X)
+        tk.Label(self._schwellwert_frame, text="Match-Schwellwert:", bg="#2d2d2d", fg="#cccccc",
+                 font=("Segoe UI", 9), anchor="w").pack(fill=tk.X, padx=16, pady=(8, 2))
         self.schwellwert_var = tk.DoubleVar(
             value=self.template_engine.settings.get(self.bearbeiten_name, {}).get("match_schwellwert", 0.85)
             if self.bearbeiten_name else 0.85)
-        tk.Scale(self.window, from_=0.5, to=1.0, resolution=0.01, orient=tk.HORIZONTAL,
+        tk.Scale(self._schwellwert_frame, from_=0.5, to=1.0, resolution=0.01, orient=tk.HORIZONTAL,
                  variable=self.schwellwert_var, bg="#2d2d2d", fg="#cccccc", troughcolor="#1a1a1a",
                  highlightthickness=0, showvalue=True, font=("Segoe UI", 8)).pack(fill=tk.X, padx=16)
 
@@ -288,6 +289,16 @@ class TemplateEditor:
     # ------------------------------------------------------------------ #
     #  Laden                                                               #
     # ------------------------------------------------------------------ #
+
+    def _typ_anwenden(self):
+        """Zeigt/versteckt UI-Elemente je nach self.typ."""
+        if self.typ == "aktiv_gruppe":
+            self._gruppe_frame.pack_forget()
+        else:
+            # Sicherstellen dass Frame sichtbar ist (nach pack_forget)
+            self._gruppe_frame.pack(fill=tk.X, before=self._schwellwert_frame)
+            label_text = "Übergeordnete Gruppe (optional):" if self.typ == "passiv_gruppe" else "Gruppe: *"
+            self._gruppe_label.config(text=label_text)
 
     def _load_existing_data(self):
         if self.bearbeiten_name:
