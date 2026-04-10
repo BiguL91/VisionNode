@@ -160,7 +160,7 @@ class TemplatePanel:
         def _template_mark(name):
             s = settings.get(name, {})
             m = ""
-            if s.get("kategorie") == "state": m += " 🚩"
+            if s.get("kategorie") == "state" or s.get("set_states"): m += " 🚩"
             if name in templates_mit_ocr: m += " 🔤"
             if name in klick_konfig: m += " 🖱"
             return m
@@ -184,8 +184,7 @@ class TemplatePanel:
                 hat_master = gruppe in nach_gruppen[gruppe]
                 ist_passiv = gruppe in passive_gruppen
                 hat_cfg = (kurzname in settings and isinstance(settings[kurzname], dict) and
-                           settings[kurzname].get("typ") in ("passiv_gruppe", "aktiv_gruppe")) or \
-                           f"__gruppe__{kurzname}" in settings
+                           bool(settings[kurzname].get("condition_states")))
                 cfg_mark = " ⚙" if hat_cfg else ""
 
                 # Gruppen-Header: bei Kindern (tiefe > 0) mit └─ Präfix
