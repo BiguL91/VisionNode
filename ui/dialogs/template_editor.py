@@ -779,7 +779,7 @@ class TemplateEditor:
                     return Image.fromarray(cv2.cvtColor(snap_np, cv2.COLOR_BGR2RGB))
             return None
 
-        self.roi_editor = ROIEditor(self.window, t_name, self.initial_scan_regions, get_snapshot)
+        self.roi_editor = ROIEditor(self.window, self.bot, t_name, self.initial_scan_regions, get_snapshot)
 
     def _erkennung_test(self):
         # Robuste Null-Prüfung — window kann None sein wenn kein Snapshot beim Öffnen vorhanden war

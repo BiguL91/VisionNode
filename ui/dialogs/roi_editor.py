@@ -7,8 +7,9 @@ from PIL import Image, ImageTk
 from helpers import cursor_einschraenken, cursor_freigeben
 
 class ROIEditor:
-    def __init__(self, parent, t_name, initial_regions, get_live_snap_func):
+    def __init__(self, parent, bot, t_name, initial_regions, get_live_snap_func):
         self.parent = parent
+        self.bot = bot
         self.t_name = t_name
         self.scan_regions = list(initial_regions)
         self.get_live_snap_func = get_live_snap_func
@@ -67,6 +68,10 @@ class ROIEditor:
         tk.Button(top_f, text="🔄 Aktualisieren", bg="#3a3a3a", fg="#4488ff", font=("Segoe UI", 8), 
                   relief=tk.FLAT, padx=8, pady=2, command=self.refresh_live_snap).pack(side=tk.LEFT, padx=5)
         
+        self.live_mode_btn = tk.Button(top_f, text="📍 Live wählen", bg="#3a3a3a", fg="#ffca28", font=("Segoe UI", 8),
+                  relief=tk.FLAT, padx=8, pady=2, command=self._toggle_live_mode)
+        self.live_mode_btn.pack(side=tk.LEFT, padx=5)
+
         # --- Canvas ---
         self.canvas = tk.Canvas(self.window, width=rw, height=rh, bg="#000000", highlightthickness=0, cursor="crosshair")
         self.canvas.pack(fill=tk.BOTH, expand=True)
@@ -88,7 +93,46 @@ class ROIEditor:
                                      bg="#2d2d2d", fg="#888888", font=("Segoe UI", 8))
         self.status_label.pack(side=tk.RIGHT, padx=10)
         
+        self.window.protocol("WM_DELETE_WINDOW", self._schliessen)
         self._update_display()
+
+    def _schliessen(self):
+        if self.bot and self.bot._ocr_konfig_callback == self._on_live_selection:
+            self.bot._ocr_konfig_callback = None
+            self.bot.vorschau_canvas.config(cursor="")
+        self.window.destroy()
+
+    def _toggle_live_mode(self):
+        if not self.bot: return
+        
+        # Callback am Bot setzen
+        if self.bot._ocr_konfig_callback == self._on_live_selection:
+            # Ausschalten
+            self.bot._ocr_konfig_callback = None
+            self.bot.vorschau_canvas.config(cursor="")
+            self.live_mode_btn.config(bg="#3a3a3a", fg="#ffca28")
+            self.bot._log("Live-Auswahl für Scannbereiche deaktiviert.")
+            # Grab wiederherstellen falls parent ihn hatte (meistens TemplateEditor)
+            try: self.parent.grab_set()
+            except: pass
+        else:
+            # Einschalten
+            # WICHTIG: Grabs lösen damit Hauptfenster Events kriegt
+            try: self.window.grab_release()
+            except: pass
+            try: self.parent.grab_release()
+            except: pass
+            
+            self.bot._ocr_konfig_callback = self._on_live_selection
+            self.bot.vorschau_canvas.config(cursor="crosshair")
+            self.live_mode_btn.config(bg="#1a3a5a", fg="#ffffff")
+            self.bot._log("Live-Auswahl für Scannbereiche aktiv – Region auf Live-Vorschau ziehen.")
+
+    def _on_live_selection(self, x0, y0, x1, y1):
+        # Koordinaten kommen bereits in Original-Pixeln an
+        self.scan_regions.append((x0, y0, x1, y1))
+        self.draw_regions()
+        self.set_status(f"Region via Live-View hinzugefügt: {x1-x0}x{y1-y0}px", "#55ff88")
 
     def _get_snap_files(self):
         files = ["Live Snapshot"]

@@ -39,6 +39,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self._einlern_vorschau_callback = None
         self.ocr_modus = False
         self._nur_aktive_variablen = False
+        self._ocr_konfig_callback = None
         
         # Zeichnen State
         self._vorschau_foto = None
@@ -235,14 +236,15 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         if frame is not None:
             self._update_preview(frame)
             
-            # Struktur-Update für "Nur aktive" Variablen
-            if self._nur_aktive_variablen:
-                match_namen = {m[0] for m in self.app.state.active_matches}
-                if not hasattr(self, "_letzte_match_namen") or self._letzte_match_namen != match_namen:
-                    self._letzte_match_namen = match_namen
-                    self._timer_panel_aktualisieren()
-            else:
-                if hasattr(self, "_letzte_match_namen"): del self._letzte_match_namen
+            # Struktur-Update für Variablen (bei Neuerkennungen oder Wegfall)
+            match_namen = set()
+            for m in self.app.state.active_matches:
+                match_namen.add(m[0])
+                if len(m) > 6: match_namen.add(m[6])
+            
+            if not hasattr(self, "_letzte_match_namen") or self._letzte_match_namen != match_namen:
+                self._letzte_match_namen = match_namen
+                self._timer_panel_aktualisieren()
 
             # Werte-Update
             self._timer_werte_aktualisieren(self.app.state.ocr_values)

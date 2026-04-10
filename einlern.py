@@ -49,7 +49,7 @@ class EinlernMixin:
 
     def _auswahl_start(self, event):
         """Merkt sich den Startpunkt der Auswahl."""
-        if not self.einlern_modus and not self.ocr_modus:
+        if not self.einlern_modus and not self.ocr_modus and not self._ocr_konfig_callback:
             return
         self.auswahl_start = (event.x, event.y)
         self._auswahl_entfernen()
@@ -58,7 +58,7 @@ class EinlernMixin:
     def _lupe_aktualisieren(self, event):
         """Zeichnet eine vergrößerte Ansicht (Lupe) um den Mauszeiger."""
         screenshot = self.app.current_screenshot_pil
-        if (not self.einlern_modus and not self.ocr_modus) or screenshot is None:
+        if (not self.einlern_modus and not self.ocr_modus and not self._ocr_konfig_callback) or screenshot is None:
             self._lupe_verstecken()
             return
 
@@ -106,7 +106,7 @@ class EinlernMixin:
 
     def _auswahl_ziehen(self, event):
         """Zeichnet das Auswahlrechteck während des Ziehens."""
-        if (not self.einlern_modus and not self.ocr_modus) or not self.auswahl_start:
+        if (not self.einlern_modus and not self.ocr_modus and not self._ocr_konfig_callback) or not self.auswahl_start:
             return
         self._auswahl_entfernen()
         x0, y0 = self.auswahl_start
@@ -119,9 +119,21 @@ class EinlernMixin:
     def _auswahl_ende(self, event):
         """Beendet die Auswahl."""
         cursor_freigeben()
-        if not self.einlern_modus and not self.ocr_modus: return
+        if not self.einlern_modus and not self.ocr_modus and not self._ocr_konfig_callback: return
         if not self.auswahl_start: return
         
+        # 1. Fall: OCR-Konfigurations-Dialog ist offen und wir haben in der Live-Vorschau gezogen
+        if self._ocr_konfig_callback:
+            x0, y0 = self.auswahl_start
+            mx0 = int((min(x0, event.x) - self.bild_offset_x) / self.bild_skalierung_x)
+            my0 = int((min(y0, event.y) - self.bild_offset_y) / self.bild_skalierung_y)
+            mx1 = int((max(x0, event.x) - self.bild_offset_x) / self.bild_skalierung_x)
+            my1 = int((max(y0, event.y) - self.bild_offset_y) / self.bild_skalierung_y)
+            self._ocr_konfig_callback(mx0, my0, mx1, my1)
+            self._auswahl_entfernen()
+            self.auswahl_start = None
+            return
+
         if self.ocr_modus:
             self._ocr_region_speichern(event)
             return

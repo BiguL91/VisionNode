@@ -180,9 +180,58 @@ class DialogeMixin:
             self._log(f"OCR-Bereiche für '{template_name}' permanent gespeichert.")
 
         btn_leiste = tk.Frame(dialog, bg="#2d2d2d"); btn_leiste.pack(fill=tk.X, padx=16, pady=12)
-        tk.Button(btn_leiste, text="Speichern", bg="#2ea043", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=4, command=final_speichern).pack(side=tk.RIGHT, padx=(4, 0))
-        tk.Button(btn_leiste, text="Editor beenden", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4, command=dialog.destroy).pack(side=tk.RIGHT)
         
+        live_btn = tk.Button(btn_leiste, text="📍 Live wählen", bg="#1a3a5a", fg="#ffffff",
+                             font=("Segoe UI", 8, "bold"), relief=tk.FLAT, padx=10, pady=2)
+        live_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Da der Modus bereits aktiv ist, wenn der Dialog offen ist, dient der Button hier eher zur Bestätigung/Fokus
+        def focus_live():
+            dialog.grab_release() # WICHTIG: Grab lösen damit Hauptfenster Events kriegt
+            self.root.lift()
+            self.vorschau_canvas.focus_force()
+            self._log("Zieh einen Bereich auf der Live-Vorschau!")
+        live_btn.config(command=focus_live)
+
+        tk.Label(btn_leiste, text="💡 Bereich auf Live-Vorschau markierbar", 
+                 bg="#2d2d2d", fg="#666666", font=("Segoe UI", 8, "italic")).pack(side=tk.LEFT)
+        tk.Button(btn_leiste, text="Speichern", bg="#2ea043", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=4, command=final_speichern).pack(side=tk.RIGHT, padx=(4, 0))
+        
+        def _on_live_selection(lx0, ly0, lx1, ly1):
+            match = next((m for m in self.app.state.active_matches if m[0] == template_name or m[6] == template_name), None)
+            if not match:
+                self._log(f"Template '{template_name}' nicht auf dem Schirm. Auswahl ignoriert.")
+                return
+            _, tx, ty, tw, th, _ = match[:6]
+
+            # --- Automatische Zoom-Anpassung ---
+            # Wie weit liegt die Auswahl außerhalb des Templates?
+            dx0, dy0 = tx - lx0, ty - ly0
+            dx1, dy1 = lx1 - (tx + tw), ly1 - (ty + th)
+            max_off = max(0, dx0, dy0, dx1, dy1)
+            
+            # Faktor berechnen (relativ zur Template-Größe)
+            neuer_rand = int((max_off / max(tw, th)) * 100) + 20 # +20% Puffer
+            if neuer_rand > rand_prozent_var.get():
+                rand_prozent_var.set(min(250, neuer_rand))
+                vorschau_aktualisieren() # WICHTIG: Erst Zoom-Basis aktualisieren
+            # -----------------------------------
+
+            ox, oy, s = cv_info["ox"], cv_info["oy"], cv_info["skala"]
+            ax0, ay0 = int(ox + (lx0 - tx) * s), int(oy + (ly0 - ty) * s)
+            ax1, ay1 = int(ox + (lx1 - tx) * s), int(oy + (ly1 - ty) * s)
+            auswahl[0] = (ax0, ay0, ax1, ay1)
+            ocr_vorschau_starten()
+
+        def _cleanup():
+            self._ocr_konfig_callback = None
+            self.vorschau_canvas.config(cursor="")
+            dialog.destroy()
+
+        tk.Button(btn_leiste, text="Editor beenden", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4, command=_cleanup).pack(side=tk.RIGHT)
+        dialog.protocol("WM_DELETE_WINDOW", _cleanup)
+        self._ocr_konfig_callback = _on_live_selection
+        self.vorschau_canvas.config(cursor="crosshair")
+
         vorschau_aktualisieren()
         dialog.update_idletasks(); dialog.geometry(f"+{self.root.winfo_x()+(self.root.winfo_width()-dialog.winfo_width())//2}+{self.root.winfo_y()+(self.root.winfo_height()-dialog.winfo_height())//2}")
         self.root.wait_window(dialog)

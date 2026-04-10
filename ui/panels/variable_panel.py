@@ -50,7 +50,11 @@ class VariablePanel:
                 (en, en, k.get("modus", "Text"), lambda _n=en: self.bot._template_ocr_aus_panel_loeschen(_n))
             )
             
-        akt = {m[0] for m in self.bot.app.state.active_matches}
+        akt = set()
+        for m in self.bot.app.state.active_matches:
+            akt.add(m[0])
+            if len(m) > 6: akt.add(m[6])
+        
         for tn, ents in grp.items():
             if self._nur_aktive_variablen and tn not in akt:
                 continue

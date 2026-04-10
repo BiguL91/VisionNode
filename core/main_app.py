@@ -306,6 +306,9 @@ class TilesBotApp:
                 for entry_name, k in ocr_konfig.items():
                     konf_nach_template[k.get("template")].append((entry_name, k))
 
+                # Track entries we've already processed so lower-scoring matches don't overwrite the best match
+                processed_entries = set()
+
                 # 2. Nur die aktuell gefundenen Templates scannen
                 for match in self.state.active_matches:
                     d_name, p_name = match[0], match[6] if len(match) > 6 else match[0]
@@ -315,10 +318,14 @@ class TilesBotApp:
                         passende = konf_nach_template.get(d_name, [])
                     
                     for entry_name, k in passende:
+                        if entry_name in processed_entries:
+                            continue
+                            
                         wert = self.ocr_engine.template_match_scannen(
                             self.current_screenshot_pil, entry_name, match
                         )
                         neue_t_ocr[entry_name] = wert
+                        processed_entries.add(entry_name)
                 
                 # 3. Optional: Werte von Templates entfernen, die gar nicht mehr da sind
                 # Wir machen das hier NICHT hart, damit Werte im Log/Workflow stabil bleiben.
