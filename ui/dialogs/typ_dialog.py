@@ -54,6 +54,7 @@ class TypDialog:
         self.parent = parent
         self.callback = callback
         self._kategorie = None
+        self._typ = None
 
         self.fenster = tk.Toplevel(parent)
         self.fenster.title("Neues Element erstellen")
@@ -122,9 +123,59 @@ class TypDialog:
 
         self._zentrieren()
 
+    PASSIV_ARTEN = [
+        {
+            "key": "master",
+            "label": "Master Gruppe",
+            "icon": "◈",
+            "farbe": "#7a9abf",
+            "beschreibung": "Eigenständige Gruppe ohne übergeordnete Gruppe.\nTop-Level-Organisationseinheit.",
+        },
+        {
+            "key": "untergeordnet",
+            "label": "Untergeordnete Gruppe",
+            "icon": "↳",
+            "farbe": "#9abf7a",
+            "beschreibung": "Gehört zu einer bestehenden Gruppe.\nWird ihr untergeordnet zugewiesen.",
+        },
+    ]
+
     def _typ_gewaehlt(self, typ):
+        self._typ = typ
+        if typ == "passiv_gruppe":
+            self._stufe3_bauen()
+        else:
+            self.fenster.destroy()
+            self.callback(typ, self._kategorie)
+
+    def _stufe3_bauen(self):
+        self._leeren()
+
+        kopf = tk.Frame(self.fenster, bg="#2d2d2d")
+        kopf.pack(fill=tk.X, padx=16, pady=(14, 4))
+        tk.Button(kopf, text="← Zurück", bg="#2d2d2d", fg="#555555",
+                  font=("Segoe UI", 8), relief=tk.FLAT, cursor="hand2",
+                  command=self._stufe2_bauen).pack(side=tk.LEFT)
+        tk.Label(kopf, text="📦 Passive Gruppe",
+                 bg="#2d2d2d", fg="#7a9abf", font=("Segoe UI", 9, "bold")).pack(side=tk.RIGHT)
+
+        tk.Label(self.fenster, text="Welche Art?",
+                 bg="#2d2d2d", fg="#ffffff", font=("Segoe UI", 11, "bold")
+                 ).pack(padx=24, pady=(4, 12))
+
+        for a in self.PASSIV_ARTEN:
+            self._karte_bauen(a, lambda key=a["key"]: self._passiv_art_gewaehlt(key))
+
+        tk.Button(self.fenster, text="Abbrechen",
+                  bg="#3a3a3a", fg="#aaaaaa", relief=tk.FLAT,
+                  font=("Segoe UI", 9), padx=10, pady=4, cursor="hand2",
+                  command=self.fenster.destroy).pack(pady=(8, 16))
+
+        self._zentrieren()
+
+    def _passiv_art_gewaehlt(self, art):
         self.fenster.destroy()
-        self.callback(typ, self._kategorie)
+        self.callback(self._typ, self._kategorie, {"art": art})
 
     def _karte_bauen(self, t, aktion):
         rahmen = tk.Frame(self.fenster, bg="#3a3a3a", cursor="hand2")

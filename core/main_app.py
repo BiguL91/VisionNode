@@ -65,7 +65,9 @@ class TilesBotApp:
         ref_h = self.settings.get("referenz_hoehe")
         self.template_engine = TemplateEngine(
             matching_skalierung=self.settings.get("matching_skalierung", 0.5),
-            referenz_groesse=(ref_b, ref_h) if ref_b and ref_h else None
+            referenz_groesse=(ref_b, ref_h) if ref_b and ref_h else None,
+            log_func=self._log,
+            log_enabled_func=lambda: self.settings.get("log_dateitransfers", True)
         )
         self.ocr_engine = OCREngine()
         self.action_engine = ActionEngine()

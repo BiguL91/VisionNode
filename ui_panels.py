@@ -8,6 +8,13 @@ from ui.panels.log_panel import LogPanel
 from ui.panels.daten_panel import DatenPanel
 
 class PanelsMixin:
+    def _alle_template_panels_aktualisieren(self):
+        """Aktualisiert alle Template-Panels (Workflow + State)."""
+        if hasattr(self, "template_panel"):
+            self.template_panel.aktualisieren()
+        if hasattr(self, "state_template_panel"):
+            self.state_template_panel.aktualisieren()
+
     def _panel_erstellen(self, parent, titel, inhalt_func, expand=False, kopf_extra=None):
         """Erstellt ein beschriftetes Panel mit Collapse-Funktion."""
         rahmen = tk.Frame(parent, bg="#2d2d2d", relief=tk.FLAT, bd=1)
@@ -60,9 +67,10 @@ class PanelsMixin:
         def neu_erstellen():
             from ui.dialogs.typ_dialog import TypDialog
 
-            def on_typ(typ, kategorie):
+            def on_typ(typ, kategorie, meta=None):
                 if typ == "passiv_gruppe":
-                    self._passiv_gruppe_erstellen_dialog(kategorie=kategorie)
+                    art = (meta or {}).get("art", "master")
+                    self._passiv_gruppe_erstellen_dialog(kategorie=kategorie, ist_master=(art == "master"))
                 else:
                     self._geplanter_typ = typ
                     self._geplante_kategorie = kategorie
@@ -74,42 +82,58 @@ class PanelsMixin:
                   font=("Segoe UI", 7), relief=tk.FLAT, padx=6, pady=1,
                   cursor="hand2", command=neu_erstellen).pack(side=tk.RIGHT, padx=(0, 2), pady=2)
 
-    def _passiv_gruppe_erstellen_dialog(self, kategorie="workflow"):
+    def _passiv_gruppe_erstellen_dialog(self, kategorie="workflow", ist_master=True):
         """Kleiner Name-Dialog für eine neue passive Gruppe."""
-        from ui.dialogs.gruppe_editor import GruppeEditor
+        from tkinter import ttk
         dialog = tk.Toplevel(self.root)
-        dialog.title("Passive Gruppe")
+        dialog.title("Passive Gruppe erstellen")
         dialog.configure(bg="#2d2d2d")
         dialog.grab_set()
         dialog.resizable(False, False)
 
+        art_label = "Master Gruppe" if ist_master else "Untergeordnete Gruppe"
+        art_farbe = "#7a9abf" if ist_master else "#9abf7a"
+        tk.Label(dialog, text=art_label, bg="#2d2d2d", fg=art_farbe,
+                 font=("Segoe UI", 9, "bold")).pack(padx=20, pady=(14, 6), anchor="w")
+
         tk.Label(dialog, text="Gruppen-Name:", bg="#2d2d2d", fg="#cccccc",
-                 font=("Segoe UI", 9)).pack(padx=20, pady=(16, 4), anchor="w")
+                 font=("Segoe UI", 9)).pack(padx=20, pady=(0, 4), anchor="w")
         name_var = tk.StringVar()
         entry = tk.Entry(dialog, textvariable=name_var, bg="#1a1a1a", fg="#cccccc",
                          insertbackground="white", font=("Segoe UI", 10),
                          relief=tk.FLAT, bd=4, width=24)
         entry.pack(padx=20, pady=(0, 4))
         entry.focus_set()
+
+        # Übergeordnete Gruppe nur bei "untergeordnet" anzeigen
+        parent_var = tk.StringVar()
+        if not ist_master:
+            tk.Label(dialog, text="Übergeordnete Gruppe:", bg="#2d2d2d", fg="#cccccc",
+                     font=("Segoe UI", 9)).pack(padx=20, pady=(8, 4), anchor="w")
+            verfuegbare = sorted([g for g, v in self.template_engine.settings.items()
+                           if isinstance(v, dict)
+                           and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe")
+                           and v.get("kategorie") == kategorie])
+            ttk.Combobox(dialog, textvariable=parent_var, values=verfuegbare,
+                         font=("Segoe UI", 10), width=22).pack(padx=20, pady=(0, 4))
+
         fehler = tk.Label(dialog, text="", bg="#2d2d2d", fg="#da3633", font=("Segoe UI", 8))
         fehler.pack(padx=20, anchor="w")
 
         def erstellen():
-            import os
             name = name_var.get().strip()
             if not name:
                 fehler.config(text="Name darf nicht leer sein.")
                 return
             if name in self.template_engine.settings and \
                     self.template_engine.settings[name].get("typ") == "passiv_gruppe":
-                fehler.config(text=f"Passive Gruppe '{name}' existiert bereits.")
+                fehler.config(text=f"'{name}' existiert bereits.")
                 return
-            self.template_engine.gruppe_config_speichern(name, [], kategorie=kategorie)
+            uebergeordnet = "" if ist_master else parent_var.get().strip()
+            self.template_engine.gruppe_config_speichern(
+                name, [], uebergeordnete_gruppe=uebergeordnet, kategorie=kategorie)
             dialog.destroy()
-            GruppeEditor(self.root, self, name, on_save=lambda: (
-                self.template_panel.aktualisieren()
-                if hasattr(self, "template_panel") else None
-            ))
+            self._alle_template_panels_aktualisieren()
 
         entry.bind("<Return>", lambda e: erstellen())
         btn_f = tk.Frame(dialog, bg="#2d2d2d")

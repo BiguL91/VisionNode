@@ -4,16 +4,21 @@ import os
 import json
 import torch
 import torch.nn.functional as F
+import time
+import shutil
 from PIL import Image
 from collections import defaultdict
 
 TEMPLATES_ORDNER = "templates"
 SETTINGS_DATEI = "template_settings.json"
+DELETED_ORDNER = os.path.join(TEMPLATES_ORDNER, "_deleted")
 
 class TemplateEngine:
-    def __init__(self, matching_skalierung=0.5, referenz_groesse=None):
+    def __init__(self, matching_skalierung=0.5, referenz_groesse=None, log_func=None, log_enabled_func=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"TemplateEngine: Nutze Device '{self.device}'")
+        self.log_func = log_func
+        self.log_enabled_func = log_enabled_func
+        self._log(f"TemplateEngine: Nutze Device '{self.device}'")
         
         self.templates = {}
         self.settings = {}
@@ -22,15 +27,59 @@ class TemplateEngine:
         self._gpu_cache = {}
         
         os.makedirs(TEMPLATES_ORDNER, exist_ok=True)
+        os.makedirs(DELETED_ORDNER, exist_ok=True)
         self.konfigurationen_bereinigen()
         self._settings_laden()
         self._templates_laden()
+
+    def _log(self, message):
+        if self.log_func:
+            if self.log_enabled_func and not self.log_enabled_func():
+                return
+            self.log_func(message)
+        else:
+            print(f"LOG: {message}")
+
+    def get_kinder(self, gruppe_name):
+        """Gibt alle Templates zurück, die zu dieser Gruppe oder ihren Untergruppen gehören."""
+        vollpfad = self._gruppe_vollpfad(gruppe_name)
+        kinder = []
+        for k, v in self.settings.items():
+            if not isinstance(v, dict) or k == gruppe_name: continue
+            g = v.get("gruppe", "")
+            # Entweder direkt in der Gruppe oder in einer Untergruppe
+            if g == vollpfad or g.startswith(vollpfad + "/"):
+                kinder.append(k)
+        return sorted(list(set(kinder)))
+
+    def _backup_zu_deleted(self, pfad):
+        """Verschiebt eine Datei in den _deleted Ordner statt sie zu löschen."""
+        if not pfad or not os.path.exists(pfad): 
+            return
+        try:
+            bn = os.path.basename(pfad)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            # Sicherstellen dass Zielordner existiert
+            os.makedirs(DELETED_ORDNER, exist_ok=True)
+            
+            ziel = os.path.join(DELETED_ORDNER, f"{ts}_{bn}")
+            shutil.move(pfad, ziel)
+            self._log(f"  Backup: {bn} -> _deleted/")
+        except Exception as e:
+            self._log(f"  Backup-Fehler ({os.path.basename(pfad)}): {e}")
+            try: 
+                os.remove(pfad) 
+                self._log(f"  Datei stattdessen gelöscht (Backup fehlgeschlagen).")
+            except: pass
 
     def konfigurationen_bereinigen(self):
         if not os.path.exists(TEMPLATES_ORDNER): return
 
         aktuelle_pngs = set()
-        for root, _, dateien in os.walk(TEMPLATES_ORDNER):
+        for root, dirs, dateien in os.walk(TEMPLATES_ORDNER):
+            # _deleted Ordner beim Scannen ignorieren
+            if "_deleted" in dirs:
+                dirs.remove("_deleted")
             for f in dateien:
                 if f.endswith(".png"): aktuelle_pngs.add(f[:-4])
 
@@ -39,10 +88,19 @@ class TemplateEngine:
             if os.path.exists(datei):
                 try:
                     with open(datei, "r", encoding="utf-8") as f: data = json.load(f)
-                    neu = {k: v for k, v in data.items() if
-                           k.startswith("_") or
-                           k in aktuelle_pngs or
-                           (isinstance(v, dict) and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe", "template"))}
+                    neu = {}
+                    for k, v in data.items():
+                        if k.startswith("_"): # Interne Keys behalten
+                            neu[k] = v
+                            continue
+                        
+                        typ = v.get("typ") if isinstance(v, dict) else None
+                        if typ == "template":
+                            if k in aktuelle_pngs: neu[k] = v
+                        else:
+                            # Gruppen behalten wir erst mal (da sie kein eigenes Bild haben müssen)
+                            neu[k] = v
+                            
                     if len(neu) != len(data):
                         with open(datei, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
                 except Exception: pass
@@ -72,7 +130,15 @@ class TemplateEngine:
             for datei in dateien:
                 if datei.endswith(".png"):
                     rel_pfad = os.path.relpath(root, TEMPLATES_ORDNER)
-                    gruppe = None if rel_pfad == "." else rel_pfad.replace("\\", "/")
+                    if rel_pfad == ".":
+                        gruppe = None
+                    else:
+                        teile = rel_pfad.replace("\\", "/").split("/")
+                        # Kategorie-Ordner (state/workflow) wird übersprungen
+                        if teile[0] in {"state", "workflow"} and len(teile) >= 2:
+                            gruppe = "/".join(teile[1:])
+                        else:
+                            gruppe = rel_pfad.replace("\\", "/")
                     
                     name = datei[:-4]
                     pfad = os.path.join(root, datei)
@@ -108,31 +174,39 @@ class TemplateEngine:
                         "scan_regions": self.settings.get(name, {}).get("scan_regions", []),
                         "bbox": bbox
                     }
-        print(f"TemplateEngine: {len(self.templates)} Templates geladen.")
+        self._log(f"TemplateEngine: {len(self.templates)} Templates geladen.")
+
+    def _gruppe_vollpfad(self, gruppe_name):
+        """Vollpfad einer Gruppe. settings["gruppe"] = Vollpfad des Elternteils (oder leer).
+        aktiv_gruppe hat gruppe==eigener_name (selbst-referenziell) → kein echter Elternteil."""
+        parent = self.settings.get(gruppe_name, {}).get("gruppe", "")
+        if parent and parent != gruppe_name:
+            return f"{parent}/{gruppe_name}"
+        return gruppe_name
+
+    def _gruppe_ordnerpfad(self, gruppe_name):
+        """Disk-Pfad einer Gruppe. aktiv_gruppe: gruppe==eigener_name → ignorieren."""
+        s = self.settings.get(gruppe_name, {})
+        kat = s.get("kategorie", "workflow")
+        parent = s.get("gruppe", "")
+        if parent and parent != gruppe_name:
+            return os.path.join(TEMPLATES_ORDNER, kat, *parent.split("/"), gruppe_name)
+        return os.path.join(TEMPLATES_ORDNER, kat, gruppe_name)
 
     def get_gruppen(self):
-        """Gibt eine Liste aller existierenden Gruppen zurück (aktiv + passiv)."""
+        """Gibt Vollpfade aller Gruppen zurück — konsistent mit _templates_laden-Output."""
         gruppen = set()
-
-        # 1. Ordner auf der Festplatte (aktiv_gruppe)
-        if os.path.exists(TEMPLATES_ORDNER):
-            try:
-                for root, dirs, _ in os.walk(TEMPLATES_ORDNER):
-                    dirs[:] = [d for d in dirs if not d.startswith('_')]
-                    for d in dirs:
-                        rel = os.path.relpath(os.path.join(root, d), TEMPLATES_ORDNER).replace("\\", "/")
-                        gruppen.add(rel)
-            except Exception: pass
-
-        # 2. Aus geladenen Templates
+        # Templates: gruppe ist bereits Vollpfad (aus Dateisystem)
         for t in self.templates.values():
             if t["gruppe"]: gruppen.add(t["gruppe"])
-
-        # 3. Passive Gruppen (settings-Einträge mit typ="passiv_gruppe")
+        # Passive Gruppen: Vollpfad berechnen
         for k, v in self.settings.items():
             if isinstance(v, dict) and v.get("typ") == "passiv_gruppe":
+                gruppen.add(self._gruppe_vollpfad(k))
+        # Aktive Gruppen ohne Templates noch
+        for k, v in self.settings.items():
+            if isinstance(v, dict) and v.get("typ") == "aktiv_gruppe":
                 gruppen.add(k)
-
         return sorted(g for g in gruppen if g)
 
     @staticmethod
@@ -201,7 +275,7 @@ class TemplateEngine:
         x0, x1 = np.where(spalten)[0][[0, -1]]
         return (int(x0), int(y0), int(x1 - x0 + 1), int(y1 - y0 + 1))
 
-    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None):
+    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None, alter_name=None):
         bild_np = np.array(bild_pil.convert("RGB"))
 
         basis_name = name.split("__")[0]
@@ -211,21 +285,42 @@ class TemplateEngine:
         else:
             g_name = gruppe if gruppe else basis_name
 
-        # Hierarchischer Pfad: "UI/Button" → templates/UI/Button/
-        ordner = os.path.join(TEMPLATES_ORDNER, *g_name.split("/"))
+        # Kategorie früh bestimmen (wird für Pfad-Aufbau benötigt)
+        if not kategorie:
+            bestehend = self.settings.get(name, {})
+            kategorie = bestehend.get("kategorie", "workflow")
+
+        # Ordnerpfad: aktiv_gruppe immer Master-Ebene; Templates folgen Gruppen-Hierarchie
+        if typ == "aktiv_gruppe":
+            ordner = os.path.join(TEMPLATES_ORDNER, kategorie, g_name)
+        else:
+            g_key = g_name.split("/")[-1]  # Kurzname = Settings-Key
+            if g_key in self.settings:
+                ordner = self._gruppe_ordnerpfad(g_key)
+            else:
+                ordner = os.path.join(TEMPLATES_ORDNER, kategorie, g_name)
         os.makedirs(ordner, exist_ok=True)
 
         pfad = os.path.join(ordner, f"{name}.png")
 
         # Altes Template an anderer Stelle löschen?
-        if name in self.templates:
-            alter_pfad = self.templates[name]["pfad"]
-            if os.path.exists(alter_pfad) and os.path.abspath(alter_pfad) != os.path.abspath(pfad):
-                try: 
-                    os.remove(alter_pfad)
-                    alt_dir = os.path.dirname(alter_pfad)
-                    if os.path.exists(alt_dir) and not os.listdir(alt_dir): os.rmdir(alt_dir)
-                except: pass
+        # Entweder über den neuen Namen (falls Pfadwechsel) oder über alter_name (falls Rename)
+        zu_loeschen_namen = {name}
+        if alter_name: zu_loeschen_namen.add(alter_name)
+        
+        for an in zu_loeschen_namen:
+            if an in self.templates:
+                alter_pfad = self.templates[an]["pfad"]
+                if os.path.exists(alter_pfad) and os.path.abspath(alter_pfad) != os.path.abspath(pfad):
+                    try: 
+                        os.remove(alter_pfad)
+                        alt_dir = os.path.dirname(alter_pfad)
+                        if os.path.exists(alt_dir) and not os.listdir(alt_dir): os.rmdir(alt_dir)
+                    except: pass
+                # Wenn es ein Rename war, den alten Key aus den internen Strukturen entfernen
+                if an != name:
+                    self.settings.pop(an, None)
+                    self.templates.pop(an, None)
 
         # Maske erstellen
         if hintergrund_entfernen:
@@ -251,11 +346,6 @@ class TemplateEngine:
             bestehend = self.settings.get(name, {})
             typ = bestehend.get("typ") or ("aktiv_gruppe" if g_name == basis_name else "template")
 
-        # Kategorie: explizit oder aus bestehendem Eintrag übernehmen
-        if not kategorie:
-            bestehend = self.settings.get(name, {})
-            kategorie = bestehend.get("kategorie", "workflow")
-
         # Metadaten speichern
         self.settings[name] = {
             "hg_entfernen": bool(hintergrund_entfernen),
@@ -280,6 +370,7 @@ class TemplateEngine:
         neuer_basis = neuer_name.split("__")[0]
 
         varianten = [t for t in self.templates.keys() if t == alter_basis or t.startswith(f"{alter_basis}__")]
+        self._log(f"Template umbenennen: '{alter_basis}' → '{neuer_basis}' ({len(varianten)} Varianten)")
 
         for v_alt in varianten:
             suffix = v_alt[len(alter_basis):]
@@ -287,8 +378,13 @@ class TemplateEngine:
             if v_alt not in self.templates: continue
 
             alt_pfad = self.templates[v_alt]["pfad"]
-            g_name = neue_gruppe if neue_gruppe else neuer_basis
-            neu_ordner = os.path.join(TEMPLATES_ORDNER, *g_name.split("/"))
+            g_name = neue_gruppe if neue_gruppe else neuer_basis  # Vollpfad der Gruppe
+            kat = self.settings.get(v_alt, {}).get("kategorie", "workflow")
+            g_key = g_name.split("/")[-1]  # Kurzname = Settings-Key
+            if g_key in self.settings:
+                neu_ordner = self._gruppe_ordnerpfad(g_key)
+            else:
+                neu_ordner = os.path.join(TEMPLATES_ORDNER, kat, g_name)
             os.makedirs(neu_ordner, exist_ok=True)
             neu_pfad = os.path.join(neu_ordner, f"{v_neu}.png")
 
@@ -297,9 +393,11 @@ class TemplateEngine:
                     if os.path.exists(neu_pfad) and os.path.abspath(alt_pfad) != os.path.abspath(neu_pfad):
                         os.remove(neu_pfad)
                     os.rename(alt_pfad, neu_pfad)
+                    self._log(f"  Verschoben: {os.path.basename(alt_pfad)} → {v_neu}.png")
                     alt_dir = os.path.dirname(alt_pfad)
                     if os.path.exists(alt_dir) and not os.listdir(alt_dir): os.rmdir(alt_dir)
-                except: pass
+                except Exception as e:
+                    self._log(f"  Fehler bei {v_alt}: {e}")
 
             if v_alt in self.settings:
                 self.settings[v_neu] = self.settings.pop(v_alt)
@@ -319,47 +417,106 @@ class TemplateEngine:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._templates_laden()
 
-    def gruppe_umbenennen(self, alter_pfad, neuer_pfad):
-        """Benennt eine Gruppe um: verschiebt Ordner + aktualisiert alle Settings-Einträge."""
-        alter_ordner = os.path.join(TEMPLATES_ORDNER, *alter_pfad.split("/"))
-        neuer_ordner = os.path.join(TEMPLATES_ORDNER, *neuer_pfad.split("/"))
+    def gruppe_umbenennen(self, alter_name, neuer_name, neue_uebergeordnete_gruppe=None):
+        """Benennt eine Gruppe um oder verschiebt sie: verschiebt Ordner + cascadiert Vollpfade."""
+        alter_vollpfad = self._gruppe_vollpfad(alter_name)
+        alter_ordner = self._gruppe_ordnerpfad(alter_name)
+        
+        if neue_uebergeordnete_gruppe is not None:
+            parent = neue_uebergeordnete_gruppe
+        else:
+            parent = self.settings.get(alter_name, {}).get("gruppe", "")
+            
+        if parent == alter_name:
+            parent = ""
+            
+        neuer_vollpfad = f"{parent}/{neuer_name}" if parent else neuer_name
+        
+        # Ziel-Ordner bestimmen
+        s = self.settings.get(alter_name, {})
+        kat = s.get("kategorie", "workflow")
+        if parent:
+            neuer_ordner = os.path.join(TEMPLATES_ORDNER, kat, *parent.split("/"), neuer_name)
+        else:
+            neuer_ordner = os.path.join(TEMPLATES_ORDNER, kat, neuer_name)
+
+        self._log(f"Gruppe verschieben/umbenennen: '{alter_vollpfad}' → '{neuer_vollpfad}'")
+        self._log(f"  Verschiebe: '{os.path.basename(alter_ordner)}' → '{neuer_name}'")
 
         if os.path.exists(alter_ordner):
             try:
                 os.makedirs(os.path.dirname(neuer_ordner) or ".", exist_ok=True)
                 os.rename(alter_ordner, neuer_ordner)
+                self._log(f"  Ordner verschoben: {alter_ordner} → {neuer_ordner}")
+                
+                # Wichtig: Alle Dateien im neuen Ordner, die nach dem alten Master benannt sind, umbenennen
+                # (Damit sie nicht als neue Kinder im neuen Ordner auftauchen)
+                if os.path.exists(neuer_ordner):
+                    alter_basis = alter_name.split("__")[0]
+                    neuer_basis = neuer_name.split("__")[0]
+                    for datei in os.listdir(neuer_ordner):
+                        if datei.endswith(".png"):
+                            d_name = datei[:-4]
+                            if d_name == alter_basis or d_name.startswith(f"{alter_basis}__"):
+                                suffix = d_name[len(alter_basis):]
+                                neu_d_name = f"{neuer_basis}{suffix}.png"
+                                os.rename(os.path.join(neuer_ordner, datei), 
+                                          os.path.join(neuer_ordner, neu_d_name))
+                                self._log(f"  Datei umbenannt: {datei} → {neu_d_name}")
             except Exception as e:
-                print(f"gruppe_umbenennen: Ordner-Fehler: {e}")
+                self._log(f"  Ordner-Fehler: {e}")
 
-        # Settings-Einträge cascadieren
+        # Cascade: alle Einträge deren "gruppe" den alten Vollpfad enthält aktualisieren
         for k, v in list(self.settings.items()):
             if not isinstance(v, dict): continue
             g = v.get("gruppe", "")
-            if g == alter_pfad:
-                self.settings[k]["gruppe"] = neuer_pfad
-            elif g.startswith(alter_pfad + "/"):
-                self.settings[k]["gruppe"] = neuer_pfad + g[len(alter_pfad):]
+            
+            # Falls das Template selbst zum Master gehört (Varianten), auch den Key umbenennen
+            basis_k = k.split("__")[0]
+            if basis_k == alter_name:
+                suffix = k[len(basis_k):]
+                neu_k = neuer_name + suffix
+                self.settings[neu_k] = self.settings.pop(k)
+                self.settings[neu_k]["gruppe"] = neuer_vollpfad # wird unten nochmal verfeinert falls nötig
+                self._log(f"  Eintrag (Variante) umbenannt: '{k}' → '{neu_k}'")
+                continue
 
-        # Gruppe-Key selbst umbenennen (passiv_gruppe oder aktiv_gruppe)
-        if alter_pfad in self.settings:
-            self.settings[neuer_pfad] = self.settings.pop(alter_pfad)
-            if self.settings[neuer_pfad].get("typ") == "aktiv_gruppe":
-                self.settings[neuer_pfad]["gruppe"] = neuer_pfad
+            if g == alter_vollpfad:
+                self._log(f"  Update Pfad: '{k}' (Gruppe: {neuer_vollpfad})")
+                self.settings[k]["gruppe"] = neuer_vollpfad
+            elif g.startswith(alter_vollpfad + "/"):
+                neu_g = neuer_vollpfad + g[len(alter_vollpfad):]
+                self._log(f"  Update Pfad (Deep): '{k}' (Gruppe: {neu_g})")
+                self.settings[k]["gruppe"] = neu_g
+
+        # Gruppe-Key selbst umbenennen (falls noch nicht durch Varianten-Loop geschehen)
+        if alter_name in self.settings:
+            self.settings[neuer_name] = self.settings.pop(alter_name)
+            if self.settings[neuer_name].get("typ") in ("aktiv_gruppe", "passiv_gruppe"):
+                self.settings[neuer_name]["gruppe"] = neuer_vollpfad if parent else neuer_name
+            self._log(f"  Eintrag umbenannt: '{alter_name}' → '{neuer_name}'")
 
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._templates_laden()
 
+    def _ordner_aufraumen(self, ordner):
+        """Löscht leere Ordner rekursiv bis zum templates/-Wurzelordner."""
+        basis = os.path.abspath(TEMPLATES_ORDNER)
+        pfad = os.path.abspath(ordner)
+        while pfad != basis:
+            if os.path.exists(pfad) and not os.listdir(pfad):
+                try: os.rmdir(pfad)
+                except: break
+            else:
+                break
+            pfad = os.path.dirname(pfad)
+
     def template_loeschen(self, name):
         if name not in self.templates: return
         pfad = self.templates[name]["pfad"]
-        if os.path.exists(pfad): os.remove(pfad)
-        
-        # Ordner aufräumen
-        ordner = os.path.dirname(pfad)
-        if os.path.exists(ordner) and not os.listdir(ordner):
-            try: os.rmdir(ordner)
-            except: pass
+        self._backup_zu_deleted(pfad)
+        self._ordner_aufraumen(os.path.dirname(pfad))
             
         self.templates.pop(name, None)
         self.settings.pop(name, None)
@@ -368,23 +525,63 @@ class TemplateEngine:
         self._gpu_cache = {}
 
     def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None):
-        """Speichert eine passive Gruppe (kein Bild, nur Bedingungen)."""
+        """Speichert eine passive Gruppe (kein Bild, nur Bedingungen) und legt den Ordner an."""
         bestehend = self.settings.get(gruppe_name, {})
+        kat = kategorie or bestehend.get("kategorie", "workflow")
+        
+        # Die Gruppe ist entweder untergeordnet oder (wenn uebergeordnete_gruppe leer) sie ist ihre eigene Master-Gruppe.
+        # Wichtig: Bei passiven Gruppen muss 'gruppe' auf den Namen zeigen, wenn sie Master sind.
+        if uebergeordnete_gruppe:
+            g_val = uebergeordnete_gruppe
+        else:
+            # Wenn es vorher schon eine Gruppe war (vielleicht umbenannt), nehmen wir den Namen
+            g_val = gruppe_name
+
         self.settings[gruppe_name] = {
             "typ": "passiv_gruppe",
-            "gruppe": uebergeordnete_gruppe or bestehend.get("gruppe", ""),
+            "gruppe": g_val,
             "condition_states": condition_states,
-            "kategorie": kategorie or bestehend.get("kategorie", "workflow"),
+            "kategorie": kat,
         }
+        # Ordner nach Settings-Update bauen (Hierarchie wird über _gruppe_ordnerpfad aufgelöst)
+        ordner = self._gruppe_ordnerpfad(gruppe_name)
+        os.makedirs(ordner, exist_ok=True)
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
+        self._templates_laden()
 
-    def gruppe_config_loeschen(self, gruppe_name):
-        """Entfernt eine passive Gruppe."""
-        if gruppe_name in self.settings and self.settings[gruppe_name].get("typ") == "passiv_gruppe":
-            del self.settings[gruppe_name]
-            with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+    def gruppe_config_loeschen(self, gruppe_name, mit_inhalt=False):
+        """Entfernt eine Gruppe und löscht optional alle enthaltenen Templates."""
+        if gruppe_name in self.settings:
+            typ = self.settings[gruppe_name].get("typ")
+            if typ in ("passiv_gruppe", "aktiv_gruppe"):
+                ordner = self._gruppe_ordnerpfad(gruppe_name)
+                
+                if mit_inhalt:
+                    kinder = self.get_kinder(gruppe_name)
+                    for kind in kinder:
+                        if kind in self.templates:
+                            self._backup_zu_deleted(self.templates[kind]["pfad"])
+                        self.settings.pop(kind, None)
+                        self.templates.pop(kind, None)
+                    
+                    # Wenn es ein aktiver Master war, hat er selbst ein Bild im Ordner
+                    basis = gruppe_name.split("__")[0]
+                    master_pfad = os.path.join(ordner, f"{basis}.png")
+                    if os.path.exists(master_pfad):
+                        self._backup_zu_deleted(master_pfad)
+
+                self.settings.pop(gruppe_name, None)
+                with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+                    json.dump(self.settings, f, indent=2, ensure_ascii=False)
+                
+                if mit_inhalt and os.path.exists(ordner):
+                    try: shutil.rmtree(ordner)
+                    except: pass
+                else:
+                    self._ordner_aufraumen(ordner)
+                
+        self._templates_laden()
 
     def _get_gpu_template(self, name, s_eff):
         key = (name, s_eff)
@@ -448,12 +645,25 @@ class TemplateEngine:
                     continue
 
             g = t["gruppe"]
-            # Ein Template ist ein Master, wenn es keine Gruppe hat, 
-            # sein Name der Gruppe entspricht oder mit {Gruppe}__ beginnt (Varianten)
-            if g is None or name == g or name.startswith(f"{g}__"):
-                master_namen.append(name)
+            # Ein Template ist ein Master, wenn es keine aktive übergeordnete Gruppe hat.
+            # Wenn es eine Gruppe hat, prüfen wir ob IRGENDEIN Teil des Pfades ein eigenes Template ist.
+            parent_template = None
+            if g:
+                teile = g.split("/")
+                for i in range(len(teile)):
+                    pfad = "/".join(teile[:i+1])
+                    if pfad in self.templates:
+                        # Wenn wir selbst dieser Pfad sind (oder eine Variante davon), sind wir der Master
+                        if pfad == name or name.startswith(pfad + "__"):
+                            parent_template = None
+                        else:
+                            parent_template = pfad
+                        break
+            
+            if parent_template:
+                kinder_nach_gruppe[parent_template].append(name)
             else:
-                kinder_nach_gruppe[g].append(name)
+                master_namen.append(name)
         
         # Master suchen
         master_ergebnisse = self._batch_match(img_m, master_namen, s_eff)
@@ -473,12 +683,14 @@ class TemplateEngine:
         treffer_pro_gruppe = defaultdict(list)
         for m in master_gefiltert:
             name, rx, ry, rw, rh, score = m
-            gruppe = self.templates[name]["gruppe"]
-            if gruppe in kinder_nach_gruppe: treffer_pro_gruppe[gruppe].append(m)
-            else: final_results.append(m)
+            # Ein Master ist ein Key in kinder_nach_gruppe, wenn er Kinder hat
+            if name in kinder_nach_gruppe:
+                treffer_pro_gruppe[name].append(m)
+            else:
+                final_results.append(m)
         
-        for gruppe, treffer_liste in treffer_pro_gruppe.items():
-            kinder_namen = kinder_nach_gruppe[gruppe]
+        for master_name, treffer_liste in treffer_pro_gruppe.items():
+            kinder_namen = kinder_nach_gruppe[master_name]
             for m_treffer in treffer_liste:
                 m_rx, m_ry = m_treffer[1], m_treffer[2]
                 pad = 4

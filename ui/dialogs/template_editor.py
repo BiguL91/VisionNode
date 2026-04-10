@@ -291,7 +291,10 @@ class TemplateEditor:
             self._gruppe_frame.pack_forget()
         else:
             # Sicherstellen dass Frame sichtbar ist (nach pack_forget)
-            self._gruppe_frame.pack(fill=tk.X, before=self._schwellwert_frame)
+            if hasattr(self, "_schwellwert_frame"):
+                self._gruppe_frame.pack(fill=tk.X, before=self._schwellwert_frame)
+            else:
+                self._gruppe_frame.pack(fill=tk.X)
             label_text = "Übergeordnete Gruppe (optional):" if self.typ == "passiv_gruppe" else "Gruppe: *"
             self._gruppe_label.config(text=label_text)
 
@@ -1086,8 +1089,11 @@ class TemplateEditor:
 
         alter_name = self.bearbeiten_name
 
-        if n in self.template_engine.templates and n != alter_name:
-            if not messagebox.askyesno("Überschreiben?", f"Template '{n}' existiert bereits. Überschreiben?"):
+        # Check in templates AND settings (for passive groups)
+        existiert = n in self.template_engine.templates or n in self.template_engine.settings
+        
+        if existiert and n != alter_name:
+            if not messagebox.askyesno("Überschreiben?", f"'{n}' existiert bereits. Überschreiben?"):
                 return
 
         try:
@@ -1104,21 +1110,38 @@ class TemplateEditor:
 
             if img_to_save is None or self.typ == "passiv_gruppe":
                 # Passive Gruppe: kein Bild, nur Bedingungen speichern
-                gruppe_name = self.name_var.get().strip()
-                if not gruppe_name:
+                n = self.name_var.get().strip()
+                if not n:
                     self.bot._log("Fehler beim Speichern: Kein Name angegeben.")
                     return
+                
                 uebergeordnet = self.gruppe_var.get().strip() if self.typ == "passiv_gruppe" else ""
-                if alter_name and alter_name != gruppe_name:
-                    self.template_engine.gruppe_config_loeschen(alter_name)
+                
+                # Check ob sich Name oder Hierarchie geändert hat
+                umbenennen = alter_name and (alter_name != n)
+                gruppe_geandert = False
+                if alter_name:
+                    alte_uebergeordnet = self.template_engine.settings.get(alter_name, {}).get("gruppe", "")
+                    # Master-Gruppe zeigt 'gruppe' == Name. Alles andere ist ein Parent-Wechsel.
+                    if alte_uebergeordnet == alter_name: # war Master
+                        if uebergeordnet != "": gruppe_geandert = True
+                    else: # war Sub
+                        if alte_uebergeordnet != uebergeordnet: gruppe_geandert = True
+
+                if umbenennen or gruppe_geandert:
+                    self.template_engine.gruppe_umbenennen(alter_name, n, neue_uebergeordnete_gruppe=uebergeordnet)
+
                 self.template_engine.gruppe_config_speichern(
-                    gruppe_name, list(self.condition_states),
+                    n, list(self.condition_states),
                     uebergeordnete_gruppe=uebergeordnet, kategorie=self.kategorie)
-                aktion = "umbenannt" if alter_name and alter_name != gruppe_name else "erstellt"
-                self.bot._log(f"Passive Gruppe {aktion}: \"{gruppe_name}\"")
+                
+                if umbenennen: aktion = "umbenannt"
+                elif alter_name: aktion = "aktualisiert"
+                else: aktion = "erstellt"
+                
+                self.bot._log(f"Passive Gruppe {aktion}: \"{n}\"")
                 self.bot.app.reload_templates()
-                if hasattr(self.bot, "template_panel"):
-                    self.bot.template_panel.aktualisieren()
+                self.bot._templates_liste_aktualisieren()
                 return
 
             entferne_hg = self.hg_var.get()
@@ -1137,8 +1160,8 @@ class TemplateEditor:
 
             umbenennen = alter_name and (alter_name != n)
             gruppe_geandert = False
-            if alter_name and alter_name in self.template_engine.templates:
-                alte_gruppe = self.template_engine.templates[alter_name].get("gruppe")
+            if alter_name:
+                alte_gruppe = self.template_engine.settings.get(alter_name, {}).get("gruppe", "")
                 if alte_gruppe != gruppe_name:
                     gruppe_geandert = True
 
@@ -1154,13 +1177,22 @@ class TemplateEditor:
             )
 
             if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):
-                self.template_engine.gruppe_umbenennen(alter_name, n)
+                self.template_engine.gruppe_umbenennen(alter_name, n, neue_uebergeordnete_gruppe=uebergeordnet)
+                # Nach dem Umbenennen der Gruppe müssen wir alter_name aktualisieren, 
+                # damit template_speichern im nächsten Schritt nicht denkt, es wäre ein neues Template.
+                # Wir geben aber trotzdem den ursprünglichen alter_name für die Lösch-Logik mit.
+                orig_alter_name = alter_name
+                alter_name = n
+                self.bearbeiten_name = n
                 self.template_engine.template_speichern(
-                    n, img_to_save, entferne_hg, list(self.ignore_regionen), **speichern_kwargs)
+                    n, img_to_save, entferne_hg, list(self.ignore_regionen), alter_name=orig_alter_name, **speichern_kwargs)
             elif umbenennen:
                 self.template_engine.template_umbenennen(alter_name, n, gruppe_name)
+                orig_alter_name = alter_name
+                alter_name = n
+                self.bearbeiten_name = n
                 self.template_engine.template_speichern(
-                    n, img_to_save, entferne_hg, list(self.ignore_regionen), **speichern_kwargs)
+                    n, img_to_save, entferne_hg, list(self.ignore_regionen), alter_name=orig_alter_name, **speichern_kwargs)
             else:
                 self.template_engine.template_speichern(
                     n, img_to_save, entferne_hg, list(self.ignore_regionen), **speichern_kwargs)

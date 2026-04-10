@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import messagebox
 from collections import defaultdict
 from helpers import _template_farbe
 
@@ -98,6 +99,10 @@ class TemplatePanel:
         if not auswahl:
             return
         text = self.template_liste.get(auswahl[0]).strip()
+        if "[Global]" in text or "(Keine Einträge)" in text:
+            self._last_gruppe = None
+            return
+
         m = re.search(r"\[(.+?)\]", text)
         if m:
             # Direkt ein Gruppen-Header gewählt
@@ -105,8 +110,8 @@ class TemplatePanel:
         else:
             # Kind-Template: Gruppe über das Template nachschlagen
             name = self._get_auswahl_name()
-            if name and name in self.template_engine.templates:
-                self._last_gruppe = self.template_engine.templates[name].get("gruppe")
+            if name and name in self.template_engine.settings:
+                self._last_gruppe = self.template_engine.settings[name].get("gruppe")
             else:
                 self._last_gruppe = None
 
@@ -138,15 +143,19 @@ class TemplatePanel:
             g = (t["gruppe"] or "").strip().replace("\\", "/")
             nach_gruppen[g].append(name)
 
-        # Alle bekannten Gruppen (aktiv + passiv) sammeln
+        # Alle bekannten Gruppen sammeln — aktiv (aus Templates) + passiv (aus Settings)
         aktive_gruppen = set(nach_gruppen.keys()) - {""}
         passive_gruppen = {
-            k for k, v in settings.items()
+            self.template_engine._gruppe_vollpfad(k)
+            for k, v in settings.items()
             if isinstance(v, dict) and v.get("typ") == "passiv_gruppe"
             and (self.filter_modus == "all" or v.get("kategorie", "workflow") == self.filter_modus)
         }
 
-        alle_gruppen = sorted(nach_gruppen.keys(), key=lambda x: (x != "", x.lower()))
+        # Passive Gruppen in denselben Pool → ein einziger Anzeige-Loop
+        alle_gruppen_set = (aktive_gruppen | passive_gruppen)
+        alle_gruppen = sorted(alle_gruppen_set | {""} if "" in nach_gruppen else alle_gruppen_set,
+                              key=lambda x: (x != "", x.lower()))
 
         def _template_mark(name):
             s = settings.get(name, {})
@@ -156,13 +165,11 @@ class TemplatePanel:
             if name in klick_konfig: m += " 🖱"
             return m
 
-        hat_eintraege = bool(alle_gruppen) and any(nach_gruppen[g] for g in alle_gruppen)
-
-        if not hat_eintraege and not (self.filter_modus in ("all", "workflow") and passive_gruppen - aktive_gruppen):
+        if not alle_gruppen:
             self.template_liste.insert(tk.END, "  (Keine Einträge)")
             return
 
-        for gruppe in alle_gruppen:
+        for i, gruppe in enumerate(alle_gruppen):
             if not gruppe:
                 self.template_liste.insert(tk.END, "[Global]")
                 self.template_liste.itemconfig(tk.END, fg="#888888")
@@ -170,50 +177,50 @@ class TemplatePanel:
                     v_info = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
                     self.template_liste.insert(tk.END, f"  {name}{v_info}{_template_mark(name)}")
             else:
-                # Gruppen-Header
-                hat_master = gruppe in nach_gruppen[gruppe]
-                ist_passiv_in_settings = gruppe in passive_gruppen
-                hat_gruppe_config = (gruppe in settings and isinstance(settings[gruppe], dict) and
-                                     settings[gruppe].get("typ") in ("passiv_gruppe", "aktiv_gruppe")) or \
-                                    f"__gruppe__{gruppe}" in settings
-                gruppe_mark = " ⚙" if hat_gruppe_config else ""
-
-                # Einrückungstiefe aus Pfad-Tiefe ableiten
+                kurzname = gruppe.split("/")[-1]
                 tiefe = gruppe.count("/")
-                einzug = "  " * tiefe
+                basis_einzug = "    " * tiefe  # 4 Spaces pro Ebene
+
+                hat_master = gruppe in nach_gruppen[gruppe]
+                ist_passiv = gruppe in passive_gruppen
+                hat_cfg = (kurzname in settings and isinstance(settings[kurzname], dict) and
+                           settings[kurzname].get("typ") in ("passiv_gruppe", "aktiv_gruppe")) or \
+                           f"__gruppe__{kurzname}" in settings
+                cfg_mark = " ⚙" if hat_cfg else ""
+
+                # Gruppen-Header: bei Kindern (tiefe > 0) mit └─ Präfix
+                if tiefe > 0:
+                    praefix = "    " * (tiefe - 1) + "    └─ "
+                else:
+                    praefix = ""
 
                 if hat_master:
                     v_info = f" ({varianten_count[gruppe]})" if varianten_count[gruppe] > 1 else ""
-                    label = f"{einzug}★ [{gruppe.split('/')[-1]}]{v_info}{_template_mark(gruppe)}{gruppe_mark}"
+                    label = f"{praefix}★ [{kurzname}]{v_info}{_template_mark(gruppe)}{cfg_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#ffca28")
-                elif ist_passiv_in_settings:
-                    label = f"{einzug}📦 [{gruppe.split('/')[-1]}]{gruppe_mark}"
+                elif ist_passiv:
+                    label = f"{praefix}📦 [{kurzname}]{cfg_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#7a9abf")
                 else:
-                    label = f"{einzug}📁 [{gruppe.split('/')[-1]}]{gruppe_mark}"
+                    label = f"{praefix}📁 [{kurzname}]{cfg_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#888888")
 
+                # Kind-Templates
                 for name in sorted(nach_gruppen[gruppe]):
                     if name == gruppe: continue
                     v_info = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
                     self.template_liste.insert(
-                        tk.END, f"{einzug}    └─ {name}{v_info}{_template_mark(name)}")
+                        tk.END, f"{basis_einzug}    └─ {name}{v_info}{_template_mark(name)}")
 
-            if gruppe != alle_gruppen[-1]:
-                self.template_liste.insert(tk.END, "")
-
-        # Passive Gruppen ohne eigene Templates anzeigen (nur workflow/all)
-        if self.filter_modus in ("all", "workflow"):
-            reine_passive = sorted(passive_gruppen - aktive_gruppen)
-            if reine_passive:
-                if alle_gruppen:
+            # Leerzeile nur zwischen Top-Level-Gruppen, nicht zwischen Eltern und Kind
+            if i < len(alle_gruppen) - 1:
+                next_g = alle_gruppen[i + 1]
+                if not next_g.startswith(gruppe + "/") and gruppe != "":
                     self.template_liste.insert(tk.END, "")
-                for name in reine_passive:
-                    self.template_liste.insert(tk.END, f"📦 [{name}]")
-                    self.template_liste.itemconfig(tk.END, fg="#7a9abf")
+
 
     def _get_auswahl_name(self):
         """Extrahiert den sauberen Template-Namen aus der Listen-Auswahl."""
@@ -232,8 +239,10 @@ class TemplatePanel:
         clean_text = re.sub(r"\s\(\d+\)$", "", clean_text).strip()
         
         # 3. Eckige Klammern bei Master-Containern entfernen (z.B. "[Email]" -> "Email")
-        if clean_text.startswith("[") and clean_text.endswith("]"):
-            return clean_text[1:-1]
+        # Wir nutzen ein Regex um den Inhalt zwischen den ERSTEN eckigen Klammern zu finden
+        m = re.search(r"\[(.+?)\]", clean_text)
+        if m:
+            return m.group(1)
             
         if not clean_text or clean_text == "[Global]" or clean_text == "(Keine Einträge)":
             return None
@@ -266,25 +275,50 @@ class TemplatePanel:
         if not name: return
 
         s = self.template_engine.settings.get(name, {})
-        ist_passiv = (isinstance(s, dict) and s.get("typ") == "passiv_gruppe") or \
+        ist_gruppe = (isinstance(s, dict) and s.get("typ") in ("passiv_gruppe", "aktiv_gruppe")) or \
                      f"__gruppe__{name}" in self.template_engine.settings
 
-        if ist_passiv:
-            self.template_engine.gruppe_config_loeschen(name)
-            self.bot._log(f"Passive Gruppe gelöscht: {name}")
+        if ist_gruppe:
+            # Checken ob Kinder vorhanden sind
+            kinder = self.template_engine.get_kinder(name)
+            if kinder:
+                msg = f"Die Gruppe '{name}' enthält {len(kinder)} Templates.\n\n"
+                msg += "Möchtest du die Gruppe UND alle enthaltenen Templates löschen?\n"
+                msg += "(Dateien werden in den '_deleted' Ordner verschoben)"
+                if not messagebox.askyesno("Gruppe löschen", msg):
+                    return
+                self.template_engine.gruppe_config_loeschen(name, mit_inhalt=True)
+            else:
+                if not messagebox.askyesno("Gruppe löschen", f"Gruppe '{name}' wirklich löschen?"):
+                    return
+                self.template_engine.gruppe_config_loeschen(name, mit_inhalt=False)
+            
+            self.bot._log(f"Gruppe gelöscht: {name}")
             self.bot.app.reload_templates()
             self.aktualisieren()
             return
 
-        # Alle Varianten finden und löschen
+        # Einzel-Template (mit Varianten) löschen
         zu_loeschen = [t for t in self.template_engine.templates.keys() if t == name or t.startswith(f"{name}__")]
+        if not zu_loeschen:
+            # Fallback falls nicht in templates (z.B. nur in settings)
+            zu_loeschen = [name]
+
+        msg = f"Template '{name}' wirklich löschen?"
+        if len(zu_loeschen) > 1:
+            msg = f"Template '{name}' und seine {len(zu_loeschen)-1} Varianten wirklich löschen?"
+        
+        if not messagebox.askyesno("Löschen bestätigen", msg):
+            return
+
         for t_name in zu_loeschen:
             self.template_engine.template_loeschen(t_name)
+        
         self.ocr_engine.template_ocr_alle_loeschen(name)
         self.action_engine.klickzone_loeschen(name)
         self.template_engine._templates_laden()
         self.bot.app.reload_templates()
-        self.bot._log(f"Template und {len(zu_loeschen)-1} Variante(n) gelöscht: {name}")
+        self.bot._log(f"Template gelöscht: {name} ({len(zu_loeschen)} Dateien verschoben)")
         self.aktualisieren()
         self.bot._timer_panel_aktualisieren()
 

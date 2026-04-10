@@ -6,9 +6,9 @@
 
 
 
-- 🔧 **Gruppierung im Workflow Template** *(implementiert, fehlerhaft)*
+- [x] **Gruppierung im Workflow Template**
   - Passive Gruppen (📦) implementiert: `+ Aktiv` / `📦 Passiv` im WORKFLOW TEMPLATES Header, Anzeige in der Liste, condition_states werden beim Matching AND-kombiniert, Template ohne Bild wird automatisch zur passiven Gruppe
-  - Noch fehlerhaft: weitere Bugs beim Umbenennen / Speichern noch nicht vollständig getestet
+  - v0.4.4: Vollständig überarbeitet, Umbenennen und Hierarchie-Migration jetzt stabil.
 
   - **Rand bereich Im OCR**
     - die vergrößerung vom rand im OCR reicht bei weitem nicht aus, brauche eine andere möglichkeit zusätzlich. Gedanke: Wenn das OCR-Bereich menü geöffnet ist kann auch das Live bild verwenden werden, jedoch muss mann mit den Koordinaten aufpassen.

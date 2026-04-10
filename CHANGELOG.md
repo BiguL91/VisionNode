@@ -2,6 +2,30 @@
 
 ---
 
+## v0.4.4 (Dateisystem-Management & Logging Upgrade)
+
+### Features & Highlights
+- **Transparentes Datei-Logging**:
+  - Alle Datei-Operationen (Verschieben, Umbenennen, Löschen) werden jetzt detailliert im **LOG-Panel** des UI angezeigt.
+  - Neue Einstellungs-Option: "Datei-Operationen (Verschieben/Rename)" unter Debug & Logging zum Ein-/Ausschalten der Meldungen.
+- **Intelligentes Master-Umbenennen**:
+  - Beim Umbenennen einer Gruppe oder eines Masters werden nun automatisch **alle zugehörigen Bilddateien** (`.png` und Varianten `__2`, etc.) physisch mit-umbenannt.
+  - Verwaiste Einträge und alte Bildleichen werden nach einer Umbenennung nun konsequent und automatisch entfernt.
+- **Hierarchisches Scannen für Passive Gruppen**:
+  - Fix: Templates in passiven Gruppen werden jetzt zuverlässig erkannt. Die Engine prüft nun die gesamte Ahnenreihe auf aktive Master-Templates.
+  - Templates in rein passiven Strukturen werden automatisch als "globale Master" behandelt und auf dem gesamten Schirm gesucht.
+- **Sicherheits-Backup System (Quarantäne)**:
+  - Der `templates/_deleted` Ordner wurde reaktiviert. Gelöschte Dateien werden jetzt mit Zeitstempel gesichert statt sofort vernichtet.
+  - Rekursives Löschen: Beim Löschen einer Gruppe warnt ein Dialog vor enthaltenen Templates und ermöglicht das gemeinsame Verschieben ins Backup.
+  - Backup-Schutz: Temporäre Editor-Dateien (`_tmp_...`) werden vom Backup ausgeschlossen, um den Ordner sauber zu halten.
+
+### Fixes
+- **Hierarchie-Stabilität**: Fix eines Fehlers, bei dem das Umbenennen einer Gruppe die Verknüpfung zu den Kind-Templates zerstörte.
+- **Absturz-Schutz**: `KeyError` beim Löschen von Gruppen mit Inhalten behoben.
+- **Namens-Extraktion**: Die Erkennung von Template-Namen in der UI-Liste wurde robuster gegenüber Icons und eckigen Klammern.
+
+---
+
 ## v0.4.3 (Bugfixes & UI-Verbesserungen)
 
 ### Fixes
