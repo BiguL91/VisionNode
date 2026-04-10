@@ -99,7 +99,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self._panel_erstellen(spalte_rechts1, "STATE TEMPLATES", self._state_templates_panel)
         self._template_buttons_bereich(spalte_rechts1)
         self._panel_erstellen(spalte_rechts1, "OCR VARIABLEN", self._ocr_panel,
-                              kopf_extra=self._variablen_kopf_extra)
+                              expand=True, kopf_extra=self._variablen_kopf_extra)
         self._panel_erstellen(spalte_rechts1, "STATE VARIABLEN", self._state_panel,
                               kopf_extra=self._state_kopf_extra)
         self._panel_erstellen(spalte_rechts1, "LOG", self._log_panel, expand=True)
