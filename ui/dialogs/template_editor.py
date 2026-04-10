@@ -10,26 +10,21 @@ from helpers import cursor_einschraenken, cursor_freigeben
 
 class TemplateEditor:
     def __init__(self, root, bot, bearbeiten_name=None, aktueller_ausschnitt=None,
-                 einlern_modus_callback=None, typ=None):
+                 einlern_modus_callback=None, typ=None, kategorie=None):
         self.root = root
         self.bot = bot
         self.template_engine = bot.template_engine
         self.action_engine = bot.action_engine
         self.bearbeiten_name = bearbeiten_name
 
-        # Typ: aus Parameter oder aus Settings ableiten (beim Bearbeiten)
+        # Typ und Kategorie: aus Settings ableiten (beim Bearbeiten) oder aus Parametern
         if bearbeiten_name:
             s = bot.template_engine.settings.get(bearbeiten_name, {})
             self.typ = s.get("typ") or typ or "template"
-            self.ist_state_template = s.get("ist_state_template", False)
+            self.kategorie = s.get("kategorie") or kategorie or "workflow"
         else:
             self.typ = typ or "template"
-            self.ist_state_template = (typ == "state_template")
-
-        # state_template ist intern typ="template" + flag
-        if self.typ == "state_template":
-            self.typ = "template"
-            self.ist_state_template = True
+            self.kategorie = kategorie or "workflow"
 
         self.orig_bild_ref = None
         if aktueller_ausschnitt:
@@ -1117,7 +1112,8 @@ class TemplateEditor:
                 if alter_name and alter_name != gruppe_name:
                     self.template_engine.gruppe_config_loeschen(alter_name)
                 self.template_engine.gruppe_config_speichern(
-                    gruppe_name, list(self.condition_states), uebergeordnete_gruppe=uebergeordnet)
+                    gruppe_name, list(self.condition_states),
+                    uebergeordnete_gruppe=uebergeordnet, kategorie=self.kategorie)
                 aktion = "umbenannt" if alter_name and alter_name != gruppe_name else "erstellt"
                 self.bot._log(f"Passive Gruppe {aktion}: \"{gruppe_name}\"")
                 self.bot.app.reload_templates()
@@ -1154,7 +1150,7 @@ class TemplateEditor:
                 condition_states=list(self.condition_states),
                 set_states=dict(self.set_states),
                 typ=self.typ,
-                ist_state_template=self.ist_state_template,
+                kategorie=self.kategorie,
             )
 
             if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):

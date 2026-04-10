@@ -130,10 +130,10 @@ class TemplatePanel:
             if name.startswith("_") or "__" in name or (t["gruppe"] and t["gruppe"].startswith("temp_")):
                 continue
             tpl_s = settings.get(name, {})
-            ist_state = tpl_s.get("ist_state_template", False) or bool(tpl_s.get("set_states"))
-            if self.filter_modus == "state" and not ist_state:
+            kategorie = tpl_s.get("kategorie", "workflow")
+            if self.filter_modus == "state" and kategorie != "state":
                 continue
-            if self.filter_modus == "workflow" and ist_state:
+            if self.filter_modus == "workflow" and kategorie != "workflow":
                 continue
             g = (t["gruppe"] or "").strip().replace("\\", "/")
             nach_gruppen[g].append(name)
@@ -143,6 +143,7 @@ class TemplatePanel:
         passive_gruppen = {
             k for k, v in settings.items()
             if isinstance(v, dict) and v.get("typ") == "passiv_gruppe"
+            and (self.filter_modus == "all" or v.get("kategorie", "workflow") == self.filter_modus)
         }
 
         alle_gruppen = sorted(nach_gruppen.keys(), key=lambda x: (x != "", x.lower()))
@@ -150,7 +151,7 @@ class TemplatePanel:
         def _template_mark(name):
             s = settings.get(name, {})
             m = ""
-            if s.get("ist_state_template") or s.get("set_states"): m += " 🚩"
+            if s.get("kategorie") == "state": m += " 🚩"
             if name in templates_mit_ocr: m += " 🔤"
             if name in klick_konfig: m += " 🖱"
             return m

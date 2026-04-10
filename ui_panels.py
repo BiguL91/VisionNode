@@ -60,12 +60,12 @@ class PanelsMixin:
         def neu_erstellen():
             from ui.dialogs.typ_dialog import TypDialog
 
-            def on_typ(typ):
+            def on_typ(typ, kategorie):
                 if typ == "passiv_gruppe":
-                    self._passiv_gruppe_erstellen_dialog()
+                    self._passiv_gruppe_erstellen_dialog(kategorie=kategorie)
                 else:
-                    # Typ merken, Einlern-Modus starten
                     self._geplanter_typ = typ
+                    self._geplante_kategorie = kategorie
                     self._einlern_modus_umschalten()
 
             TypDialog(self.root, on_typ)
@@ -74,7 +74,7 @@ class PanelsMixin:
                   font=("Segoe UI", 7), relief=tk.FLAT, padx=6, pady=1,
                   cursor="hand2", command=neu_erstellen).pack(side=tk.RIGHT, padx=(0, 2), pady=2)
 
-    def _passiv_gruppe_erstellen_dialog(self):
+    def _passiv_gruppe_erstellen_dialog(self, kategorie="workflow"):
         """Kleiner Name-Dialog für eine neue passive Gruppe."""
         from ui.dialogs.gruppe_editor import GruppeEditor
         dialog = tk.Toplevel(self.root)
@@ -104,7 +104,7 @@ class PanelsMixin:
                     self.template_engine.settings[name].get("typ") == "passiv_gruppe":
                 fehler.config(text=f"Passive Gruppe '{name}' existiert bereits.")
                 return
-            self.template_engine.gruppe_config_speichern(name, [])
+            self.template_engine.gruppe_config_speichern(name, [], kategorie=kategorie)
             dialog.destroy()
             GruppeEditor(self.root, self, name, on_save=lambda: (
                 self.template_panel.aktualisieren()

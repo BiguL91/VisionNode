@@ -206,8 +206,10 @@ class DialogeMixin:
         def on_finish():
             self._bearbeiten_name = self._einlern_dialog_fenster = self._einlern_vorschau_callback = None
             self._geplanter_typ = None
+            self._geplante_kategorie = None
         typ = getattr(self, "_geplanter_typ", None)
-        editor = TemplateEditor(self.root, self, bearbeiten_name=self._bearbeiten_name, aktueller_ausschnitt=self._aktueller_ausschnitt, einlern_modus_callback=lambda: (self._einlern_modus_umschalten() if self.einlern_modus else None, on_finish()), typ=typ)
+        kategorie = getattr(self, "_geplante_kategorie", None)
+        editor = TemplateEditor(self.root, self, bearbeiten_name=self._bearbeiten_name, aktueller_ausschnitt=self._aktueller_ausschnitt, einlern_modus_callback=lambda: (self._einlern_modus_umschalten() if self.einlern_modus else None, on_finish()), typ=typ, kategorie=kategorie)
         self._einlern_dialog_fenster = editor.window; self._einlern_vorschau_callback = editor._vorschau_setzen
 
     def _ocr_dialog(self):

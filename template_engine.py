@@ -201,7 +201,7 @@ class TemplateEngine:
         x0, x1 = np.where(spalten)[0][[0, -1]]
         return (int(x0), int(y0), int(x1 - x0 + 1), int(y1 - y0 + 1))
 
-    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False):
+    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None):
         bild_np = np.array(bild_pil.convert("RGB"))
 
         basis_name = name.split("__")[0]
@@ -251,8 +251,10 @@ class TemplateEngine:
             bestehend = self.settings.get(name, {})
             typ = bestehend.get("typ") or ("aktiv_gruppe" if g_name == basis_name else "template")
 
-        # ist_state_template: explizit oder aus set_states ableiten
-        _ist_state = ist_state_template or bool(set_states) or self.settings.get(name, {}).get("ist_state_template", False)
+        # Kategorie: explizit oder aus bestehendem Eintrag übernehmen
+        if not kategorie:
+            bestehend = self.settings.get(name, {})
+            kategorie = bestehend.get("kategorie", "workflow")
 
         # Metadaten speichern
         self.settings[name] = {
@@ -265,7 +267,7 @@ class TemplateEngine:
             "condition_states": condition_states or {},
             "set_states": set_states or {},
             "typ": typ,
-            "ist_state_template": _ist_state,
+            "kategorie": kategorie,
         }
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
@@ -365,13 +367,14 @@ class TemplateEngine:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._gpu_cache = {}
 
-    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe=""):
+    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None):
         """Speichert eine passive Gruppe (kein Bild, nur Bedingungen)."""
         bestehend = self.settings.get(gruppe_name, {})
         self.settings[gruppe_name] = {
             "typ": "passiv_gruppe",
             "gruppe": uebergeordnete_gruppe or bestehend.get("gruppe", ""),
             "condition_states": condition_states,
+            "kategorie": kategorie or bestehend.get("kategorie", "workflow"),
         }
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
