@@ -80,27 +80,40 @@ class TypDialog:
             self.fenster.destroy()
             self.callback(key)
 
-        rahmen.bind("<Button-1>", lambda e: waehlen())
-        rahmen.bind("<Enter>", lambda e: rahmen.configure(bg="#4a4a4a"))
-        rahmen.bind("<Leave>", lambda e: rahmen.configure(bg="#3a3a3a"))
+        def hover_an(e):
+            _alle_bg(rahmen, "#4a4a4a")
+
+        def hover_ab(e):
+            _alle_bg(rahmen, "#3a3a3a")
+
+        def _alle_bg(widget, farbe):
+            try: widget.configure(bg=farbe)
+            except Exception: pass
+            for child in widget.winfo_children():
+                _alle_bg(child, farbe)
+
+        def _alle_binden(widget):
+            widget.bind("<Button-1>", lambda e: waehlen())
+            widget.bind("<Enter>", hover_an)
+            widget.bind("<Leave>", hover_ab)
+            for child in widget.winfo_children():
+                _alle_binden(child)
 
         innen = tk.Frame(rahmen, bg="#3a3a3a", padx=12, pady=8)
         innen.pack(fill=tk.X)
-        innen.bind("<Button-1>", lambda e: waehlen())
-        innen.bind("<Enter>", lambda e: (rahmen.configure(bg="#4a4a4a"), innen.configure(bg="#4a4a4a")))
-        innen.bind("<Leave>", lambda e: (rahmen.configure(bg="#3a3a3a"), innen.configure(bg="#3a3a3a")))
 
-        # Icon + Label
         kopf = tk.Frame(innen, bg="#3a3a3a")
         kopf.pack(anchor="w")
-        kopf.bind("<Button-1>", lambda e: waehlen())
 
         tk.Label(kopf, text=t["icon"], bg="#3a3a3a", fg=t["farbe"],
-                 font=("Segoe UI", 13)).pack(side=tk.LEFT, padx=(0, 8))
+                 font=("Segoe UI", 13), cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
         tk.Label(kopf, text=t["label"], bg="#3a3a3a", fg=t["farbe"],
-                 font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
+                 font=("Segoe UI", 10, "bold"), cursor="hand2").pack(side=tk.LEFT)
 
-        # Beschreibung
         tk.Label(innen, text=t["beschreibung"], bg="#3a3a3a", fg="#888888",
-                 font=("Segoe UI", 8), justify="left", anchor="w"
+                 font=("Segoe UI", 8), justify="left", anchor="w", cursor="hand2"
                  ).pack(anchor="w", padx=(30, 0))
+
+        # Alle Widgets nach dem Aufbau binden
+        self.fenster.update_idletasks()
+        _alle_binden(rahmen)
