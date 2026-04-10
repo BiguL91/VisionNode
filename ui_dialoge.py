@@ -680,6 +680,7 @@ class DialogeMixin:
             self.template_engine.settings[template_name]["set_states"] = set_states
             with open("template_settings.json", "w", encoding="utf-8") as f:
                 json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self.app.reload_templates()
             self._templates_liste_aktualisieren()
             self._log(f"Zustände gespeichert: {template_name}")
             dialog.destroy()

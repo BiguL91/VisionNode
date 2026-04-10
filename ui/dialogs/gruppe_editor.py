@@ -163,6 +163,7 @@ class GruppeEditor:
                 conditions[0]["connector"] = None
 
             self.bot.template_engine.gruppe_config_speichern(self.gruppe_name, conditions)
+            self.bot.app.reload_templates()
             if self.on_save:
                 self.on_save()
             self.fenster.destroy()
@@ -172,6 +173,7 @@ class GruppeEditor:
                                    f"Gruppen-Konfiguration für \"{self.gruppe_name}\" wirklich löschen?",
                                    parent=self.fenster):
                 self.bot.template_engine.gruppe_config_loeschen(self.gruppe_name)
+                self.bot.app.reload_templates()
                 if self.on_save:
                     self.on_save()
                 self.fenster.destroy()
