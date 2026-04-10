@@ -10,12 +10,26 @@ from helpers import cursor_einschraenken, cursor_freigeben
 
 class TemplateEditor:
     def __init__(self, root, bot, bearbeiten_name=None, aktueller_ausschnitt=None,
-                 einlern_modus_callback=None):
+                 einlern_modus_callback=None, typ=None):
         self.root = root
         self.bot = bot
         self.template_engine = bot.template_engine
         self.action_engine = bot.action_engine
         self.bearbeiten_name = bearbeiten_name
+
+        # Typ: aus Parameter oder aus Settings ableiten (beim Bearbeiten)
+        if bearbeiten_name:
+            s = bot.template_engine.settings.get(bearbeiten_name, {})
+            self.typ = s.get("typ") or typ or "template"
+            self.ist_state_template = s.get("ist_state_template", False)
+        else:
+            self.typ = typ or "template"
+            self.ist_state_template = (typ == "state_template")
+
+        # state_template ist intern typ="template" + flag
+        if self.typ == "state_template":
+            self.typ = "template"
+            self.ist_state_template = True
 
         self.orig_bild_ref = None
         if aktueller_ausschnitt:
@@ -204,8 +218,18 @@ class TemplateEditor:
         self.name_var.trace_add("write", self._on_name_geaendert)
 
         # --- Gruppe ---
-        tk.Label(self.window, text="Gruppe:", bg="#2d2d2d", fg="#cccccc", font=("Segoe UI", 9),
-                 anchor="w").pack(fill=tk.X, padx=16, pady=(8, 2))
+        self._gruppe_frame = tk.Frame(self.window, bg="#2d2d2d")
+        self._gruppe_frame.pack(fill=tk.X)
+
+        gruppe_label_text = {
+            "aktiv_gruppe": None,                          # versteckt
+            "passiv_gruppe": "Übergeordnete Gruppe (optional):",
+            "template": "Gruppe: *",
+        }.get(self.typ, "Gruppe:")
+        self._gruppe_label = tk.Label(self._gruppe_frame, text=gruppe_label_text or "Gruppe:",
+                                      bg="#2d2d2d", fg="#cccccc", font=("Segoe UI", 9), anchor="w")
+        self._gruppe_label.pack(fill=tk.X, padx=16, pady=(8, 2))
+
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TCombobox", fieldbackground="#1a1a1a", background="#3a3a3a",
@@ -214,8 +238,14 @@ class TemplateEditor:
         self.gruppe_var = tk.StringVar(
             value=self.template_engine.settings.get(self.bearbeiten_name, {}).get("gruppe", "")
             if self.bearbeiten_name else "")
-        ttk.Combobox(self.window, textvariable=self.gruppe_var, values=gruppen_liste,
-                     font=("Segoe UI", 10), style="TCombobox").pack(fill=tk.X, padx=16)
+        self._gruppe_combo = ttk.Combobox(self._gruppe_frame, textvariable=self.gruppe_var,
+                                          values=gruppen_liste, font=("Segoe UI", 10),
+                                          style="TCombobox")
+        self._gruppe_combo.pack(fill=tk.X, padx=16)
+
+        # aktiv_gruppe: Gruppe-Feld verstecken (sie IST die Gruppe)
+        if self.typ == "aktiv_gruppe":
+            self._gruppe_frame.pack_forget()
 
         # --- Schwellwert ---
         tk.Label(self.window, text="Match-Schwellwert:", bg="#2d2d2d", fg="#cccccc", font=("Segoe UI", 9),
@@ -1066,14 +1096,19 @@ class TemplateEditor:
                         else:
                             img_to_save = Image.fromarray(cv2.cvtColor(_arr, cv2.COLOR_BGR2RGB))
 
-            if img_to_save is None:
-                # Kein Bild → automatisch als passive Gruppe anlegen
+            if img_to_save is None or self.typ == "passiv_gruppe":
+                # Passive Gruppe: kein Bild, nur Bedingungen speichern
                 gruppe_name = self.name_var.get().strip()
                 if not gruppe_name:
                     self.bot._log("Fehler beim Speichern: Kein Name angegeben.")
                     return
-                self.template_engine.gruppe_config_speichern(gruppe_name, list(self.condition_states))
-                self.bot._log(f"Passive Gruppe erstellt: \"{gruppe_name}\"")
+                uebergeordnet = self.gruppe_var.get().strip() if self.typ == "passiv_gruppe" else ""
+                if alter_name and alter_name != gruppe_name:
+                    self.template_engine.gruppe_config_loeschen(alter_name)
+                self.template_engine.gruppe_config_speichern(
+                    gruppe_name, list(self.condition_states), uebergeordnete_gruppe=uebergeordnet)
+                aktion = "umbenannt" if alter_name and alter_name != gruppe_name else "erstellt"
+                self.bot._log(f"Passive Gruppe {aktion}: \"{gruppe_name}\"")
                 self.bot.app.reload_templates()
                 if hasattr(self.bot, "template_panel"):
                     self.bot.template_panel.aktualisieren()
@@ -1082,7 +1117,12 @@ class TemplateEditor:
             entferne_hg = self.hg_var.get()
             hg_toleranz = self.hg_tol_var.get()
             match_s = self.schwellwert_var.get()
-            gruppe_name = self.gruppe_var.get().strip() or n
+
+            # aktiv_gruppe: Gruppe = eigener Name (kein Feld im UI)
+            if self.typ == "aktiv_gruppe":
+                gruppe_name = n
+            else:
+                gruppe_name = self.gruppe_var.get().strip() or n
 
             aktuelle_scan_regions = self.initial_scan_regions
             if self.roi_editor and self.roi_editor.window.winfo_exists():
@@ -1095,9 +1135,6 @@ class TemplateEditor:
                 if alte_gruppe != gruppe_name:
                     gruppe_geandert = True
 
-            ist_master = (alter_name and alter_name in self.template_engine.templates and
-                          alter_name == self.template_engine.templates[alter_name].get("gruppe"))
-
             speichern_kwargs = dict(
                 hintergrund_toleranz=hg_toleranz,
                 gruppe=gruppe_name,
@@ -1105,10 +1142,12 @@ class TemplateEditor:
                 scan_regions=list(aktuelle_scan_regions),
                 condition_states=list(self.condition_states),
                 set_states=dict(self.set_states),
+                typ=self.typ,
+                ist_state_template=self.ist_state_template,
             )
 
-            if ist_master and (umbenennen or gruppe_geandert):
-                self.template_engine.template_umbenennen(alter_name, n, gruppe_name)
+            if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):
+                self.template_engine.gruppe_umbenennen(alter_name, n)
                 self.template_engine.template_speichern(
                     n, img_to_save, entferne_hg, list(self.ignore_regionen), **speichern_kwargs)
             elif umbenennen:

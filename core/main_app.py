@@ -89,6 +89,8 @@ class TilesBotApp:
     def _states_initialisieren(self):
         """Setzt alle bekannten State-Variablen aus Template-Settings auf False."""
         for t_settings in self.template_engine.settings.values():
+            if not isinstance(t_settings, dict):
+                continue
             for name in t_settings.get("set_states", {}).keys():
                 if name and name not in self.state.game_states:
                     self.state.game_states[name] = False
@@ -225,6 +227,7 @@ class TilesBotApp:
                 changed = False
 
                 for p_name, t_settings in self.template_engine.settings.items():
+                    if not isinstance(t_settings, dict): continue
                     set_states = t_settings.get("set_states", {})
                     if not set_states: continue
 

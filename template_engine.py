@@ -28,18 +28,22 @@ class TemplateEngine:
 
     def konfigurationen_bereinigen(self):
         if not os.path.exists(TEMPLATES_ORDNER): return
-        
+
         aktuelle_pngs = set()
         for root, _, dateien in os.walk(TEMPLATES_ORDNER):
             for f in dateien:
                 if f.endswith(".png"): aktuelle_pngs.add(f[:-4])
-        
+
         json_dateien = ["template_settings.json", "template_farben.json", "template_klicks.json"]
         for datei in json_dateien:
             if os.path.exists(datei):
                 try:
                     with open(datei, "r", encoding="utf-8") as f: data = json.load(f)
-                    neu = {k: v for k, v in data.items() if k in aktuelle_pngs or k.startswith("__gruppe__")}
+                    neu = {k: v for k, v in data.items() if
+                           k.startswith("_") or
+                           k in aktuelle_pngs or
+                           k.startswith("__gruppe__") or
+                           (isinstance(v, dict) and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe", "template", "state_template"))}
                     if len(neu) != len(data):
                         with open(datei, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
                 except Exception: pass
@@ -57,6 +61,54 @@ class TemplateEngine:
             try:
                 with open(SETTINGS_DATEI, "r", encoding="utf-8") as f: self.settings = json.load(f)
             except Exception: self.settings = {}
+        self._settings_migrieren()
+
+    def _settings_migrieren(self):
+        """Einmalige Migration auf Typ-System v2. Schreibt Backup vor dem ersten Speichern."""
+        if self.settings.get("_migrated_v2"):
+            return
+
+        import shutil
+        if os.path.exists(SETTINGS_DATEI):
+            try: shutil.copy2(SETTINGS_DATEI, SETTINGS_DATEI + ".bak")
+            except Exception: pass
+
+        neu = {}
+        for k, v in self.settings.items():
+            if not isinstance(v, dict):
+                neu[k] = v
+                continue
+            if k.startswith("_"):
+                neu[k] = v
+                continue
+
+            # Alte passive Gruppen: __gruppe__Name → Name mit typ
+            if k.startswith("__gruppe__"):
+                name = k[len("__gruppe__"):]
+                if name and name not in neu:
+                    eintrag = dict(v)
+                    eintrag["typ"] = "passiv_gruppe"
+                    eintrag.setdefault("gruppe", "")
+                    neu[name] = eintrag
+                continue
+
+            eintrag = dict(v)
+            if not eintrag.get("typ"):
+                if eintrag.get("gruppe") == k:
+                    eintrag["typ"] = "aktiv_gruppe"
+                else:
+                    eintrag["typ"] = "template"
+
+            # ist_state_template Flag für bestehende Templates mit set_states
+            if eintrag.get("set_states") and not eintrag.get("ist_state_template"):
+                eintrag["ist_state_template"] = True
+
+            neu[k] = eintrag
+
+        neu["_migrated_v2"] = True
+        self.settings = neu
+        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, indent=2, ensure_ascii=False)
 
     def _templates_laden(self):
         self._settings_laden()
@@ -108,27 +160,32 @@ class TemplateEngine:
         print(f"TemplateEngine: {len(self.templates)} Templates geladen.")
 
     def get_gruppen(self):
-        """Gibt eine Liste aller existierenden Gruppen (Ordnernamen) zurück."""
-        if not os.path.exists(TEMPLATES_ORDNER): return []
-        
+        """Gibt eine Liste aller existierenden Gruppen zurück (aktiv + passiv)."""
         gruppen = set()
-        # 1. Aus den Ordnern auf der Festplatte
-        try:
-            for d in os.listdir(TEMPLATES_ORDNER):
-                if os.path.isdir(os.path.join(TEMPLATES_ORDNER, d)) and not d.startswith('_'):
-                    gruppen.add(d)
-        except Exception: pass
-        
-        # 2. Zur Sicherheit aus den geladenen Templates
+
+        # 1. Ordner auf der Festplatte (aktiv_gruppe)
+        if os.path.exists(TEMPLATES_ORDNER):
+            try:
+                for root, dirs, _ in os.walk(TEMPLATES_ORDNER):
+                    dirs[:] = [d for d in dirs if not d.startswith('_')]
+                    for d in dirs:
+                        rel = os.path.relpath(os.path.join(root, d), TEMPLATES_ORDNER).replace("\\", "/")
+                        gruppen.add(rel)
+            except Exception: pass
+
+        # 2. Aus geladenen Templates
         for t in self.templates.values():
             if t["gruppe"]: gruppen.add(t["gruppe"])
 
-        # 3. Passive Gruppen (nur in settings, kein Ordner)
-        for k in self.settings:
-            if k.startswith("__gruppe__"):
+        # 3. Passive Gruppen (settings-Einträge mit typ="passiv_gruppe")
+        for k, v in self.settings.items():
+            if isinstance(v, dict) and v.get("typ") == "passiv_gruppe":
+                gruppen.add(k)
+            # Rückwärtskompatibilität: altes __gruppe__ Format
+            elif k.startswith("__gruppe__"):
                 gruppen.add(k[len("__gruppe__"):])
 
-        return sorted(list(gruppen))
+        return sorted(g for g in gruppen if g)
 
     @staticmethod
     def _condition_states_erfuellt(conditions, game_states):
@@ -164,6 +221,25 @@ class TemplateEngine:
                 return True
         return False
 
+    def _eltern_conditions_pruefen(self, gruppe_pfad, game_states):
+        """Prüft Bedingungen aller Eltern-Ebenen eines Gruppe-Pfads (hierarchisch)."""
+        if not gruppe_pfad:
+            return True
+        teile = gruppe_pfad.split("/")
+        for i in range(len(teile)):
+            pfad = "/".join(teile[:i + 1])
+            eintrag = self.settings.get(pfad, {})
+            if not isinstance(eintrag, dict):
+                continue
+            conds = eintrag.get("condition_states", [])
+            if conds and not self._condition_states_erfuellt(conds, game_states):
+                return False
+            # Rückwärtskompatibilität: altes __gruppe__ Format
+            alt_conds = self.settings.get(f"__gruppe__{pfad}", {}).get("condition_states", [])
+            if alt_conds and not self._condition_states_erfuellt(alt_conds, game_states):
+                return False
+        return True
+
     def _hintergrund_maske_erstellen(self, bild_np, toleranz=30):
         h, w = bild_np.shape[:2]
         ecken = np.array([bild_np[0,0], bild_np[0,w-1], bild_np[h-1,0], bild_np[h-1,w-1]], dtype=np.float32)
@@ -181,16 +257,20 @@ class TemplateEngine:
         x0, x1 = np.where(spalten)[0][[0, -1]]
         return (int(x0), int(y0), int(x1 - x0 + 1), int(y1 - y0 + 1))
 
-    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None):
+    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False):
         bild_np = np.array(bild_pil.convert("RGB"))
-        
-        # Logik für Gruppen-Ordner (Flache Struktur)
+
         basis_name = name.split("__")[0]
-        g_name = gruppe if gruppe else basis_name
-        
-        ordner = os.path.join(TEMPLATES_ORDNER, g_name)
+        # aktiv_gruppe: Gruppe ist immer der eigene Name
+        if typ == "aktiv_gruppe":
+            g_name = basis_name
+        else:
+            g_name = gruppe if gruppe else basis_name
+
+        # Hierarchischer Pfad: "UI/Button" → templates/UI/Button/
+        ordner = os.path.join(TEMPLATES_ORDNER, *g_name.split("/"))
         os.makedirs(ordner, exist_ok=True)
-            
+
         pfad = os.path.join(ordner, f"{name}.png")
 
         # Altes Template an anderer Stelle löschen?
@@ -222,6 +302,14 @@ class TemplateEngine:
 
         bild_speichern.save(pfad)
         
+        # Typ ableiten falls nicht angegeben
+        if not typ:
+            bestehend = self.settings.get(name, {})
+            typ = bestehend.get("typ") or ("aktiv_gruppe" if g_name == basis_name else "template")
+
+        # ist_state_template: explizit oder aus set_states ableiten
+        _ist_state = ist_state_template or bool(set_states) or self.settings.get(name, {}).get("ist_state_template", False)
+
         # Metadaten speichern
         self.settings[name] = {
             "hg_entfernen": bool(hintergrund_entfernen),
@@ -231,7 +319,9 @@ class TemplateEngine:
             "match_schwellwert": float(match_schwellwert),
             "scan_regions": [list(r) for r in scan_regions] if scan_regions else [],
             "condition_states": condition_states or {},
-            "set_states": set_states or {}
+            "set_states": set_states or {},
+            "typ": typ,
+            "ist_state_template": _ist_state,
         }
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
@@ -242,35 +332,74 @@ class TemplateEngine:
         """Benennt ein Template und alle seine Varianten um oder verschiebt sie."""
         alter_basis = alter_name.split("__")[0]
         neuer_basis = neuer_name.split("__")[0]
-        
+
         varianten = [t for t in self.templates.keys() if t == alter_basis or t.startswith(f"{alter_basis}__")]
-        
+
         for v_alt in varianten:
             suffix = v_alt[len(alter_basis):]
             v_neu = f"{neuer_basis}{suffix}"
             if v_alt not in self.templates: continue
-            
+
             alt_pfad = self.templates[v_alt]["pfad"]
             g_name = neue_gruppe if neue_gruppe else neuer_basis
-            neu_ordner = os.path.join(TEMPLATES_ORDNER, g_name)
+            neu_ordner = os.path.join(TEMPLATES_ORDNER, *g_name.split("/"))
             os.makedirs(neu_ordner, exist_ok=True)
             neu_pfad = os.path.join(neu_ordner, f"{v_neu}.png")
-            
+
             if os.path.exists(alt_pfad):
                 try:
                     if os.path.exists(neu_pfad) and os.path.abspath(alt_pfad) != os.path.abspath(neu_pfad):
                         os.remove(neu_pfad)
                     os.rename(alt_pfad, neu_pfad)
-                    
-                    # Alten Ordner aufräumen
                     alt_dir = os.path.dirname(alt_pfad)
                     if os.path.exists(alt_dir) and not os.listdir(alt_dir): os.rmdir(alt_dir)
                 except: pass
-                
+
             if v_alt in self.settings:
                 self.settings[v_neu] = self.settings.pop(v_alt)
                 self.settings[v_neu]["gruppe"] = g_name
-        
+
+        # Kinder-Cascade: Templates/Gruppen deren gruppe == alter_basis updaten
+        for k, v in list(self.settings.items()):
+            if not isinstance(v, dict): continue
+            g = v.get("gruppe", "")
+            if g == alter_basis:
+                self.settings[k]["gruppe"] = neue_gruppe if neue_gruppe else neuer_basis
+            elif g.startswith(alter_basis + "/"):
+                suffix = g[len(alter_basis):]
+                self.settings[k]["gruppe"] = (neue_gruppe if neue_gruppe else neuer_basis) + suffix
+
+        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, indent=2, ensure_ascii=False)
+        self._templates_laden()
+
+    def gruppe_umbenennen(self, alter_pfad, neuer_pfad):
+        """Benennt eine Gruppe um: verschiebt Ordner + aktualisiert alle Settings-Einträge."""
+        alter_ordner = os.path.join(TEMPLATES_ORDNER, *alter_pfad.split("/"))
+        neuer_ordner = os.path.join(TEMPLATES_ORDNER, *neuer_pfad.split("/"))
+
+        if os.path.exists(alter_ordner):
+            try:
+                os.makedirs(os.path.dirname(neuer_ordner) or ".", exist_ok=True)
+                os.rename(alter_ordner, neuer_ordner)
+            except Exception as e:
+                print(f"gruppe_umbenennen: Ordner-Fehler: {e}")
+
+        # Settings-Einträge cascadieren
+        for k, v in list(self.settings.items()):
+            if not isinstance(v, dict): continue
+            g = v.get("gruppe", "")
+            if g == alter_pfad:
+                self.settings[k]["gruppe"] = neuer_pfad
+            elif g.startswith(alter_pfad + "/"):
+                self.settings[k]["gruppe"] = neuer_pfad + g[len(alter_pfad):]
+
+        # Gruppe-Key selbst umbenennen (passiv_gruppe oder aktiv_gruppe)
+        if alter_pfad in self.settings:
+            self.settings[neuer_pfad] = self.settings.pop(alter_pfad)
+            if self.settings[neuer_pfad].get("typ") == "aktiv_gruppe":
+                self.settings[neuer_pfad]["gruppe"] = neuer_pfad
+
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._templates_laden()
@@ -292,20 +421,30 @@ class TemplateEngine:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._gpu_cache = {}
 
-    def gruppe_config_speichern(self, gruppe_name, condition_states):
-        """Speichert Bedingungen für eine Dummy-Gruppe (ohne eigenes Template)."""
-        key = f"__gruppe__{gruppe_name}"
-        if key not in self.settings:
-            self.settings[key] = {}
-        self.settings[key]["condition_states"] = condition_states
+    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe=""):
+        """Speichert eine passive Gruppe (kein Bild, nur Bedingungen)."""
+        bestehend = self.settings.get(gruppe_name, {})
+        self.settings[gruppe_name] = {
+            "typ": "passiv_gruppe",
+            "gruppe": uebergeordnete_gruppe or bestehend.get("gruppe", ""),
+            "condition_states": condition_states,
+        }
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
 
     def gruppe_config_loeschen(self, gruppe_name):
-        """Entfernt die Dummy-Gruppen-Konfiguration."""
-        key = f"__gruppe__{gruppe_name}"
-        if key in self.settings:
-            del self.settings[key]
+        """Entfernt eine passive Gruppe."""
+        # Neues Format: plain key
+        entfernt = False
+        if gruppe_name in self.settings and self.settings[gruppe_name].get("typ") == "passiv_gruppe":
+            del self.settings[gruppe_name]
+            entfernt = True
+        # Rückwärtskompatibilität: altes __gruppe__ Format
+        alt_key = f"__gruppe__{gruppe_name}"
+        if alt_key in self.settings:
+            del self.settings[alt_key]
+            entfernt = True
+        if entfernt:
             with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
 
@@ -366,12 +505,9 @@ class TemplateEngine:
             if game_states is not None:
                 if conditions and not self._condition_states_erfuellt(conditions, game_states):
                     continue
-                # Gruppen-Konfiguration (Dummy-Gruppe) AND-prüfen
-                gruppe_key = f"__gruppe__{t['gruppe']}" if t["gruppe"] else None
-                if gruppe_key:
-                    gruppe_cond = self.settings.get(gruppe_key, {}).get("condition_states", [])
-                    if gruppe_cond and not self._condition_states_erfuellt(gruppe_cond, game_states):
-                        continue
+                # Eltern-Kette prüfen (passive Gruppen, hierarchisch)
+                if t["gruppe"] and not self._eltern_conditions_pruefen(t["gruppe"], game_states):
+                    continue
 
             g = t["gruppe"]
             # Ein Template ist ein Master, wenn es keine Gruppe hat, 

@@ -113,42 +113,57 @@ class TemplatePanel:
     def aktualisieren(self):
         """Aktualisiert die Template-Liste im Panel."""
         self.template_liste.delete(0, tk.END)
-        if not self.template_engine.templates:
-            self.template_liste.insert(tk.END, "  (Keine Templates)")
-            return
 
         ocr_konfig = self.ocr_engine.template_ocr_konfigurationen()
         templates_mit_ocr = {v.get("template") for v in ocr_konfig.values()}
         klick_konfig = self.action_engine.klickzonen_laden()
+        settings = self.template_engine.settings
 
         # Varianten zählen
         varianten_count = defaultdict(int)
         for t_name in self.template_engine.templates.keys():
-            basis = t_name.split("__")[0]
-            varianten_count[basis] += 1
+            varianten_count[t_name.split("__")[0]] += 1
 
+        # Templates filtern und nach Gruppe sortieren
         nach_gruppen = defaultdict(list)
         for name, t in self.template_engine.templates.items():
             if name.startswith("_") or "__" in name or (t["gruppe"] and t["gruppe"].startswith("temp_")):
                 continue
-                
-            # Filter-Logik
-            tpl_settings = self.template_engine.settings.get(name, {})
-            hat_states = bool(tpl_settings.get("set_states"))
-            
-            if self.filter_modus == "state" and not hat_states:
+            tpl_s = settings.get(name, {})
+            ist_state = tpl_s.get("ist_state_template", False) or bool(tpl_s.get("set_states"))
+            if self.filter_modus == "state" and not ist_state:
                 continue
-            if self.filter_modus == "workflow" and hat_states:
+            if self.filter_modus == "workflow" and ist_state:
                 continue
-                
             g = (t["gruppe"] or "").strip().replace("\\", "/")
             nach_gruppen[g].append(name)
-        
+
+        # Alle bekannten Gruppen (aktiv + passiv) sammeln
+        aktive_gruppen = set(nach_gruppen.keys()) - {""}
+        passive_gruppen = {
+            k for k, v in settings.items()
+            if isinstance(v, dict) and v.get("typ") == "passiv_gruppe"
+        }
+        # Rückwärtskompatibilität: altes __gruppe__ Format
+        for k in settings:
+            if k.startswith("__gruppe__"):
+                passive_gruppen.add(k[len("__gruppe__"):])
+
         alle_gruppen = sorted(nach_gruppen.keys(), key=lambda x: (x != "", x.lower()))
-        
-        if not alle_gruppen or (len(alle_gruppen) == 1 and not nach_gruppen[alle_gruppen[0]]):
-             self.template_liste.insert(tk.END, "  (Keine Einträge)")
-             return
+
+        def _template_mark(name):
+            s = settings.get(name, {})
+            m = ""
+            if s.get("ist_state_template") or s.get("set_states"): m += " 🚩"
+            if name in templates_mit_ocr: m += " 🔤"
+            if name in klick_konfig: m += " 🖱"
+            return m
+
+        hat_eintraege = bool(alle_gruppen) and any(nach_gruppen[g] for g in alle_gruppen)
+
+        if not hat_eintraege and not (self.filter_modus in ("all", "workflow") and passive_gruppen - aktive_gruppen):
+            self.template_liste.insert(tk.END, "  (Keine Einträge)")
+            return
 
         for gruppe in alle_gruppen:
             if not gruppe:
@@ -156,54 +171,50 @@ class TemplatePanel:
                 self.template_liste.itemconfig(tk.END, fg="#888888")
                 for name in sorted(nach_gruppen[""]):
                     v_info = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
-                    mark = ""
-                    tpl_settings = self.template_engine.settings.get(name, {})
-                    if tpl_settings.get("set_states"): mark += " 🚩"
-                    if name in templates_mit_ocr: mark += " 🔤"
-                    if name in klick_konfig:    mark += " 🖱"
-                    self.template_liste.insert(tk.END, f"  {name}{v_info}{mark}")
+                    self.template_liste.insert(tk.END, f"  {name}{v_info}{_template_mark(name)}")
             else:
+                # Gruppen-Header
                 hat_master = gruppe in nach_gruppen[gruppe]
-                hat_gruppe_config = f"__gruppe__{gruppe}" in self.template_engine.settings
+                ist_passiv_in_settings = gruppe in passive_gruppen
+                hat_gruppe_config = (gruppe in settings and isinstance(settings[gruppe], dict) and
+                                     settings[gruppe].get("typ") in ("passiv_gruppe", "aktiv_gruppe")) or \
+                                    f"__gruppe__{gruppe}" in settings
                 gruppe_mark = " ⚙" if hat_gruppe_config else ""
-                mark = ""
+
+                # Einrückungstiefe aus Pfad-Tiefe ableiten
+                tiefe = gruppe.count("/")
+                einzug = "  " * tiefe
+
                 if hat_master:
-                    tpl_settings = self.template_engine.settings.get(gruppe, {})
-                    if tpl_settings.get("set_states"): mark += " 🚩"
-                    if gruppe in templates_mit_ocr: mark += " 🔤"
-                    if gruppe in klick_konfig:    mark += " 🖱"
                     v_info = f" ({varianten_count[gruppe]})" if varianten_count[gruppe] > 1 else ""
-                    label = f"★ [{gruppe}]{v_info}{mark}{gruppe_mark}"
+                    label = f"{einzug}★ [{gruppe.split('/')[-1]}]{v_info}{_template_mark(gruppe)}{gruppe_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#ffca28")
+                elif ist_passiv_in_settings:
+                    label = f"{einzug}📦 [{gruppe.split('/')[-1]}]{gruppe_mark}"
+                    self.template_liste.insert(tk.END, label)
+                    self.template_liste.itemconfig(tk.END, fg="#7a9abf")
                 else:
-                    self.template_liste.insert(tk.END, f"📁 [{gruppe}]{gruppe_mark}")
+                    label = f"{einzug}📁 [{gruppe.split('/')[-1]}]{gruppe_mark}"
+                    self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#888888")
-                
+
                 for name in sorted(nach_gruppen[gruppe]):
                     if name == gruppe: continue
                     v_info = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
-                    mark_k = ""
-                    tpl_settings = self.template_engine.settings.get(name, {})
-                    if tpl_settings.get("set_states"): mark_k += " 🚩"
-                    if name in templates_mit_ocr: mark_k += " 🔤"
-                    if name in klick_konfig:    mark_k += " 🖱"
-                    self.template_liste.insert(tk.END, f"    └─ {name}{v_info}{mark_k}")
-            
+                    self.template_liste.insert(
+                        tk.END, f"{einzug}    └─ {name}{v_info}{_template_mark(name)}")
+
             if gruppe != alle_gruppen[-1]:
                 self.template_liste.insert(tk.END, "")
 
-        # Passive Gruppen anzeigen (nur im workflow-Modus)
+        # Passive Gruppen ohne eigene Templates anzeigen (nur workflow/all)
         if self.filter_modus in ("all", "workflow"):
-            aktive_gruppen = set(alle_gruppen)
-            passive = sorted(
-                k[len("__gruppe__"):] for k in self.template_engine.settings
-                if k.startswith("__gruppe__") and k[len("__gruppe__"):] not in aktive_gruppen
-            )
-            if passive:
+            reine_passive = sorted(passive_gruppen - aktive_gruppen)
+            if reine_passive:
                 if alle_gruppen:
                     self.template_liste.insert(tk.END, "")
-                for name in passive:
+                for name in reine_passive:
                     self.template_liste.insert(tk.END, f"📦 [{name}]")
                     self.template_liste.itemconfig(tk.END, fg="#7a9abf")
 
@@ -256,13 +267,22 @@ class TemplatePanel:
     def _loeschen(self):
         name = self._get_auswahl_name()
         if not name: return
-        
-        # Alle Varianten finden
+
+        s = self.template_engine.settings.get(name, {})
+        ist_passiv = (isinstance(s, dict) and s.get("typ") == "passiv_gruppe") or \
+                     f"__gruppe__{name}" in self.template_engine.settings
+
+        if ist_passiv:
+            self.template_engine.gruppe_config_loeschen(name)
+            self.bot._log(f"Passive Gruppe gelöscht: {name}")
+            self.bot.app.reload_templates()
+            self.aktualisieren()
+            return
+
+        # Alle Varianten finden und löschen
         zu_loeschen = [t for t in self.template_engine.templates.keys() if t == name or t.startswith(f"{name}__")]
-        
         for t_name in zu_loeschen:
             self.template_engine.template_loeschen(t_name)
-            
         self.ocr_engine.template_ocr_alle_loeschen(name)
         self.action_engine.klickzone_loeschen(name)
         self.template_engine._templates_laden()

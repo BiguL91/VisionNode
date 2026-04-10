@@ -2,6 +2,31 @@
 
 ---
 
+
+## Feedback zur Template Gruppen umstruckturierung 
+
+  -   "_migrated_v2": true erkennung kann weg. es gibt nur noch das neue. (alles einmal gelöscht und neu)
+
+  - Klick bereiche Beim "Neues Element Erstellen" passen nicht beim Klicken auf Text wird nicht die funktion ausgewählt
+
+  - Erstellen Einer Passiven Gruppe ist das Dialog fenster "Zustände" Irrefürend. Sollte eher ein Dialog kommen Neue Gruppe -> Gruppe zuweißen
+
+  - Beim Zuweißen Einer Passiven Gruppe zur State Templates, bleibt die passive trotzdem Im Workflow Template / Hintergrund: State Templates sollen Auch verschachtelt werden können. Einfacher Fix: User gibt beim erstellen einfach selber den Tag an wo er die gruppe einsotiert haben möchte "State Template oder Workflow Template"
+  Vorteil: Alles Funktiniert genau gleich. 
+  Umsetzung: Bei Klick Auf + Neu -> Erstelle Workflow Template oder State-Template -> Aktive Gruppe / Passive / Template 
+  
+  - Ordnerstrucktur anpassen: "State Template / Workflow Template " -> Aktive/Passive Gruppe -> Passive Gruppe / Template -> Template
+  Dadurch ist es möglich sauber verschiedene Gruppen und Templates umzuweißen
+
+
+  - Master Container: Darf Keine "Gruppe" Dialog haben im Template Editor, (Verwirung)
+  Umsetzung: Prüfung ist Template Egal ob Aktiv/passiv Überlagert? ja nein
+
+  - "+ Template" Button im Haupt UI kann weg. führt nur noch zu verwirrung
+
+  - "Zustände" haben keinen einfluss mehr auf die zuordnung "State Template / Workflow Template"
+
+
 ## Priorität: Hoch
 
 

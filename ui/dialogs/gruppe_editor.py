@@ -17,9 +17,10 @@ class GruppeEditor:
         self.fenster.resizable(True, True)
         self.fenster.minsize(520, 400)
 
-        # Bestehende Konfiguration laden
-        key = f"__gruppe__{gruppe_name}"
-        gespeichert = self.bot.template_engine.settings.get(key, {})
+        # Bestehende Konfiguration laden (neues Format: plain key, altes: __gruppe__ prefix)
+        gespeichert = self.bot.template_engine.settings.get(gruppe_name, {})
+        if not gespeichert or gespeichert.get("typ") not in ("passiv_gruppe", "aktiv_gruppe"):
+            gespeichert = self.bot.template_engine.settings.get(f"__gruppe__{gruppe_name}", {})
         self._condition_states = self._migrate(gespeichert.get("condition_states", []))
 
         self._aufbauen()

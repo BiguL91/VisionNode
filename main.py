@@ -146,8 +146,57 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
                                  cursor="hand2", command=self._ocr_modus_umschalten)
         self.ocr_btn.pack(side=tk.RIGHT, padx=5)
 
+        tk.Button(leiste, text="?", bg="#3a3a3a", fg="#555555",
+                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=8,
+                  cursor="hand2", command=self._legende_zeigen).pack(side=tk.RIGHT, padx=(0, 2))
+
         self.status_label = tk.Label(leiste, text="● Bereit", bg="#252525", fg="#888888", font=("Segoe UI", 9))
         self.status_label.pack(side=tk.LEFT, padx=20)
+
+    def _legende_zeigen(self):
+        import tkinter as tk
+        win = tk.Toplevel(self.root)
+        win.title("Legende")
+        win.configure(bg="#2d2d2d")
+        win.resizable(False, False)
+        win.grab_set()
+
+        eintraege = [
+            ("TYPEN", None, None),
+            ("★  [Name]",   "#ffca28", "Aktive Gruppe — hat Bild, erkennt sich selbst als Gruppe"),
+            ("📦 [Name]",   "#7a9abf", "Passive Gruppe — kein Bild, nur Bedingungen"),
+            ("📁 [Name]",   "#888888", "Ordner — Gruppe ohne eigenes Master-Template"),
+            ("    └─ Name", "#cccccc", "Kind-Template — gehört zur übergeordneten Gruppe"),
+            ("", None, None),
+            ("MARKIERUNGEN", None, None),
+            ("🚩", "#ff7043", "State Template — setzt einen Game-State wenn erkannt"),
+            ("🔤", "#55aaff", "OCR konfiguriert"),
+            ("🖱",  "#ff6600", "Klick-Zone konfiguriert"),
+            ("⚙",  "#aaaaaa", "Gruppen-Bedingungen konfiguriert"),
+            ("(2)", "#888888", "Anzahl der Varianten (z.B. Name__2, Name__3)"),
+        ]
+
+        tk.Label(win, text="Symbol-Legende", bg="#2d2d2d", fg="#ffffff",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(14, 8))
+
+        for symbol, farbe, beschreibung in eintraege:
+            if beschreibung is None:
+                if symbol:
+                    tk.Label(win, text=symbol, bg="#2d2d2d", fg="#555555",
+                             font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=20, pady=(6, 2))
+                else:
+                    tk.Frame(win, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=20, pady=4)
+                continue
+            zeile = tk.Frame(win, bg="#2d2d2d")
+            zeile.pack(fill=tk.X, padx=20, pady=1)
+            tk.Label(zeile, text=symbol, bg="#2d2d2d", fg=farbe,
+                     font=("Segoe UI", 9), width=12, anchor="w").pack(side=tk.LEFT)
+            tk.Label(zeile, text=beschreibung, bg="#2d2d2d", fg="#888888",
+                     font=("Segoe UI", 8), anchor="w").pack(side=tk.LEFT, padx=(8, 0))
+
+        tk.Button(win, text="Schließen", bg="#3a3a3a", fg="#aaaaaa",
+                  font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=4,
+                  cursor="hand2", command=win.destroy).pack(pady=(10, 14))
 
     def _start(self):
         self.app.start_bot()
@@ -378,6 +427,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
 
             # In allen Template-Settings condition_states und set_states aktualisieren
             for t_settings in self.template_engine.settings.values():
+                if not isinstance(t_settings, dict): continue
                 # condition_states: Liste von Dicts (OR-Gruppen mit AND-Bedingungen)
                 conds = t_settings.get("condition_states", [])
                 if isinstance(conds, list):
@@ -417,6 +467,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
 
         # Aus allen Template-Settings entfernen
         for t_settings in self.template_engine.settings.values():
+            if not isinstance(t_settings, dict): continue
             # condition_states
             conds = t_settings.get("condition_states", [])
             if isinstance(conds, list):

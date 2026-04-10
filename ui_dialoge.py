@@ -203,8 +203,11 @@ class DialogeMixin:
         self._timer_panel_aktualisieren()
 
     def _einlern_dialog_oeffnen(self):
-        def on_finish(): self._bearbeiten_name = self._einlern_dialog_fenster = self._einlern_vorschau_callback = None
-        editor = TemplateEditor(self.root, self, bearbeiten_name=self._bearbeiten_name, aktueller_ausschnitt=self._aktueller_ausschnitt, einlern_modus_callback=lambda: (self._einlern_modus_umschalten() if self.einlern_modus else None, on_finish()))
+        def on_finish():
+            self._bearbeiten_name = self._einlern_dialog_fenster = self._einlern_vorschau_callback = None
+            self._geplanter_typ = None
+        typ = getattr(self, "_geplanter_typ", None)
+        editor = TemplateEditor(self.root, self, bearbeiten_name=self._bearbeiten_name, aktueller_ausschnitt=self._aktueller_ausschnitt, einlern_modus_callback=lambda: (self._einlern_modus_umschalten() if self.einlern_modus else None, on_finish()), typ=typ)
         self._einlern_dialog_fenster = editor.window; self._einlern_vorschau_callback = editor._vorschau_setzen
 
     def _ocr_dialog(self):
