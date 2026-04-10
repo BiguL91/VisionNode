@@ -1,4 +1,5 @@
 import tkinter as tk
+import time
 from helpers import _template_farbe
 
 class VariablePanel:
@@ -9,6 +10,9 @@ class VariablePanel:
         
         self._nur_aktive_variablen = False
         self.timer_eintraege = {}
+        self.gruppen_frames = {} 
+        self._ocr_letzter_wert_zeit = {} 
+        self._letzte_aktive_templates = set()
         
         self._setup_ui()
         self.aktualisieren()
@@ -19,9 +23,6 @@ class VariablePanel:
         
         # Header with Toggle
         self.header_extra = tk.Frame(self.container, bg="#2d2d2d")
-        # Note: In _panel_erstellen, this was passed as kopf_extra. 
-        # Since I'm modularizing, I'll assume the caller (bot) manages the overall panel frame.
-        # But for now, I'll keep the logic here.
 
     def set_nur_aktive(self, nur_aktive):
         self._nur_aktive_variablen = nur_aktive
@@ -32,13 +33,14 @@ class VariablePanel:
             widget.destroy()
         
         self.timer_eintraege = {}
+        self.gruppen_frames = {} 
         m_farbe = {"Timer": "#42a5f5", "Zahl": "#ffca28", "Text": "#aaaaaa"}
         hat = False
         
         # 1. Feste Regionen
         if self.ocr_engine.regionen:
             hat = True
-            self._gruppe_erstellen("Feste Regionen", "#888888", 
+            self.gruppen_frames["_feste_"] = self._gruppe_erstellen("Feste Regionen", "#888888", 
                                    [(n, n, r.get("modus", "Text"), lambda _n=n: self.bot._ocr_region_loeschen(_n)) 
                                     for n, r in self.ocr_engine.regionen.items()], m_farbe)
         
@@ -51,15 +53,18 @@ class VariablePanel:
             )
             
         akt = set()
-        for m in self.bot.app.state.active_matches:
-            akt.add(m[0])
-            if len(m) > 6: akt.add(m[6])
+        if hasattr(self.bot, "app"):
+            for m in self.bot.app.state.active_matches:
+                akt.add(m[0])
+                if len(m) > 6: akt.add(m[6])
         
+        self._letzte_aktive_templates = akt
+
         for tn, ents in grp.items():
             if self._nur_aktive_variablen and tn not in akt:
                 continue
             hat = True
-            self._gruppe_erstellen(tn, _template_farbe(tn), ents, m_farbe)
+            self.gruppen_frames[tn] = self._gruppe_erstellen(tn, _template_farbe(tn), ents, m_farbe)
             
         if not hat:
             tk.Label(self.container, text="(Keine Variablen)", bg="#2d2d2d", fg="#555555", 
@@ -98,8 +103,65 @@ class VariablePanel:
             
             wl.bind("<Double-Button-1>", sw)
             self.timer_eintraege[s] = wl
+        return g
 
     def werte_aktualisieren(self, w):
+        jetzt = time.time()
+        
+        # 1. OCR-Zeitstempel aktualisieren (Gedächtnis für "Hysterese")
+        for n, t in w.items():
+            if t and t not in ("", "—", "-"):
+                self._ocr_letzter_wert_zeit[n] = jetzt
+        
+        # 2. Menge der aktuell gefundenen Templates ermitteln
+        aktuelle_matches = set()
+        if hasattr(self.bot, "app"):
+            for m in self.bot.app.state.active_matches:
+                aktuelle_matches.add(m[0])
+                if len(m) > 6: aktuelle_matches.add(m[6])
+        
+        # 3. Struktur-Check: Falls ein ganz neues Icon auftaucht, UI neu aufbauen
+        if self._nur_aktive_variablen:
+            letzte = getattr(self, "_letzte_aktive_templates", set())
+            if not aktuelle_matches.issubset(letzte):
+                self.aktualisieren()
+                return
+
+        # 4. Werte setzen
+        for n in self.timer_eintraege:
+            if n not in w:
+                self.timer_eintraege[n].config(text="–", fg="#555555")
+        
         for n, t in w.items():
             if n in self.timer_eintraege:
-                self.timer_eintraege[n].config(text=t if t else "–")
+                val = t if t else "–"
+                self.timer_eintraege[n].config(
+                    text=val, 
+                    fg="#ffffff" if val != "–" else "#888888"
+                )
+
+        # 5. Dynamisches Ein/Ausblenden der Gruppen (Surgical Fix für "Email")
+        if self._nur_aktive_variablen:
+            konf = self.ocr_engine.template_ocr_konfigurationen()
+            for tn, frame in self.gruppen_frames.items():
+                if tn == "_feste_": continue
+                
+                ist_gematcht = tn in aktuelle_matches
+                hat_kürzlich_wert = False
+                
+                relevant_ocrs = [en for en, k in konf.items() if k.get("template") == tn]
+                if not relevant_ocrs:
+                    hat_kürzlich_wert = True # Icons ohne OCR bleiben immer da
+                else:
+                    for en in relevant_ocrs:
+                        # Wenn innerhalb der letzten 2.0 Sekunden ein Wert da war -> bleiben
+                        if jetzt - self._ocr_letzter_wert_zeit.get(en, 0) < 2.0:
+                            hat_kürzlich_wert = True
+                            break
+                
+                if ist_gematcht and hat_kürzlich_wert:
+                    if not frame.winfo_viewable():
+                        frame.pack(fill=tk.X, pady=3, padx=2)
+                else:
+                    if frame.winfo_viewable():
+                        frame.pack_forget()
