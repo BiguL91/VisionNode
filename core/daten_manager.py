@@ -499,13 +499,16 @@ def berechnung_auswerten(formel_json, verfuegbare_werte, update_intervall=30):
         return "?"
 
     ausdruck = " ".join(ausdruck_teile)
-    
+
     # Kontext für eval
     kontext = {"__builtins__": {}}
-    
-    # zeit_h/m/s berechnen — Basis: ältester Timestamp der beteiligten Variablen
-    # (ältester = Zeitpunkt des Basis-Scans, von dem aus projiziert wird)
-    ts_liste = [v[1] for k, v in verfuegbare_werte.items() if isinstance(v, (tuple, list)) and v[1]]
+
+    # zeit_h/m/s berechnen — Basis: ältester Timestamp der in der Formel verwendeten Variablen
+    # (nur diese, nicht alle verfügbaren — sonst verfälschen alte Caches den Zeitwert)
+    formel_var_namen = {t["var"] for t in formel_json if "var" in t
+                        and t["var"] not in ("", "zeit_h", "zeit_m", "zeit_s", "update_intervall")}
+    ts_liste = [verfuegbare_werte[n][1] for n in formel_var_namen
+                if n in verfuegbare_werte and isinstance(verfuegbare_werte[n], (tuple, list)) and verfuegbare_werte[n][1]]
     if ts_liste:
         ts_basis = min(ts_liste)
         vergangen_s = jetzt - ts_basis
