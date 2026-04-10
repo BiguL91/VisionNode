@@ -144,10 +144,6 @@ class TemplatePanel:
             k for k, v in settings.items()
             if isinstance(v, dict) and v.get("typ") == "passiv_gruppe"
         }
-        # Rückwärtskompatibilität: altes __gruppe__ Format
-        for k in settings:
-            if k.startswith("__gruppe__"):
-                passive_gruppen.add(k[len("__gruppe__"):])
 
         alle_gruppen = sorted(nach_gruppen.keys(), key=lambda x: (x != "", x.lower()))
 

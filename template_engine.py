@@ -42,8 +42,7 @@ class TemplateEngine:
                     neu = {k: v for k, v in data.items() if
                            k.startswith("_") or
                            k in aktuelle_pngs or
-                           k.startswith("__gruppe__") or
-                           (isinstance(v, dict) and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe", "template", "state_template"))}
+                           (isinstance(v, dict) and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe", "template"))}
                     if len(neu) != len(data):
                         with open(datei, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
                 except Exception: pass
@@ -61,54 +60,6 @@ class TemplateEngine:
             try:
                 with open(SETTINGS_DATEI, "r", encoding="utf-8") as f: self.settings = json.load(f)
             except Exception: self.settings = {}
-        self._settings_migrieren()
-
-    def _settings_migrieren(self):
-        """Einmalige Migration auf Typ-System v2. Schreibt Backup vor dem ersten Speichern."""
-        if self.settings.get("_migrated_v2"):
-            return
-
-        import shutil
-        if os.path.exists(SETTINGS_DATEI):
-            try: shutil.copy2(SETTINGS_DATEI, SETTINGS_DATEI + ".bak")
-            except Exception: pass
-
-        neu = {}
-        for k, v in self.settings.items():
-            if not isinstance(v, dict):
-                neu[k] = v
-                continue
-            if k.startswith("_"):
-                neu[k] = v
-                continue
-
-            # Alte passive Gruppen: __gruppe__Name → Name mit typ
-            if k.startswith("__gruppe__"):
-                name = k[len("__gruppe__"):]
-                if name and name not in neu:
-                    eintrag = dict(v)
-                    eintrag["typ"] = "passiv_gruppe"
-                    eintrag.setdefault("gruppe", "")
-                    neu[name] = eintrag
-                continue
-
-            eintrag = dict(v)
-            if not eintrag.get("typ"):
-                if eintrag.get("gruppe") == k:
-                    eintrag["typ"] = "aktiv_gruppe"
-                else:
-                    eintrag["typ"] = "template"
-
-            # ist_state_template Flag für bestehende Templates mit set_states
-            if eintrag.get("set_states") and not eintrag.get("ist_state_template"):
-                eintrag["ist_state_template"] = True
-
-            neu[k] = eintrag
-
-        neu["_migrated_v2"] = True
-        self.settings = neu
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
 
     def _templates_laden(self):
         self._settings_laden()
@@ -181,9 +132,6 @@ class TemplateEngine:
         for k, v in self.settings.items():
             if isinstance(v, dict) and v.get("typ") == "passiv_gruppe":
                 gruppen.add(k)
-            # Rückwärtskompatibilität: altes __gruppe__ Format
-            elif k.startswith("__gruppe__"):
-                gruppen.add(k[len("__gruppe__"):])
 
         return sorted(g for g in gruppen if g)
 
@@ -233,10 +181,6 @@ class TemplateEngine:
                 continue
             conds = eintrag.get("condition_states", [])
             if conds and not self._condition_states_erfuellt(conds, game_states):
-                return False
-            # Rückwärtskompatibilität: altes __gruppe__ Format
-            alt_conds = self.settings.get(f"__gruppe__{pfad}", {}).get("condition_states", [])
-            if alt_conds and not self._condition_states_erfuellt(alt_conds, game_states):
                 return False
         return True
 
@@ -434,17 +378,8 @@ class TemplateEngine:
 
     def gruppe_config_loeschen(self, gruppe_name):
         """Entfernt eine passive Gruppe."""
-        # Neues Format: plain key
-        entfernt = False
         if gruppe_name in self.settings and self.settings[gruppe_name].get("typ") == "passiv_gruppe":
             del self.settings[gruppe_name]
-            entfernt = True
-        # Rückwärtskompatibilität: altes __gruppe__ Format
-        alt_key = f"__gruppe__{gruppe_name}"
-        if alt_key in self.settings:
-            del self.settings[alt_key]
-            entfernt = True
-        if entfernt:
             with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
 
