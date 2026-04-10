@@ -90,6 +90,10 @@ class DatenPanel:
         self._update_starten()
         self._transform_loop_starten()
 
+        # Spaltenbreite nach Rebuild anpassen (after(0) damit daten_panel bereits zugewiesen ist)
+        if hasattr(self.bot, "_daten_spalte_breite_anpassen"):
+            self.bot.root.after(0, self.bot._daten_spalte_breite_anpassen)
+
     def _listen_block_erstellen(self, parent, l):
         """Erstellt einen einzelnen Listen-Block mit Header + Tabelle."""
         block = tk.Frame(parent, bg="#1e1e1e", relief=tk.FLAT, bd=1)
@@ -221,17 +225,6 @@ class DatenPanel:
                      bg="#2d2d2d", fg="#555555", font=("Segoe UI", 8)).pack(anchor="w", padx=6, pady=4)
             return
 
-        # Header-Zeile
-        header_row = tk.Frame(parent, bg="#1a1a1a")
-        header_row.pack(fill=tk.X, pady=(0, 1))
-        tk.Label(header_row, text="Zeile", bg="#1a1a1a", fg="#666666",
-                 font=("Segoe UI", 7, "bold"), padx=6, pady=2, anchor="w",
-                 width=10).pack(side=tk.LEFT)
-        for sp in spalten:
-            tk.Label(header_row, text=sp["name"], bg="#1a1a1a", fg="#666666",
-                     font=("Segoe UI", 7, "bold"), padx=6, pady=2, anchor="e",
-                     width=8).pack(side=tk.LEFT)
-
         # Datenzeilen (aus konfigurierten Zeilen-Namen)
         if not zeilen_namen:
             tk.Label(parent, text="(Keine Zeilen — Edit zum Konfigurieren)", bg="#2d2d2d",
@@ -240,42 +233,62 @@ class DatenPanel:
 
         # Berechnungs-Namen für farbliche Markierung sammeln
         berech_namen = {b["name"] for b in berechnungen}
-        
+
         # Spezifische Zell-Zuordnungen laden
         zuordnungen = zuordnungen_der_liste(l["id"])
 
+        # Grid-Tabelle: Header + Daten in einem Frame → pixelgenaue Spaltenausrichtung
+        tabel = tk.Frame(parent, bg="#1a1a1a")
+        tabel.pack(fill=tk.X, pady=(0, 2))
+
+        # Spaltenbreiten festlegen
+        tabel.grid_columnconfigure(0, minsize=95)
+        for i in range(len(spalten)):
+            tabel.grid_columnconfigure(i + 1, minsize=72)
+
+        # Header-Zeile (Zeile 0)
+        tk.Label(tabel, text="Zeile", bg="#1a1a1a", fg="#555555",
+                 font=("Segoe UI", 8, "bold"), padx=6, pady=2, anchor="w"
+                 ).grid(row=0, column=0, sticky="ew")
+        for i, sp in enumerate(spalten):
+            tk.Label(tabel, text=sp["name"], bg="#1a1a1a", fg="#555555",
+                     font=("Consolas", 8, "bold"), padx=6, pady=2, anchor="e"
+                     ).grid(row=0, column=i + 1, sticky="ew")
+
+        # Trennlinie
+        tk.Frame(tabel, bg="#333333", height=1).grid(
+            row=1, column=0, columnspan=len(spalten) + 1, sticky="ew")
+
+        # Datenzeilen (ab Zeile 2)
         for r, z in enumerate(zeilen_namen):
             hg = "#1a1a1a" if r % 2 == 0 else "#212121"
-            zeile_row = tk.Frame(parent, bg=hg)
-            zeile_row.pack(fill=tk.X, pady=1)
+            row_idx = r + 2
 
-            tk.Label(zeile_row, text=z["name"], bg=hg, fg="#cccccc",
-                     font=("Segoe UI", 8), padx=6, pady=2, anchor="w",
-                     width=10).pack(side=tk.LEFT)
+            tk.Label(tabel, text=z["name"], bg=hg, fg="#cccccc",
+                     font=("Segoe UI", 8), padx=6, pady=2, anchor="w"
+                     ).grid(row=row_idx, column=0, sticky="ew")
 
-            for sp in spalten:
+            for ci, sp in enumerate(spalten):
                 # 1. Spezifische Zuordnung (Zelle) prüfen
                 ocr_var = zuordnungen.get((z["name"], sp["id"]))
-                
+
                 # 2. Falls keine Zelle: Globalen Spalten-Wert prüfen (inkl. Placeholder)
                 if not ocr_var:
                     ocr_var = sp.get("ocr_var")
                     if ocr_var and "{row}" in ocr_var:
                         ocr_var = ocr_var.replace("{row}", z["name"])
-                
+
                 entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
                 wert = entry[0]
-                
-                # Formatierung anwenden
+
                 format_typ = sp.get("format", "standard")
                 anzeige_wert = self._format_wert(wert, format_typ)
-                
-                # Farbe: Berechnungen in Blau, Transformationen/OCR in Grau
+
                 farbe = "#4fc3f7" if ocr_var in berech_namen else "#cccccc"
 
-                tk.Label(zeile_row, text=anzeige_wert, bg=hg, fg=farbe,
-                         font=("Consolas", 8), padx=6, pady=2, anchor="e",
-                         width=8).pack(side=tk.LEFT)
+                tk.Label(tabel, text=anzeige_wert, bg=hg, fg=farbe,
+                         font=("Consolas", 8), padx=6, pady=2, anchor="e"
+                         ).grid(row=row_idx, column=ci + 1, sticky="ew")
 
     def _format_wert(self, wert, format_typ):
         """Formatiert einen Wert für die UI-Anzeige."""

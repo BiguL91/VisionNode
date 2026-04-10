@@ -257,6 +257,17 @@ class PanelsMixin:
     def _daten_panel(self, parent):
         self.daten_panel = DatenPanel(parent, self)
 
+    def _daten_spalte_breite_anpassen(self):
+        """Passt die Breite der Daten-Spalte dynamisch an die max. Spaltenanzahl an."""
+        if not hasattr(self, "_spalte_rechts2") or not hasattr(self, "daten_panel"):
+            return
+        from core.daten_manager import spalten_der_liste
+        listen = getattr(self.daten_panel, "_listen_cache", [])
+        max_spalten = max((len(spalten_der_liste(l["id"])) for l in listen), default=0)
+        # "Zeile"-Spalte (~82px) + je Datenspalte (~72px) + Scrollbar + Panel-Chrome
+        neue_breite = max(350, 110 + max_spalten * 72)
+        self._spalte_rechts2.config(width=neue_breite)
+
     def _log_panel(self, parent):
         self.log_panel_obj = LogPanel(parent)
 

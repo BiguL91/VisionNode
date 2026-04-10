@@ -105,11 +105,11 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self._panel_erstellen(spalte_rechts1, "LOG", self._log_panel, expand=True)
 
         # Spalte 3 (ganz rechts): Daten-Listen
-        spalte_rechts2 = tk.Frame(haupt, bg="#1e1e1e", width=280)
-        spalte_rechts2.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 0))
-        spalte_rechts2.pack_propagate(False)
+        self._spalte_rechts2 = tk.Frame(haupt, bg="#1e1e1e", width=280)
+        self._spalte_rechts2.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 0))
+        self._spalte_rechts2.pack_propagate(False)
 
-        self._panel_erstellen(spalte_rechts2, "DATEN-LISTEN", self._daten_panel, expand=True)
+        self._panel_erstellen(self._spalte_rechts2, "DATEN-LISTEN", self._daten_panel, expand=True)
 
         # Unten: Buttons
         leiste = tk.Frame(self.root, bg="#252525", height=45)
@@ -525,6 +525,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         self._fenster_geometrie_speichern()
         self.app.shutdown()
         self.root.destroy()
+        os._exit(0)  # Daemon-Threads in C-Extensions (mss/PyTorch/EasyOCR) sauber beenden
 
 if __name__ == "__main__":
     root = tk.Tk()
