@@ -1,29 +1,27 @@
-# TODO - Roadmap TilesBot
+# TODO - Roadmap Ai-Bot
 
 ---
 
 ## Priorität 1 (Next)
 
+- [ ] **Timer-Integration in Daten-Liste**
+  - Timer über OCR erkennen; wenn er wegfällt, intern weiterzählen.
+  - Timer-Verifikation (Format `00:00:00` oder `00:00:00:00`).
+  - Transformation: z.B. `00:00:44` -> `44s`.
+  - Aktions-Möglichkeit: Was passiert bei Ablauf (00:00:00)? (z.B. Status-Update in DB).
 
+- [ ] **Erweiterte Header-Icons**
+  - Icons für "Scannbereich" (ROI) in den Workflow-Templates anzeigen, wenn ein separater Bereich gesetzt ist.
 
-- [x] **Gruppierung im Workflow Template**
-  - Passive Gruppen (📦) implementiert: `+ Aktiv` / `📦 Passiv` im WORKFLOW TEMPLATES Header, Anzeige in der Liste, condition_states werden beim Matching AND-kombiniert, Template ohne Bild wird automatisch zur passiven Gruppe
-  - v0.4.4: Vollständig überarbeitet, Umbenennen und Hierarchie-Migration jetzt stabil.
+- [ ] **Status-Durchreichung in Passiven Gruppen**
+  - Prüfung, ob Zustände tiefer als eine Ebene durchgereicht werden.
+  - Scannbereiche (ROI) von passiven Gruppen an Kind-Elemente vererben.
 
-  - **Rand bereich Im OCR**
-    - die vergrößerung vom rand im OCR reicht bei weitem nicht aus, brauche eine andere möglichkeit zusätzlich. Gedanke: Wenn das OCR-Bereich menü geöffnet ist kann auch das Live bild verwenden werden, jedoch muss mann mit den Koordinaten aufpassen.
+- [ ] **Game-State Management**
+  - Einführung von "Screens" (z.B. Basis, Karte); Workflows laufen nur im passenden State.
 
-- [x] **UI Anpassung**
-  - Buttons (Neuladen, Bearbeiten, Löschen, OCR, Klick) gemeinsam unterhalb beider Template-Listen
-  - Zustand Manager Shortcut Button (🚩 Zustände) öffnet Zustände-Dialog direkt aus dem Panel
-
-- **Phase F: Intelligence & Performance Evolution**
-  - [x] **Multi-Template Support**: Erlaubt mehrere Bilder pro Template-Name (Varianten wie `Email.png`, `Email__2.png`) für robustere Erkennung.
-  - [x] **OCR Farb-Präzision**: Farb-Picker & Pipette für gezielte Textisolierung (verhindert Geisterzahlen).
-  - [ ] **OCR-Optimierung**: Scan-Frequenz-Limitierung (max. X/s) + Motion Detection (nur Scan bei Pixeländerung in Region).
-  - [ ] **Action-Verifizierung**: Visuelle Rückkopplung nach Klicks (prüfen ob Klick erfolgreich war, sonst Retry).
-  - [ ] **Game-State Management**: Einführung von "Screens" (z.B. Basis, Karte); Workflows laufen nur im passenden State.
-  - [ ] **Auto-Tuning Engine**: Automatischer Test neuer Templates gegen Snapshots; Schwellwert-Vorschläge & Live-Anpassung.
+- [ ] **Auto-Tuning Engine**
+  - Automatischer Test neuer Templates gegen Snapshots; Schwellwert-Vorschläge & Live-Anpassung.
 
 - **Workflow Editor 2.0 (Karten-Design)**
   - [ ] **Visuelle Karten**: Schritte als Karten statt Listbox (Icons, Text, Parameter).
@@ -31,12 +29,10 @@
   - [ ] **Drag & Drop**: Schritte innerhalb der Kette verschieben (Reihenfolge ändern).
 
 - **Vision Engine Evolution**
-  - [ ] **Hierarchische Klassen-Erkennung**: (z.B. "Icon" -> "Email") für bessere Skalierbarkeit bei hunderten Templates.
   - [ ] **Auto-Tuning**: Bot schlägt Schwellwerte basierend auf Snapshots automatisch vor.
   - [ ] **Erweiterte Ausschnitt-Formen**: Auswahl zwischen Rechteck und Kreis beim Einlernen.
 
 - **Visualisierungs-Overhaul**
-  - [ ] **Permanente Rahmen**: Erkannte Objekte bleiben im Live-View markiert.
   - [ ] **Farbsystem**: Jede Gruppe erhält eine eigene Farbe, Kinder werden innerhalb der Gruppenfarbe differenziert.
 
 ---
@@ -46,18 +42,12 @@
 - **Scheduler / Loop-System Überarbeitung**
   - [ ] **Main-Scheduler**: Zentrales System, das basierend auf Bedingungen entscheidet.
   - [ ] **Prioritäten**: Workflows mit Prio 1, 2, 3 versehen (z.B. "Hilfe" > "Forschung").
+
 - [ ] **Profil-System**: Erlaubt einfaches Umschalten zwischen verschiedenen Spielen/Accounts.
 
----
-
-## Erledigte Features
-
-- [x] **Modulares Architektur-Refactoring (v0.3.x)**: Komplette Trennung von UI und Logik (`core/`, `ui/`).
-- [x] **Zentrales State-Management**: UI-unabhängiger Bot-Status via `BotState`.
-- [x] **Bounding-Box Synchronisation**: Mathematisch exakte Koordinaten für OCR und Klicks durch BBox-Normierung.
-- [x] **Hierarchisches Matching (Zwei-Phasen-Suche)**: Effiziente Erkennung von Symbolen innerhalb von Rahmen (Master/Kind-Prinzip).
-- [x] **Snapshot-Management**: Speichern benannter Spielzustände und Testen gegen historische Bilder.
-- [x] **ROI-Editor & Interaktiver Test**: Begrenzung der Suche auf Bildbereiche inkl. Score-Analyse.
-- [x] **Integrierter Einlern-Dialog (Dual-Preview)**: Original & GPU-Mathematik synchron.
-- [x] **CPU-Last-Optimierung (Multi-Threading)**: Trennung von Capture, UI und Matching (eigener Prozess).
-- [x] **Gruppen-Management 2.0**: Robuste Umbenennung ganzer Gruppen und Pfad-Normalisierung.
+- [ ] **OCR-Optimierung**
+  - Scan-Frequenz-Limitierung (max. X/s).
+  - Motion Detection (nur Scan bei Pixeländerung in Region).
+  
+- [ ] **Action-Verifizierung**
+  - Visuelle Rückkopplung nach Klicks (prüfen, ob Klick erfolgreich war, sonst Retry).
