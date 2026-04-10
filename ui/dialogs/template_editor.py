@@ -1056,7 +1056,7 @@ class TemplateEditor:
 
         try:
             img_to_save = self.orig_bild_ref
-            if img_to_save is None and alter_name:
+            if img_to_save is None and alter_name and alter_name in self.template_engine.templates:
                 pfad_alt = self.template_engine.templates[alter_name].get("pfad")
                 if pfad_alt and os.path.exists(pfad_alt):
                     _arr = cv2.imdecode(np.fromfile(pfad_alt, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -1067,7 +1067,16 @@ class TemplateEditor:
                             img_to_save = Image.fromarray(cv2.cvtColor(_arr, cv2.COLOR_BGR2RGB))
 
             if img_to_save is None:
-                self.bot._log("Fehler beim Speichern: Kein Bild gefunden.")
+                # Kein Bild → automatisch als passive Gruppe anlegen
+                gruppe_name = self.name_var.get().strip()
+                if not gruppe_name:
+                    self.bot._log("Fehler beim Speichern: Kein Name angegeben.")
+                    return
+                self.template_engine.gruppe_config_speichern(gruppe_name, list(self.condition_states))
+                self.bot._log(f"Passive Gruppe erstellt: \"{gruppe_name}\"")
+                self.bot.app.reload_templates()
+                if hasattr(self.bot, "template_panel"):
+                    self.bot.template_panel.aktualisieren()
                 return
 
             entferne_hg = self.hg_var.get()

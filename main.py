@@ -93,7 +93,8 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
         spalte_rechts1.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 4))
         spalte_rechts1.pack_propagate(False)
 
-        self._panel_erstellen(spalte_rechts1, "WORKFLOW TEMPLATES", self._templates_panel, expand=True)
+        self._panel_erstellen(spalte_rechts1, "WORKFLOW TEMPLATES", self._templates_panel, expand=True,
+                              kopf_extra=self._workflow_templates_kopf_extra)
         self._panel_erstellen(spalte_rechts1, "STATE TEMPLATES", self._state_templates_panel)
         self._template_buttons_bereich(spalte_rechts1)
         self._panel_erstellen(spalte_rechts1, "OCR VARIABLEN", self._ocr_panel,

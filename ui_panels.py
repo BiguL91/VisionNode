@@ -54,6 +54,64 @@ class PanelsMixin:
         self.state_template_panel = TemplatePanel(parent, self, filter_modus="state",
                                                   show_buttons=False, on_focus=self._template_panel_fokus_setzen)
 
+    def _workflow_templates_kopf_extra(self, kopf_frame):
+        """+ Aktiv / 📦 Passiv Buttons im WORKFLOW TEMPLATES Header."""
+
+        def passiv_erstellen():
+            from ui.dialogs.gruppe_editor import GruppeEditor
+            dialog = tk.Toplevel(self.root)
+            dialog.title("Passive Gruppe")
+            dialog.configure(bg="#2d2d2d")
+            dialog.grab_set()
+            dialog.resizable(False, False)
+
+            tk.Label(dialog, text="Gruppen-Name:", bg="#2d2d2d", fg="#cccccc",
+                     font=("Segoe UI", 9)).pack(padx=20, pady=(16, 4), anchor="w")
+            name_var = tk.StringVar()
+            entry = tk.Entry(dialog, textvariable=name_var, bg="#1a1a1a", fg="#cccccc",
+                             insertbackground="white", font=("Segoe UI", 10),
+                             relief=tk.FLAT, bd=4, width=24)
+            entry.pack(padx=20, pady=(0, 4))
+            entry.focus_set()
+            fehler = tk.Label(dialog, text="", bg="#2d2d2d", fg="#da3633", font=("Segoe UI", 8))
+            fehler.pack(padx=20, anchor="w")
+
+            def erstellen():
+                import os
+                name = name_var.get().strip()
+                if not name:
+                    fehler.config(text="Name darf nicht leer sein.")
+                    return
+                if os.path.isdir(os.path.join("templates", name)):
+                    fehler.config(text=f"'{name}' existiert bereits als aktive Gruppe.")
+                    return
+                if f"__gruppe__{name}" in self.template_engine.settings:
+                    fehler.config(text=f"Passive Gruppe '{name}' existiert bereits.")
+                    return
+                self.template_engine.gruppe_config_speichern(name, [])
+                dialog.destroy()
+                GruppeEditor(self.root, self, name, on_save=lambda: (
+                    self.template_panel.aktualisieren()
+                    if hasattr(self, "template_panel") else None
+                ))
+
+            entry.bind("<Return>", lambda e: erstellen())
+            btn_f = tk.Frame(dialog, bg="#2d2d2d")
+            btn_f.pack(fill=tk.X, padx=20, pady=12)
+            tk.Button(btn_f, text="Erstellen", bg="#1a5a2a", fg="#55ff88",
+                      font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4,
+                      cursor="hand2", command=erstellen).pack(side=tk.LEFT)
+            tk.Button(btn_f, text="Abbrechen", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=4,
+                      cursor="hand2", command=dialog.destroy).pack(side=tk.RIGHT)
+
+        tk.Button(kopf_frame, text="+ Aktiv", bg="#1a3a1a", fg="#55ff88",
+                  font=("Segoe UI", 7), relief=tk.FLAT, padx=6, pady=1,
+                  cursor="hand2", command=self._einlern_modus_umschalten).pack(side=tk.RIGHT, padx=(0, 2), pady=2)
+        tk.Button(kopf_frame, text="📦 Passiv", bg="#2d2d2d", fg="#aaaaaa",
+                  font=("Segoe UI", 7), relief=tk.FLAT, padx=6, pady=1,
+                  cursor="hand2", command=passiv_erstellen).pack(side=tk.RIGHT, padx=(0, 2), pady=2)
+
     def _template_panel_fokus_setzen(self, panel):
         """Merkt sich welches Template-Panel zuletzt aktiv war."""
         self._aktiver_template_panel = panel

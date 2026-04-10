@@ -6,8 +6,9 @@
 
 
 
-- [] **Gruppierung im Workflow Template**
-  - Aktuell kann zwar eine Maste Gruppe erstellt werden diese ist aber dafür da um selber Templates zu tracken: ich brauche eine möglichkeit eine einfach gruppe zu erstellen die selber nichts macht, sie soll jediglich zustände weitergeben. Gedanke 7 Templates sind in sub gruppe "Einheit" ich möchte jedoch das die einheite nur auf der map gefunden werden. Um nicht alle einzeln die zustände setzen zu müssen eine kleine gruppe:
+- 🔧 **Gruppierung im Workflow Template** *(implementiert, fehlerhaft)*
+  - Passive Gruppen (📦) implementiert: `+ Aktiv` / `📦 Passiv` im WORKFLOW TEMPLATES Header, Anzeige in der Liste, condition_states werden beim Matching AND-kombiniert, Template ohne Bild wird automatisch zur passiven Gruppe
+  - Noch fehlerhaft: weitere Bugs beim Umbenennen / Speichern noch nicht vollständig getestet
 
   - **Rand bereich Im OCR**
     - die vergrößerung vom rand im OCR reicht bei weitem nicht aus, brauche eine andere möglichkeit zusätzlich. Gedanke: Wenn das OCR-Bereich menü geöffnet ist kann auch das Live bild verwenden werden, jedoch muss mann mit den Koordinaten aufpassen.

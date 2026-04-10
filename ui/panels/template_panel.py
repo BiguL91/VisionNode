@@ -36,8 +36,12 @@ class TemplatePanel:
         self.template_liste.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.template_liste.yview)
 
+        self._last_gruppe = None  # Gemerkte Gruppe für den Gruppe-Button
+
         # Fokus-Callback: aktives Panel dem Elternteil melden
         self.template_liste.bind("<ButtonPress-1>", self._on_fokus)
+        self.template_liste.bind("<<ListboxSelect>>", self._on_liste_select)
+        self.template_liste.bind("<Double-Button-1>", self._on_doppelklick)
 
         if self.show_buttons:
             # Buttons Zeile 1
@@ -66,12 +70,45 @@ class TemplatePanel:
 
             tk.Button(zeile2, text="🖱 Klick", bg="#3a3a3a", fg="#aaaaaa",
                       font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
-                      cursor="hand2", command=self._klick_konfigurieren).pack(side=tk.LEFT)
+                      cursor="hand2", command=self._klick_konfigurieren).pack(side=tk.LEFT, padx=(0, 4))
+
+            tk.Button(zeile2, text="📦 Gruppe", bg="#3a3a3a", fg="#aaaaaa",
+                      font=("Segoe UI", 8), relief=tk.FLAT, padx=6, pady=2,
+                      cursor="hand2", command=self._gruppe_konfigurieren).pack(side=tk.LEFT)
 
     def _on_fokus(self, e=None):
         """Meldet dieses Panel als aktiv wenn die Liste geklickt wird."""
         if self.on_focus:
             self.on_focus(self)
+
+    def _on_doppelklick(self, e=None):
+        """Doppelklick auf passive Gruppe öffnet den Editor."""
+        import re
+        auswahl = self.template_liste.curselection()
+        if not auswahl:
+            return
+        text = self.template_liste.get(auswahl[0]).strip()
+        if text.startswith("📦"):
+            self._gruppe_konfigurieren()
+
+    def _on_liste_select(self, e=None):
+        """Merkt die aktuelle Gruppe beim Selektieren."""
+        import re
+        auswahl = self.template_liste.curselection()
+        if not auswahl:
+            return
+        text = self.template_liste.get(auswahl[0]).strip()
+        m = re.search(r"\[(.+?)\]", text)
+        if m:
+            # Direkt ein Gruppen-Header gewählt
+            self._last_gruppe = m.group(1)
+        else:
+            # Kind-Template: Gruppe über das Template nachschlagen
+            name = self._get_auswahl_name()
+            if name and name in self.template_engine.templates:
+                self._last_gruppe = self.template_engine.templates[name].get("gruppe")
+            else:
+                self._last_gruppe = None
 
     def aktualisieren(self):
         """Aktualisiert die Template-Liste im Panel."""
@@ -127,6 +164,8 @@ class TemplatePanel:
                     self.template_liste.insert(tk.END, f"  {name}{v_info}{mark}")
             else:
                 hat_master = gruppe in nach_gruppen[gruppe]
+                hat_gruppe_config = f"__gruppe__{gruppe}" in self.template_engine.settings
+                gruppe_mark = " ⚙" if hat_gruppe_config else ""
                 mark = ""
                 if hat_master:
                     tpl_settings = self.template_engine.settings.get(gruppe, {})
@@ -134,11 +173,11 @@ class TemplatePanel:
                     if gruppe in templates_mit_ocr: mark += " 🔤"
                     if gruppe in klick_konfig:    mark += " 🖱"
                     v_info = f" ({varianten_count[gruppe]})" if varianten_count[gruppe] > 1 else ""
-                    label = f"★ [{gruppe}]{v_info}{mark}"
+                    label = f"★ [{gruppe}]{v_info}{mark}{gruppe_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#ffca28")
                 else:
-                    self.template_liste.insert(tk.END, f"📁 [{gruppe}]")
+                    self.template_liste.insert(tk.END, f"📁 [{gruppe}]{gruppe_mark}")
                     self.template_liste.itemconfig(tk.END, fg="#888888")
                 
                 for name in sorted(nach_gruppen[gruppe]):
@@ -154,6 +193,20 @@ class TemplatePanel:
             if gruppe != alle_gruppen[-1]:
                 self.template_liste.insert(tk.END, "")
 
+        # Passive Gruppen anzeigen (nur im workflow-Modus)
+        if self.filter_modus in ("all", "workflow"):
+            aktive_gruppen = set(alle_gruppen)
+            passive = sorted(
+                k[len("__gruppe__"):] for k in self.template_engine.settings
+                if k.startswith("__gruppe__") and k[len("__gruppe__"):] not in aktive_gruppen
+            )
+            if passive:
+                if alle_gruppen:
+                    self.template_liste.insert(tk.END, "")
+                for name in passive:
+                    self.template_liste.insert(tk.END, f"📦 [{name}]")
+                    self.template_liste.itemconfig(tk.END, fg="#7a9abf")
+
     def _get_auswahl_name(self):
         """Extrahiert den sauberen Template-Namen aus der Listen-Auswahl."""
         import re
@@ -163,7 +216,7 @@ class TemplatePanel:
         
         # 1. Icons und Präfixe entfernen
         clean_text = text.strip()
-        for icon in ["🚩", "🔤", "🖱", "★", "📁", "└─"]:
+        for icon in ["🚩", "🔤", "🖱", "★", "📁", "📦", "└─", "⚙"]:
             clean_text = clean_text.replace(icon, "")
         clean_text = clean_text.strip()
         
@@ -184,6 +237,13 @@ class TemplatePanel:
         self.aktualisieren()
         anzahl = len(self.template_engine.templates)
         self.bot._log(f"Templates neu geladen: {anzahl} gefunden.")
+
+    def _gruppe_konfigurieren(self):
+        """Öffnet den Gruppen-Editor für die aktuell gewählte Gruppe."""
+        from ui.dialogs.gruppe_editor import GruppeEditor
+        if not self._last_gruppe:
+            return
+        GruppeEditor(self.frame, self.bot, self._last_gruppe, on_save=self.aktualisieren)
 
     def _bearbeiten(self):
         name = self._get_auswahl_name()

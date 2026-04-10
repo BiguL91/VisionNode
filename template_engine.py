@@ -39,7 +39,7 @@ class TemplateEngine:
             if os.path.exists(datei):
                 try:
                     with open(datei, "r", encoding="utf-8") as f: data = json.load(f)
-                    neu = {k: v for k, v in data.items() if k in aktuelle_pngs}
+                    neu = {k: v for k, v in data.items() if k in aktuelle_pngs or k.startswith("__gruppe__")}
                     if len(neu) != len(data):
                         with open(datei, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
                 except Exception: pass
@@ -122,7 +122,12 @@ class TemplateEngine:
         # 2. Zur Sicherheit aus den geladenen Templates
         for t in self.templates.values():
             if t["gruppe"]: gruppen.add(t["gruppe"])
-            
+
+        # 3. Passive Gruppen (nur in settings, kein Ordner)
+        for k in self.settings:
+            if k.startswith("__gruppe__"):
+                gruppen.add(k[len("__gruppe__"):])
+
         return sorted(list(gruppen))
 
     @staticmethod
@@ -287,6 +292,23 @@ class TemplateEngine:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._gpu_cache = {}
 
+    def gruppe_config_speichern(self, gruppe_name, condition_states):
+        """Speichert Bedingungen für eine Dummy-Gruppe (ohne eigenes Template)."""
+        key = f"__gruppe__{gruppe_name}"
+        if key not in self.settings:
+            self.settings[key] = {}
+        self.settings[key]["condition_states"] = condition_states
+        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, indent=2, ensure_ascii=False)
+
+    def gruppe_config_loeschen(self, gruppe_name):
+        """Entfernt die Dummy-Gruppen-Konfiguration."""
+        key = f"__gruppe__{gruppe_name}"
+        if key in self.settings:
+            del self.settings[key]
+            with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+
     def _get_gpu_template(self, name, s_eff):
         key = (name, s_eff)
         if key in self._gpu_cache: return self._gpu_cache[key]
@@ -341,10 +363,16 @@ class TemplateEngine:
                 master_name = name.split("__")[0]
                 conditions = self.settings.get(master_name, {}).get("condition_states", {})
             
-            if game_states is not None and conditions:
-                if not self._condition_states_erfuellt(conditions, game_states):
+            if game_states is not None:
+                if conditions and not self._condition_states_erfuellt(conditions, game_states):
                     continue
-                    
+                # Gruppen-Konfiguration (Dummy-Gruppe) AND-prüfen
+                gruppe_key = f"__gruppe__{t['gruppe']}" if t["gruppe"] else None
+                if gruppe_key:
+                    gruppe_cond = self.settings.get(gruppe_key, {}).get("condition_states", [])
+                    if gruppe_cond and not self._condition_states_erfuellt(gruppe_cond, game_states):
+                        continue
+
             g = t["gruppe"]
             # Ein Template ist ein Master, wenn es keine Gruppe hat, 
             # sein Name der Gruppe entspricht oder mit {Gruppe}__ beginnt (Varianten)
