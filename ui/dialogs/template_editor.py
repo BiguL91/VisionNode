@@ -229,7 +229,11 @@ class TemplateEditor:
         style.theme_use('clam')
         style.configure("TCombobox", fieldbackground="#1a1a1a", background="#3a3a3a",
                         foreground="#ffffff", arrowcolor="#ffffff", bordercolor="#3a3a3a")
-        gruppen_liste = self.template_engine.get_gruppen()
+        
+        # Gruppen filtern: gleiche Kategorie, und nicht man selbst
+        alle_gruppen = self.template_engine.get_gruppen(kategorie=self.kategorie)
+        gruppen_liste = [g for g in alle_gruppen if g != self.bearbeiten_name]
+        
         self.gruppe_var = tk.StringVar(
             value=self.template_engine.settings.get(self.bearbeiten_name, {}).get("gruppe", "")
             if self.bearbeiten_name else "")
@@ -287,7 +291,16 @@ class TemplateEditor:
 
     def _typ_anwenden(self):
         """Zeigt/versteckt UI-Elemente je nach self.typ."""
-        if self.typ == "aktiv_gruppe":
+        verstecken = (self.typ == "aktiv_gruppe")
+        
+        # Passive Master-Gruppe? (Hat keine übergeordnete Gruppe in Settings)
+        if self.typ == "passiv_gruppe" and self.bearbeiten_name:
+            s = self.template_engine.settings.get(self.bearbeiten_name, {})
+            # Wenn gruppe leer oder gleich Name -> es ist ein Master (kein Parent)
+            if s.get("gruppe", "") in ("", self.bearbeiten_name):
+                verstecken = True
+
+        if verstecken:
             self._gruppe_frame.pack_forget()
         else:
             # Sicherstellen dass Frame sichtbar ist (nach pack_forget)
@@ -1088,6 +1101,7 @@ class TemplateEditor:
             return
 
         alter_name = self.bearbeiten_name
+        uebergeordnet = self.gruppe_var.get().strip() if self.typ != "aktiv_gruppe" else ""
 
         # Check in templates AND settings (for passive groups)
         existiert = n in self.template_engine.templates or n in self.template_engine.settings
@@ -1115,17 +1129,18 @@ class TemplateEditor:
                     self.bot._log("Fehler beim Speichern: Kein Name angegeben.")
                     return
                 
-                uebergeordnet = self.gruppe_var.get().strip() if self.typ == "passiv_gruppe" else ""
-                
                 # Check ob sich Name oder Hierarchie geändert hat
                 umbenennen = alter_name and (alter_name != n)
                 gruppe_geandert = False
                 if alter_name:
                     alte_uebergeordnet = self.template_engine.settings.get(alter_name, {}).get("gruppe", "")
-                    # Master-Gruppe zeigt 'gruppe' == Name. Alles andere ist ein Parent-Wechsel.
-                    if alte_uebergeordnet == alter_name: # war Master
-                        if uebergeordnet != "": gruppe_geandert = True
-                    else: # war Sub
+                    # Master-Gruppe zeigt 'gruppe' == Name oder leer.
+                    ist_alter_master = (alte_uebergeordnet in ("", alter_name))
+                    ist_neuer_master = (uebergeordnet == "")
+                    
+                    if ist_alter_master:
+                        if not ist_neuer_master: gruppe_geandert = True
+                    else:
                         if alte_uebergeordnet != uebergeordnet: gruppe_geandert = True
 
                 if umbenennen or gruppe_geandert:
@@ -1161,9 +1176,16 @@ class TemplateEditor:
             umbenennen = alter_name and (alter_name != n)
             gruppe_geandert = False
             if alter_name:
-                alte_gruppe = self.template_engine.settings.get(alter_name, {}).get("gruppe", "")
-                if alte_gruppe != gruppe_name:
-                    gruppe_geandert = True
+                alte_uebergeordnet = self.template_engine.settings.get(alter_name, {}).get("gruppe", "")
+                # Master-Gruppe zeigt 'gruppe' == Name oder leer.
+                ist_alter_master = (alte_uebergeordnet in ("", alter_name))
+                ist_neuer_master = (gruppe_name == n) # Bei aktiven Templates bedeutet gruppe == name = Master
+
+                if ist_alter_master:
+                    if not ist_neuer_master: gruppe_geandert = True
+                else:
+                    if alte_uebergeordnet != gruppe_name: gruppe_geandert = True
+
 
             speichern_kwargs = dict(
                 hintergrund_toleranz=hg_toleranz,

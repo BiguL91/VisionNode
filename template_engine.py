@@ -177,9 +177,10 @@ class TemplateEngine:
         self._log(f"TemplateEngine: {len(self.templates)} Templates geladen.")
 
     def _gruppe_vollpfad(self, gruppe_name):
-        """Vollpfad einer Gruppe. settings["gruppe"] = Vollpfad des Elternteils (oder leer).
-        aktiv_gruppe hat gruppe==eigener_name (selbst-referenziell) → kein echter Elternteil."""
-        parent = self.settings.get(gruppe_name, {}).get("gruppe", "")
+        """Vollpfad einer Gruppe. settings["gruppe"] = Vollpfad des Elternteils (oder leer)."""
+        s = self.settings.get(gruppe_name, {})
+        if not s: return gruppe_name
+        parent = s.get("gruppe", "")
         if parent and parent != gruppe_name:
             return f"{parent}/{gruppe_name}"
         return gruppe_name
@@ -193,20 +194,37 @@ class TemplateEngine:
             return os.path.join(TEMPLATES_ORDNER, kat, *parent.split("/"), gruppe_name)
         return os.path.join(TEMPLATES_ORDNER, kat, gruppe_name)
 
-    def get_gruppen(self):
-        """Gibt Vollpfade aller Gruppen zurück — konsistent mit _templates_laden-Output."""
+    def get_gruppen(self, kategorie=None):
+        """Gibt Vollpfade aller Gruppen zurück — optional gefiltert nach Kategorie."""
         gruppen = set()
-        # Templates: gruppe ist bereits Vollpfad (aus Dateisystem)
-        for t in self.templates.values():
-            if t["gruppe"]: gruppen.add(t["gruppe"])
-        # Passive Gruppen: Vollpfad berechnen
+        
+        # 1. Alle aus Settings (Aktiv + Passiv)
         for k, v in self.settings.items():
-            if isinstance(v, dict) and v.get("typ") == "passiv_gruppe":
-                gruppen.add(self._gruppe_vollpfad(k))
-        # Aktive Gruppen ohne Templates noch
-        for k, v in self.settings.items():
-            if isinstance(v, dict) and v.get("typ") == "aktiv_gruppe":
-                gruppen.add(k)
+            if not isinstance(v, dict): continue
+            typ = v.get("typ")
+            if typ not in ("aktiv_gruppe", "passiv_gruppe"):
+                continue
+            
+            # Kategorie Filter
+            if kategorie and v.get("kategorie") != kategorie:
+                continue
+                
+            gruppen.add(self._gruppe_vollpfad(k))
+
+        # 2. Backup aus Templates (Dateisystem)
+        for name, t in self.templates.items():
+            g = t.get("gruppe")
+            if not g: continue
+            
+            # Kategorie über Pfad prüfen
+            if kategorie:
+                pfad = t.get("pfad", "")
+                rel = os.path.relpath(pfad, TEMPLATES_ORDNER).replace("\\", "/")
+                if not rel.startswith(f"{kategorie}/"):
+                    continue
+
+            gruppen.add(g)
+
         return sorted(g for g in gruppen if g)
 
     @staticmethod
@@ -421,17 +439,17 @@ class TemplateEngine:
         """Benennt eine Gruppe um oder verschiebt sie: verschiebt Ordner + cascadiert Vollpfade."""
         alter_vollpfad = self._gruppe_vollpfad(alter_name)
         alter_ordner = self._gruppe_ordnerpfad(alter_name)
-        
+
         if neue_uebergeordnete_gruppe is not None:
             parent = neue_uebergeordnete_gruppe
         else:
             parent = self.settings.get(alter_name, {}).get("gruppe", "")
-            
-        if parent == alter_name:
+
+        # Ein Master hat sich selbst als Gruppe (oder leer)
+        if parent == alter_name or parent is None:
             parent = ""
-            
+
         neuer_vollpfad = f"{parent}/{neuer_name}" if parent else neuer_name
-        
         # Ziel-Ordner bestimmen
         s = self.settings.get(alter_name, {})
         kat = s.get("kategorie", "workflow")
@@ -492,8 +510,8 @@ class TemplateEngine:
         # Gruppe-Key selbst umbenennen (falls noch nicht durch Varianten-Loop geschehen)
         if alter_name in self.settings:
             self.settings[neuer_name] = self.settings.pop(alter_name)
-            if self.settings[neuer_name].get("typ") in ("aktiv_gruppe", "passiv_gruppe"):
-                self.settings[neuer_name]["gruppe"] = neuer_vollpfad if parent else neuer_name
+            # Wichtig: Ein Master hat entweder "" oder sich selbst als Gruppe.
+            self.settings[neuer_name]["gruppe"] = neuer_vollpfad if parent else ""
             self._log(f"  Eintrag umbenannt: '{alter_name}' → '{neuer_name}'")
 
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
@@ -528,14 +546,11 @@ class TemplateEngine:
         """Speichert eine passive Gruppe (kein Bild, nur Bedingungen) und legt den Ordner an."""
         bestehend = self.settings.get(gruppe_name, {})
         kat = kategorie or bestehend.get("kategorie", "workflow")
-        
-        # Die Gruppe ist entweder untergeordnet oder (wenn uebergeordnete_gruppe leer) sie ist ihre eigene Master-Gruppe.
-        # Wichtig: Bei passiven Gruppen muss 'gruppe' auf den Namen zeigen, wenn sie Master sind.
-        if uebergeordnete_gruppe:
-            g_val = uebergeordnete_gruppe
-        else:
-            # Wenn es vorher schon eine Gruppe war (vielleicht umbenannt), nehmen wir den Namen
-            g_val = gruppe_name
+
+        # Ein Master darf sich nicht selbst als Gruppe haben (führt zu Endlos-Pfaden/unsichtbaren Containern)
+        g_val = uebergeordnete_gruppe or ""
+        if g_val == gruppe_name:
+            g_val = ""
 
         self.settings[gruppe_name] = {
             "typ": "passiv_gruppe",
