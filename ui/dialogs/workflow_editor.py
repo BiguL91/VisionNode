@@ -97,6 +97,10 @@ class WorkflowEditorDialog:
         self._conn_drag_aktiv = False
         self._conn_drag_von   = None     # {"node": ..., "port": ...}
 
+        # ── Simulations-Zustand ───────────────────────────────────────────────
+        self._sim_aktiv   = False
+        self._sim_zustand = {}           # node_id → "aktiv" | "success" | "failure"
+
         self._dialog_aufbauen(parent, name or "Neuer Workflow")
 
     # ── Transform-Hilfsfunktionen ─────────────────────────────────────────────
@@ -131,6 +135,7 @@ class WorkflowEditorDialog:
 
         self._toolbar_aufbauen(name)
         self._canvas_aufbauen()
+        self._log_panel_aufbauen()
         self._statusbar_aufbauen()
         self.dialog.after(50, self._vollstaendige_neu_zeichnen)
 
@@ -166,6 +171,39 @@ class WorkflowEditorDialog:
                       cursor="hand2",
                       command=lambda t=typ: self._node_hinzufuegen(t)
                       ).pack(side=tk.LEFT, padx=2)
+
+        tk.Frame(bar, bg="#444444", width=1).pack(side=tk.LEFT, fill=tk.Y, pady=2, padx=(8, 8))
+        self._sim_btn = tk.Button(
+            bar, text="▶ Simulieren", bg="#1565c0", fg="white",
+            font=("Segoe UI", 8, "bold"), relief=tk.FLAT, padx=10, pady=2,
+            cursor="hand2", command=self._simulation_toggle,
+        )
+        self._sim_btn.pack(side=tk.LEFT, padx=2)
+
+    def _log_panel_aufbauen(self):
+        """Scrollbares Log-Panel unterhalb des Canvas."""
+        frame = tk.Frame(self.dialog, bg="#111111", height=90)
+        frame.pack(fill=tk.X, padx=8, pady=(0, 2))
+        frame.pack_propagate(False)
+
+        self.log_text = tk.Text(
+            frame, bg="#111111", fg="#cccccc",
+            font=("Consolas", 8), relief=tk.FLAT,
+            state=tk.DISABLED, wrap=tk.WORD,
+            bd=0, highlightthickness=0,
+        )
+        sb = tk.Scrollbar(frame, command=self.log_text.yview,
+                          bg="#222222", troughcolor="#111111", width=8)
+        self.log_text.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=2)
+
+        # Farb-Tags für das Log
+        self.log_text.tag_config("aktiv",   foreground="#f9a825")
+        self.log_text.tag_config("success", foreground="#4caf50")
+        self.log_text.tag_config("failure", foreground="#ef5350")
+        self.log_text.tag_config("info",    foreground="#90caf9")
+        self.log_text.tag_config("done",    foreground="#aaaaaa")
 
     def _canvas_aufbauen(self):
         frame = tk.Frame(self.dialog, bg="#1a1a1a", bd=1, relief=tk.SOLID)
@@ -321,14 +359,39 @@ class WorkflowEditorDialog:
         fs_par  = max(5,  int(8 * s))   # Schriftgröße Parameter
         fs_port = max(5,  int(7 * s))   # Schriftgröße Port-Label
 
-        # Schatten
-        self.canvas.create_rectangle(x+3, y+3, x+w+3, y+h+3,
-                                     fill="#111111", outline="",
-                                     tags=(tag, "node"))
+        # Simulations-Highlight
+        sim_status = self._sim_zustand.get(nid)
+        if sim_status == "aktiv":
+            rahmen_farbe = "#f9a825"
+            rahmen_breite = max(3, 3 * s)
+            koerper_bg    = "#2e2a1a"
+        elif sim_status == "success":
+            rahmen_farbe = "#4caf50"
+            rahmen_breite = max(2, 2 * s)
+            koerper_bg    = "#1a2e1a"
+        elif sim_status == "failure":
+            rahmen_farbe = "#ef5350"
+            rahmen_breite = max(2, 2 * s)
+            koerper_bg    = "#2e1a1a"
+        else:
+            rahmen_farbe  = farbe
+            rahmen_breite = max(1, 2 * s)
+            koerper_bg    = NODE_BG
+
+        # Schatten (bei aktiv etwas größer für Glow-Effekt)
+        if sim_status == "aktiv":
+            for off in (5, 3):
+                self.canvas.create_rectangle(x+off, y+off, x+w+off, y+h+off,
+                                             fill="#3a2e00", outline="",
+                                             tags=(tag, "node"))
+        else:
+            self.canvas.create_rectangle(x+3, y+3, x+w+3, y+h+3,
+                                         fill="#111111", outline="",
+                                         tags=(tag, "node"))
         # Körper
         self.canvas.create_rectangle(x, y, x+w, y+h,
-                                     fill=NODE_BG, outline=farbe,
-                                     width=max(1, 2*s),
+                                     fill=koerper_bg, outline=rahmen_farbe,
+                                     width=rahmen_breite,
                                      tags=(tag, "node"))
         # Titel-Streifen
         self.canvas.create_rectangle(x+2, y+2, x+w-2, y+th,
@@ -956,13 +1019,125 @@ class WorkflowEditorDialog:
 
     # ── Hilfs-Funktionen ─────────────────────────────────────────────────────
 
+    # ── Simulation ───────────────────────────────────────────────────────────
+
+    def _simulation_toggle(self):
+        if self._sim_aktiv:
+            self._simulation_stoppen()
+        else:
+            self._simulation_starten()
+
+    def _simulation_starten(self):
+        start = next((n for n in self.nodes if n.get("typ") == "start"), None)
+        if not start:
+            self._sim_log("Kein Start-Node vorhanden.", "failure")
+            return
+
+        self._sim_aktiv   = True
+        self._sim_zustand = {}
+        self._sim_btn.config(text="⏹ Stopp", bg="#b71c1c")
+
+        # Log leeren
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
+        self._sim_log("▶ Simulation gestartet", "info")
+        nodes_index = {n["id"]: n for n in self.nodes}
+        self._simulation_schritt(start, nodes_index, 0)
+
+    def _simulation_stoppen(self):
+        self._sim_aktiv = False
+        self._sim_btn.config(text="▶ Simulieren", bg="#1565c0")
+        self._sim_zustand = {}
+        self._alles_neu_zeichnen()
+        self._status_aktualisieren()
+
+    def _simulation_schritt(self, node, nodes_index, schritt):
+        """Rekursiver Simulations-Schritt via after() – blockiert UI nicht."""
+        if not self._sim_aktiv or node is None or schritt > 200:
+            self._simulation_fertig()
+            return
+
+        nid = node["id"]
+        typ = node.get("typ", "?")
+
+        # Node als aktiv markieren
+        self._sim_zustand[nid] = "aktiv"
+        self._alles_neu_zeichnen()
+
+        detail = self._node_detail(node)
+        self._sim_log(f"► {typ.upper()}" + (f":  {detail}" if detail else ""), "aktiv")
+
+        def _nach_pause():
+            if not self._sim_aktiv:
+                return
+
+            # Port wählen (Simulation: immer Erfolg-Pfad)
+            _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
+            if not aus_ports:
+                self._sim_zustand[nid] = "success"
+                self._alles_neu_zeichnen()
+                self._simulation_fertig()
+                return
+
+            # Ersten verfügbaren Port bevorzugen; success/true vor failure/false
+            bevorzugt = ["success", "true", "out"] + aus_ports
+            port = next((p for p in bevorzugt if p in aus_ports), aus_ports[0])
+
+            # Status des Nodes setzen
+            self._sim_zustand[nid] = "success" if port in ("success", "true", "out") else "failure"
+            self._alles_neu_zeichnen()
+
+            tag = "success" if self._sim_zustand[nid] == "success" else "failure"
+            self._sim_log(f"  → Port: {port}", tag)
+
+            # Nächsten Node über Verbindungen suchen
+            naechster = None
+            for conn in self.connections:
+                if conn["von"] == nid and conn["port_aus"] == port:
+                    naechster = nodes_index.get(conn["zu"])
+                    break
+
+            if naechster is None:
+                self._sim_log("  (kein Folge-Node → Ende)", "done")
+                self.dialog.after(400, self._simulation_fertig)
+            else:
+                self.dialog.after(400, lambda: self._simulation_schritt(naechster, nodes_index, schritt + 1))
+
+        # Pause je nach Node-Typ
+        verzoegerung = 400 if typ == "start" else 900
+        self.dialog.after(verzoegerung, _nach_pause)
+
+    def _simulation_fertig(self):
+        if not self._sim_aktiv:
+            return
+        self._sim_log("✓ Simulation abgeschlossen", "done")
+        self._sim_aktiv = False
+        self._sim_btn.config(text="▶ Simulieren", bg="#1565c0")
+        self._status_aktualisieren()
+
+    def _sim_log(self, text, tag="done"):
+        """Schreibt eine Zeile ins Log-Panel."""
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, text + "\n", tag)
+        self.log_text.see(tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
     def _status_aktualisieren(self):
         zoom_pct = int(self._scale * 100)
-        self.status_label.config(
-            text=f"{len(self.nodes)} Nodes  ·  {len(self.connections)} Verbindungen"
-                 f"  ·  Zoom {zoom_pct}%"
-                 f"  ·  Port ziehen = Verbindung  ·  Scrollen = Zoom  ·  Fläche ziehen = Pan"
-        )
+        if self._sim_aktiv:
+            self.status_label.config(
+                text=f"▶ Simulation läuft …  ·  {len(self.nodes)} Nodes  ·  Zoom {zoom_pct}%",
+                fg="#f9a825",
+            )
+        else:
+            self.status_label.config(
+                text=f"{len(self.nodes)} Nodes  ·  {len(self.connections)} Verbindungen"
+                     f"  ·  Zoom {zoom_pct}%"
+                     f"  ·  Port ziehen = Verbindung  ·  Scrollen = Zoom  ·  Fläche ziehen = Pan",
+                fg="#666666",
+            )
 
     def _speichern(self):
         name = self.name_var.get().strip()
