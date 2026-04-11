@@ -583,7 +583,55 @@ def transformation_anwenden(rohwert, typ):
     if typ == "einheit_zu_zahl":
         return _einheit_zu_zahl(rohwert)
 
+    if typ == "timer":
+        return _timer_zu_sekunden(rohwert)
+
     return rohwert
+
+
+def _timer_zu_sekunden(text):
+    """
+    Parst einen Timer-String im Format HH:MM:SS oder HH:MM:SS:XX zu Sekunden.
+    Gibt den Sekundenwert als String zurück (z.B. "3750"), oder "—" bei ungültigem Format.
+    """
+    import re
+    if not text:
+        return "—"
+    # Erlaubte Formate: H:MM:SS, HH:MM:SS, HH:MM:SS:XX (4. Segment wird ignoriert)
+    m = re.fullmatch(r"(\d{1,2}):(\d{2}):(\d{2})(?::\d+)?", text.strip())
+    if not m:
+        return "—"
+    h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if mi >= 60 or s >= 60:
+        return "—"
+    return str(h * 3600 + mi * 60 + s)
+
+
+def sekunden_formatieren(sek):
+    """
+    Formatiert einen Sekundenwert als lesbaren String mit Einheiten.
+    Beispiele: 44 → "44s", 90 → "1m 30s", 3750 → "1h 2m 30s"
+    Gibt "0s" zurück wenn sek <= 0.
+    """
+    try:
+        sek = int(float(sek))
+    except (ValueError, TypeError):
+        return "—"
+    if sek <= 0:
+        return "0s"
+    teile = []
+    if sek >= 86400:
+        teile.append(f"{sek // 86400}t")
+        sek %= 86400
+    if sek >= 3600:
+        teile.append(f"{sek // 3600}h")
+        sek %= 3600
+    if sek >= 60:
+        teile.append(f"{sek // 60}m")
+        sek %= 60
+    if sek > 0:
+        teile.append(f"{sek}s")
+    return " ".join(teile)
 
 
 # ── Einheiten / Faktoren ──────────────────────────────────────────────────

@@ -9,7 +9,8 @@ from core.daten_manager import (
     transformation_aktualisieren, transformation_loeschen, transformation_anwenden,
     berechnungen_der_liste, berechnung_hinzufuegen, berechnung_aktualisieren,
     berechnung_loeschen, berechnung_auswerten, cache_lesen,
-    zuordnungen_der_liste, zuordnung_speichern, variable_umbenennen
+    zuordnungen_der_liste, zuordnung_speichern, variable_umbenennen,
+    sekunden_formatieren
 )
 
 
@@ -643,7 +644,7 @@ class DatenListeEditor:
         tm.pack(side=tk.LEFT, padx=2)
 
         fv = tk.StringVar(value=sp.get("format") or "standard")
-        fo = ["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)"]
+        fo = ["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)", "timer"]
         fm = tk.OptionMenu(f, fv, *fo)
         fm.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7), relief=tk.FLAT, bd=0, width=10, highlightthickness=0)
         fm["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 7))
@@ -825,6 +826,17 @@ class DatenListeEditor:
         ocr_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
         ocr_menu.pack(side=tk.LEFT, padx=(0, 8))
 
+        tk.Label(zeile1, text="Typ:", bg="#1a1a1a", fg="#888888",
+                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(0, 4))
+        typ_var = tk.StringVar(value=t.get("typ", "einheit_zu_zahl"))
+        typ_optionen = ["einheit_zu_zahl", "timer"]
+        typ_menu = tk.OptionMenu(zeile1, typ_var, *typ_optionen)
+        typ_menu.config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8),
+                        relief=tk.FLAT, bd=0, width=12, highlightthickness=0,
+                        activebackground="#3a3a3a", cursor="hand2")
+        typ_menu["menu"].config(bg="#252525", fg="#cccccc", font=("Segoe UI", 8))
+        typ_menu.pack(side=tk.LEFT, padx=(0, 8))
+
         tk.Button(zeile1, text="✕", bg="#1a1a1a", fg="#555555",
                   font=("Segoe UI", 8), relief=tk.FLAT, padx=4, cursor="hand2",
                   command=lambda tid=t["id"]: self._transformation_loeschen(tid)).pack(side=tk.RIGHT)
@@ -849,25 +861,44 @@ class DatenListeEditor:
         aus_lbl.pack(side=tk.LEFT)
 
         # Live-Update Funktion
-        def _live_update(*_, ov=ocr_var, rl=roh_lbl, al=aus_lbl, t_name=t["name"]):
+        def _live_update(*_, ov=ocr_var, tv=typ_var, rl=roh_lbl, al=aus_lbl, t_name=t["name"]):
             ocr_name = ov.get()
             rohwert = "—"
             if ocr_name and hasattr(self.bot, "app"):
                 rohwert = self.bot.app.state.ocr_values.get(ocr_name) or \
                           self.bot.app.state.template_ocr_values.get(ocr_name) or "—"
             rl.config(text=str(rohwert))
-            
+
             # Wenn Rohwert da ist: transformieren. Wenn weg: Cache zeigen.
             if rohwert not in (None, "", "—"):
-                ausgabe = transformation_anwenden(rohwert, "einheit_zu_zahl")
+                sek = transformation_anwenden(rohwert, tv.get())
+                if tv.get() == "timer" and sek not in ("—", "?", ""):
+                    ausgabe = sekunden_formatieren(sek)
+                else:
+                    ausgabe = sek
             else:
                 entry = self._db_cache.get(t_name, ("—", 0))
-                ausgabe = entry[0]
-            
+                sek = entry[0]
+                if tv.get() == "timer" and sek not in ("—", "?", "", None):
+                    ausgabe = sekunden_formatieren(sek)
+                else:
+                    ausgabe = sek
+
             al.config(text=str(ausgabe))
 
         ocr_var.trace_add("write", _live_update)
+        typ_var.trace_add("write", _live_update)
         _live_update()  # Einmal sofort ausführen
+
+        # Typ sofort speichern
+        def _typ_speichern(*_, tid=t["id"], tv=typ_var):
+            neuer_typ = tv.get()
+            for tr in self._transformationen:
+                if tr["id"] == tid:
+                    tr["typ"] = neuer_typ
+                    transformation_aktualisieren(tid, typ=neuer_typ)
+                    break
+        typ_var.trace_add("write", _typ_speichern)
 
         # OCR-Var sofort speichern (kein Konfliktpotenzial)
         def _ocr_speichern(*_, tid=t["id"], ov=ocr_var):

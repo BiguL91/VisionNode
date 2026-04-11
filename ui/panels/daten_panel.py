@@ -4,7 +4,7 @@ from core.daten_manager import (
     datenbank_initialisieren, alle_listen, spalten_der_liste,
     zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
     berechnungen_der_liste, berechnung_auswerten, cache_schreiben, cache_lesen,
-    zuordnungen_der_liste
+    zuordnungen_der_liste, sekunden_formatieren
 )
 
 
@@ -192,12 +192,30 @@ class DatenPanel:
                     alt_wert = db_cache.get(t["name"], ("—", 0))[0]
                     if log_debug and str(wert) != str(alt_wert):
                         self.bot.app._log(f"[Transform] {t['name']}: {rohwert} -> {wert}")
-                    
                     ocr_werte[t["name"]] = (wert, jetzt)
                     neue_cache_werte[t["name"]] = wert
-            else:
-                # Transformer MERKT sich den letzten Stand aus dem Cache
-                pass
+                    if t["typ"] == "timer":
+                        # Deadline einmalig setzen wenn OCR frischen Wert liefert
+                        try:
+                            deadline = jetzt + float(wert)
+                            neue_cache_werte[f"Timer.{t['name']}._deadline"] = str(deadline)
+                        except (ValueError, TypeError):
+                            pass
+            elif t["typ"] == "timer":
+                # OCR nicht sichtbar → aus Deadline weiterzählen
+                deadline_eintrag = db_cache.get(f"Timer.{t['name']}._deadline")
+                if deadline_eintrag and deadline_eintrag[0] not in (None, "", "—", "?"):
+                    try:
+                        rest = max(0, int(float(deadline_eintrag[0]) - jetzt))
+                        ocr_werte[t["name"]] = (str(rest), jetzt)
+                        neue_cache_werte[t["name"]] = str(rest)
+                        if rest == 0:
+                            flag_name = f"Timer.{t['name']}"
+                            neue_cache_werte[flag_name] = "false"
+                            if log_debug:
+                                self.bot.app._log(f"[Timer] {t['name']} abgelaufen → {flag_name}=false")
+                    except (ValueError, TypeError):
+                        pass
 
         # 5. Berechnungen anwenden (Zwischenberechnungen zuerst)
         berech_sortiert = (
@@ -314,7 +332,10 @@ class DatenPanel:
         
         if format_typ == ".2 (2 Nachkomma)":
             return f"{num:.2f}"
-        
+
+        if format_typ == "timer":
+            return sekunden_formatieren(num)
+
         # Standard: Wenn Ganzzahl dann ohne .0, sonst 1 Nachkommastelle
         if num == int(num):
             return str(int(num))
@@ -428,6 +449,27 @@ class DatenPanel:
                     if log_debug and str(wert) != str(alt_wert):
                         self.bot.app._log(f"[Transform] {t['name']}: {rohwert} → {wert}")
                     cache_schreiben(l["id"], t["name"], wert)
+                    if t["typ"] == "timer":
+                        # Deadline einmalig setzen wenn OCR frischen Wert liefert
+                        try:
+                            deadline = jetzt + float(wert)
+                            cache_schreiben(l["id"], f"Timer.{t['name']}._deadline", str(deadline))
+                        except (ValueError, TypeError):
+                            pass
+            elif t["typ"] == "timer":
+                # OCR nicht sichtbar → aus Deadline weiterzählen
+                deadline_eintrag = db_cache.get(f"Timer.{t['name']}._deadline")
+                if deadline_eintrag and deadline_eintrag[0] not in (None, "", "—", "?"):
+                    try:
+                        rest = max(0, int(float(deadline_eintrag[0]) - jetzt))
+                        cache_schreiben(l["id"], t["name"], str(rest))
+                        if rest == 0:
+                            flag_name = f"Timer.{t['name']}"
+                            cache_schreiben(l["id"], flag_name, "false")
+                            if log_debug:
+                                self.bot.app._log(f"[Timer] {t['name']} abgelaufen → {flag_name}=false")
+                    except (ValueError, TypeError):
+                        pass
 
     def listen_neu_laden(self):
         """Öffentliche Methode — nach externen Änderungen aufrufen."""
