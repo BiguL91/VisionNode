@@ -18,8 +18,8 @@ class OCREngine:
     def __init__(self):
         # name -> {"x": int, "y": int, "breite": int, "hoehe": int, "modus": str}
         self.regionen = {}
-        # Initialisiere EasyOCR mit GPU-Support
-        self.reader = easyocr.Reader(["en"], gpu=True)
+        # Initialisiere EasyOCR mit Englisch und Deutsch (für Umlaute und Tage 'T')
+        self.reader = easyocr.Reader(["en", "de"], gpu=True)
         self.debug_filter = "Aus"  # "Aus", "Alle" oder Name der Region
         self._template_ocr_cache = None
 
@@ -159,14 +159,29 @@ class OCREngine:
 
             avg_bright = np.mean(grau)
             std_dev = np.std(grau)
-            hell_auf_dunkel = avg_bright < 127
             
-            if std_dev < 5:
-                thresh = np.full_like(grau, 255)
-            else:
-                _, thresh = cv2.threshold(grau, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                if hell_auf_dunkel:
+            if modus == "Timer":
+                # Adaptives Thresholding ist viel robuster gegen transparente Hintergründe/Fortschrittsbalken.
+                # Es berechnet Schwellwerte lokal in kleinen Blöcken.
+                thresh = cv2.adaptiveThreshold(grau, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                              cv2.THRESH_BINARY, 11, 2)
+                # Falls Text hell auf dunkel ist (Standard bei Timern), invertieren.
+                # Adaptiv liefert Schwarz auf Weiß, wenn wir Weiß auf Schwarz wollen (für EasyOCR Padding).
+                if avg_bright < 127:
                     thresh = cv2.bitwise_not(thresh)
+                
+                # Morphologie: Zeichen leicht fetter machen (schließt Lücken durch Transparenz).
+                # Erode auf Schwarz-auf-Weiß Bild macht die schwarzen Zeichen breiter.
+                kernel = np.ones((2,2), np.uint8)
+                thresh = cv2.erode(thresh, kernel, iterations=1)
+            else:
+                # Standard OTSU für normalen Text/Zahlen
+                if std_dev < 5:
+                    thresh = np.full_like(grau, 255)
+                else:
+                    _, thresh = cv2.threshold(grau, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    if avg_bright < 127: # Hell auf Dunkel
+                        thresh = cv2.bitwise_not(thresh)
             
         # Noise reduction
         thresh = cv2.medianBlur(thresh, 3)
@@ -184,7 +199,8 @@ class OCREngine:
         if modus == "Zahl":
             allowlist = "0123456789+"
         elif modus == "Timer":
-            allowlist = "0123456789:"
+            # Erlaube Ziffern, Doppelpunkt, Tage-Kürzel und Leerzeichen
+            allowlist = "0123456789:TtdD "
 
         # Im Debug-Modus geben wir (Text, Koordinaten, Debug-Bild) zurück
         debug_info = (abs_x0, abs_y0, abs_x1, abs_y1, ocr_input.copy()) if debug else None
@@ -212,8 +228,21 @@ class OCREngine:
     def _bereinigen(self, text, modus):
         """Bereinigt OCR-Text je nach Modus mit Regex."""
         if modus == "Timer":
-            m = re.search(r"\d{1,2}:\d{2}(:\d{2})?", text)
-            return m.group(0) if m else ""
+            # 1. Bekannte OCR-Fehler bei Trennern korrigieren
+            # Wir lassen Leerzeichen erst mal drin für Tage-Erkennung
+            t = text.replace(".", ":").replace(";", ":").replace(",", ":")
+            
+            # 2. Tage (T/d) isolieren: Wir stellen sicher, dass Tage erkannt werden (z.B. 2T 12:44)
+            # Regex sucht nach: (Zahl+T/d)? (HH:)?MM:SS oder MM:SS
+            # Wir erlauben optionale Tage am Anfang
+            m = re.search(r"(\d+[TtdD]\s*)?(\d{1,2}:)?\d{1,2}:\d{2}", t)
+            if m:
+                res = m.group(0).strip()
+                # Falls wir nur ein ":" haben, könnte es MM:SS sein -> so lassen
+                # Wir normalisieren auf Großbuchstaben für das T
+                return res.upper()
+            return ""
+            
         elif modus == "Zahl":
             # Unterstützt jetzt auch Vorzeichen wie +100
             m = re.search(r"[+-]?\d+", text)

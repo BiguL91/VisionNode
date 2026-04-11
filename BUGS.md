@@ -11,8 +11,6 @@
 
 ## Priorität: Mittel
 
-- 🔍 Offen: OCR-Timer erkennung verbessern. Problem Siehe Bild (debug/ocr-timer.png)
-- 🔍 Offen: Algemeine OCR-Text erkennung Verbessern Probleme mit umlaute (Ö,Ä,Ü)
 
 ## Priorität: Niedrig
 
@@ -25,6 +23,12 @@
 ---
 
 ## ✅ Behoben
+
+- ✅ **OCR-Optimierung: Timer & Umlaute** *(Commit: tbd)*
+  - Adaptives Thresholding für Timer gegen transparente Hintergründe implementiert
+  - Unterstützung für Timer mit Tagen (z.B. '2T 12:44:15') inkl. Sekunden-Umrechnung
+  - Deutsch-Support für EasyOCR hinzugefügt (Ä, Ö, Ü Erkennung)
+  - Morphologische Verstärkung dünner Ziffern bei Timern
 
 - ✅ **Daten-Listen: 4 Bugs** *(Commit: 26e8b47, c56b7fa)*
   - Neu erstellte Transforms/Berechnungen/Zeilen/Spalten wurden nicht sofort gespeichert → Sofortiges Speichern in DB implementiert

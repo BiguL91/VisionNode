@@ -591,20 +591,40 @@ def transformation_anwenden(rohwert, typ):
 
 def _timer_zu_sekunden(text):
     """
-    Parst einen Timer-String im Format HH:MM:SS oder HH:MM:SS:XX zu Sekunden.
-    Gibt den Sekundenwert als String zurück (z.B. "3750"), oder "—" bei ungültigem Format.
+    Parst einen Timer-String zu Sekunden. 
+    Unterstützt Tage (z.B. '2T 12:44:15'), HH:MM:SS, MM:SS oder reine Sekunden.
+    Gibt den Sekundenwert als String zurück oder "—" bei Fehlern.
     """
     import re
+    if not text or text in ("—", "?", ""):
+        return "—"
+    
+    text = text.upper().strip()
+    ges_sek = 0
+    
+    # 1. Tage extrahieren (z.B. '2T' oder '2D')
+    m_tage = re.search(r"(\d+)\s*[TD]", text)
+    if m_tage:
+        ges_sek += int(m_tage.group(1)) * 86400
+        # Den Tage-Teil entfernen für das restliche Parsing
+        text = re.sub(r"\d+\s*[TD]", "", text).strip()
+    
     if not text:
-        return "—"
-    # Erlaubte Formate: H:MM:SS, HH:MM:SS, HH:MM:SS:XX (4. Segment wird ignoriert)
-    m = re.fullmatch(r"(\d{1,2}):(\d{2}):(\d{2})(?::\d+)?", text.strip())
-    if not m:
-        return "—"
-    h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    if mi >= 60 or s >= 60:
-        return "—"
-    return str(h * 3600 + mi * 60 + s)
+        return str(ges_sek) if ges_sek > 0 else "—"
+
+    # 2. Zeitanteile parsen (HH:MM:SS, MM:SS oder SS)
+    teile = [t.strip() for t in text.split(":") if t.strip()]
+    try:
+        if len(teile) >= 3: # HH:MM:SS (oder mehr, wir nehmen die ersten 3)
+            ges_sek += int(teile[0]) * 3600 + int(teile[1]) * 60 + int(teile[2])
+        elif len(teile) == 2: # MM:SS
+            ges_sek += int(teile[0]) * 60 + int(teile[1])
+        elif len(teile) == 1: # S
+            ges_sek += int(teile[0])
+    except (ValueError, TypeError):
+        return str(ges_sek) if ges_sek > 0 else "—"
+
+    return str(ges_sek)
 
 
 def sekunden_formatieren(sek):
