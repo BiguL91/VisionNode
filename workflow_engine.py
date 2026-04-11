@@ -149,9 +149,20 @@ class WorkflowEngine:
             operator = node.get("operator", "=")
             soll     = node.get("wert", "")
 
-            # Variable auflösen (Prefix-Format: "state::name", "ocr::name", "db::Liste::Var")
+            # Variable auflösen
             ist = self._variable_auflösen(variable, ocr_func)
 
+            # ── Sonderfall: Boolean-Vergleich (für States) ───────────────────
+            if variable.startswith("state::") or str(soll).lower() in ("true", "false", "wahr", "falsch"):
+                ist_bool  = self._wert_zu_bool(ist)
+                soll_bool = self._wert_zu_bool(soll)
+                
+                if operator in ("=", "=="): ergebnis = (ist_bool == soll_bool)
+                elif operator == "!=":      ergebnis = (ist_bool != soll_bool)
+                else:                       ergebnis = ist_bool # Fallback
+                return "true" if ergebnis else "false"
+
+            # ── Standard: Numerisch oder String ──────────────────────────────
             ergebnis = False
             try:
                 a = float(str(ist).replace(",", "."))
@@ -170,6 +181,15 @@ class WorkflowEngine:
             return "true" if ergebnis else "false"
 
         return None  # Unbekannter Node-Typ
+
+    def _wert_zu_bool(self, wert):
+        """Konvertiert verschiedene Formate (1, 'true', 'wahr', 'on') in echtes Boolean."""
+        if isinstance(wert, bool):
+            return wert
+        s = str(wert).lower().strip()
+        if s in ("1", "true", "wahr", "on", "yes", "ja", "x"):
+            return True
+        return False
 
     def _variable_auflösen(self, variable, ocr_func):
         """Löst einen Variablen-Namen (ggf. mit Prefix) zum aktuellen Wert auf.
