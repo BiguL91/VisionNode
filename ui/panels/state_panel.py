@@ -124,14 +124,18 @@ class StatePanel:
         self.ausgewaehlt = None
         self.bot._state_variable_loeschen(name)
 
-    def werte_aktualisieren(self, game_states):
-        """Aktualisiert nur die Farben/Texte der bestehenden Labels."""
+    def werte_aktualisieren(self, game_states=None):
+        """Aktualisiert nur die Farben/Texte der bestehenden Labels (Surgical Update)."""
+        # Daten-Extraktion: Wir ziehen uns den kompletten aktuellen Live-Stand
+        if game_states is None:
+            game_states = self.bot.app.state.game_states if hasattr(self.bot, "app") else {}
+
         current_visible = set()
         for n, v in game_states.items():
             if not self.nur_aktive or v:
                 current_visible.add(n)
 
-        # Falls sich die Menge der sichtbaren Keys geändert hat → Neuaufbau
+        # Falls sich die Menge der sichtbaren Keys geändert hat → Struktur-Update (Rebuild)
         if current_visible != self._last_visible_keys:
             self.aktualisieren()
             return
@@ -140,8 +144,14 @@ class StatePanel:
         for name in current_visible:
             if name in self.state_labels:
                 value = game_states[name]
-                _, lbl = self.state_labels[name]
+                z_frame, lbl = self.state_labels[name]
+                
+                # Nur ändern, wenn nötig
                 farbe = "#2ea043" if value else "#da3633"
                 text = "TRUE" if value else "FALSE"
-                lbl.config(text=text, bg=farbe)
-                lbl.bind("<Button-1>", lambda e, n=name, v=value: self._toggle_state(n, v))
+                
+                if lbl.winfo_exists():
+                    if lbl.cget("text") != text:
+                        lbl.config(text=text, bg=farbe)
+                        # Binding aktualisieren für neuen Value
+                        lbl.bind("<Button-1>", lambda e, n=name, v=value: self._toggle_state(n, v))

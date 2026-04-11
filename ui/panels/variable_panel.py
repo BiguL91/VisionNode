@@ -175,11 +175,18 @@ class VariablePanel:
                 if frame:
                     frame.pack(fill=tk.X, pady=3, padx=2)
 
-    def werte_aktualisieren(self, w):
+    def werte_aktualisieren(self, w=None):
+        """Aktualisiert nur die Werte (Labels) im Panel (Light-Update)."""
         jetzt = time.time()
+        
+        # Daten-Extraktion: Wir ziehen uns den kompletten aktuellen Live-Stand.
+        # Das verhindert Flackern, da feste Regionen und Template-OCR nun 
+        # immer gemeinsam betrachtet werden.
+        ocr_daten = self.bot.app.state.get_all_ocr() if hasattr(self.bot, "app") else (w or {})
 
-        for n, t in w.items():
-            if t and t not in ("", "—", "-"):
+        # Zeitstempel für Live-Aktivität aktualisieren (Wichtig für "Nur Aktiv"-Filter)
+        for n, t in ocr_daten.items():
+            if t and t not in ("", "—", "-", "?"):
                 self._ocr_letzter_wert_zeit[n] = jetzt
 
         aktuelle_konf_keys = set(self.ocr_engine.template_ocr_konfigurationen().keys())
@@ -187,16 +194,14 @@ class VariablePanel:
             self.aktualisieren()
             return
 
-        for n in self.timer_eintraege:
-            if n not in w:
-                self.timer_eintraege[n].config(text="–", fg="#555555")
+        # UI-Labels aktualisieren (Nur Texte ändern!)
+        for n, lbl in self.timer_eintraege.items():
+            val = ocr_daten.get(n, "–")
+            if not val: val = "–"
+            
+            farbe = "#ffffff" if val != "–" else "#555555"
+            if lbl.winfo_exists():
+                lbl.config(text=val, fg=farbe)
 
-        for n, t in w.items():
-            if n in self.timer_eintraege:
-                val = t if t else "–"
-                self.timer_eintraege[n].config(
-                    text=val,
-                    fg="#ffffff" if val != "–" else "#888888"
-                )
-
+        # "Nur Aktiv"-Logik anwenden
         self._sichtbarkeit_aktualisieren(self._aktuelle_matches(), jetzt)

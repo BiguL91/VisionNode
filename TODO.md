@@ -4,7 +4,7 @@
 
 ## Priorität 1 (Next)
 
-- [ ] **Timer-Integration in Daten-Liste**
+- [X] **Timer-Integration in Daten-Liste**
   - Timer über OCR erkennen; wenn er wegfällt, intern weiterzählen.
   - Timer-Verifikation (Format `00:00:00` oder `00:00:00:00`).
   - Transformation: z.B. `00:00:44` -> `44s`.

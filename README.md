@@ -61,7 +61,7 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 1. **Voraussetzungen**: Python 3.10+, CUDA Toolkit (für GPU-OCR), MEMUPlayer
 2. **Dependencies**: `pip install -r requirements.txt`
 3. **Start**: `python main.py`
-4. **Hinweis**: ADB in MEMUPlayer aktivieren (Port 21503)
+4. **Hinweis**: ADB (Android Debug Bridge) Der SDK Platform Tools ist Downloadbar unter https://developer.android.com/tools/releases/platform-tools?hl=de
 
 ---
 
@@ -69,4 +69,4 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 v0.4.4 – **Dateisystem-Management & Logging Upgrade**.
 
-Für Details siehe [CHANGELOG.md](CHANGELOG.md) und [UNRELEASED.md](UNRELEASED.md).
+Für Details siehe [CHANGELOG.md](CHANGELOG.md)
