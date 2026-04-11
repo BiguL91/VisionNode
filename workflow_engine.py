@@ -127,12 +127,13 @@ class WorkflowEngine:
             return "out"
 
         elif typ == "bedingung":
-            if ocr_func is None:
-                return "false"
             variable = node.get("variable", "")
             operator = node.get("operator", "=")
             soll     = node.get("wert", "")
-            ist      = ocr_func().get(variable, "")
+
+            # Variable auflösen (Prefix-Format: "state::name", "ocr::name", "db::Liste::Var")
+            ist = self._variable_auflösen(variable, ocr_func)
+
             ergebnis = False
             try:
                 a = float(str(ist).replace(",", "."))
@@ -144,11 +145,61 @@ class WorkflowEngine:
                 elif operator in ("=", "=="):  ergebnis = a == b
                 elif operator == "!=":         ergebnis = a != b
             except (ValueError, AttributeError):
-                if   operator in ("=", "=="): ergebnis = str(ist) == str(soll)
-                elif operator == "!=":        ergebnis = str(ist) != str(soll)
+                ist_str  = str(ist).lower()
+                soll_str = str(soll).lower()
+                if   operator in ("=", "=="): ergebnis = ist_str == soll_str
+                elif operator == "!=":        ergebnis = ist_str != soll_str
             return "true" if ergebnis else "false"
 
         return None  # Unbekannter Node-Typ
+
+    def _variable_auflösen(self, variable, ocr_func):
+        """Löst einen Variablen-Namen (ggf. mit Prefix) zum aktuellen Wert auf.
+
+        Formate:
+            "state::Name"       → game_state (True/False → "true"/"false")
+            "ocr::Name"         → OCR-Wert
+            "db::Liste::Var"    → Werte-Cache aus Daten-Listen-DB
+            "Name"              → Legacy: direkt aus ocr_func (Rückwärtskompatibilität)
+        """
+        if not variable:
+            return ""
+
+        if variable.startswith("state::"):
+            name = variable[7:]
+            if ocr_func is None:
+                return ""
+            # Game States werden von main_app als "__state__<name>" in ocr_func injiziert
+            return ocr_func().get(f"__state__{name}", "")
+
+        if variable.startswith("ocr::"):
+            name = variable[5:]
+            if ocr_func is None:
+                return ""
+            return ocr_func().get(name, "")
+
+        if variable.startswith("db::"):
+            teile = variable[4:].split("::", 1)
+            if len(teile) != 2:
+                return ""
+            listen_name, var_name = teile
+            try:
+                from core import daten_manager as dm
+                listen = dm.alle_listen()
+                for liste in listen:
+                    if liste["name"] == listen_name:
+                        cache = dm.cache_lesen(liste["id"])
+                        eintrag = cache.get(var_name)
+                        if eintrag is not None:
+                            return eintrag[0] if isinstance(eintrag, (tuple, list)) else str(eintrag)
+            except Exception:
+                pass
+            return ""
+
+        # Legacy: kein Prefix → direkt OCR
+        if ocr_func is None:
+            return ""
+        return ocr_func().get(variable, "")
 
     # ── Graph-Traversierung ──────────────────────────────────────────────────
 

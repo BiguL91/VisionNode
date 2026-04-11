@@ -361,6 +361,10 @@ class TilesBotApp:
                     lambda: self.state.active_matches,
                     log_func=log_wrapper,
                     laeuft_func=lambda: self.state.running,
-                    ocr_func=self.state.get_all_ocr
+                    ocr_func=lambda: {
+                        **self.state.get_all_ocr(),
+                        **{f"__state__{k}": ("true" if v else "false")
+                           for k, v in self.state.game_states.items()},
+                    }
                 )
             time.sleep(0.5)

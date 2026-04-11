@@ -1,5 +1,6 @@
 import tkinter as tk
 import uuid
+from collections import defaultdict
 
 
 # ── Visuelle Konstanten (in Welt-Koordinaten) ────────────────────────────────
@@ -399,6 +400,238 @@ class WorkflowEditorDialog:
                     f"{node.get('wert','0')}")
         return ""
 
+    # ── Template-Picker (gruppiert) ───────────────────────────────────────────
+
+    def _template_picker_bauen(self, eltern_frame, tpl_var):
+        """Erstellt einen gruppierten Template-Picker als Menubutton.
+        Struktur: Kategorie (Workflow / State) → Gruppe → Templates
+        """
+        engine   = self.bot.template_engine
+        settings = engine.settings
+
+        def _waehlen(name):
+            tpl_var.set(name)
+
+        # Passive Gruppen aus Settings
+        passive_gruppen = {
+            engine._gruppe_vollpfad(k)
+            for k, v in settings.items()
+            if isinstance(v, dict) and v.get("typ") == "passiv_gruppe"
+        }
+
+        def _gruppen_menu_fuellen(ziel_menu, kat_filter):
+            """Füllt ein Menu mit Gruppen+Templates der angegebenen Kategorie."""
+            nach_gruppen = defaultdict(list)
+            for name, t in engine.templates.items():
+                if name.startswith("_") or "__" in name:
+                    continue
+                kat = settings.get(name, {}).get("kategorie", "workflow")
+                if kat != kat_filter:
+                    continue
+                g = (t["gruppe"] or "").strip().replace("\\", "/")
+                nach_gruppen[g].append(name)
+
+            # Globale Templates (ohne Gruppe) zuerst
+            if nach_gruppen.get(""):
+                for name in sorted(nach_gruppen[""]):
+                    ziel_menu.add_command(
+                        label=f"  {name}", command=lambda n=name: _waehlen(n))
+                if len(nach_gruppen) > 1:
+                    ziel_menu.add_separator()
+
+            # Passive Gruppen dieser Kategorie
+            kat_passive = {
+                engine._gruppe_vollpfad(k)
+                for k, v in settings.items()
+                if isinstance(v, dict)
+                and v.get("typ") == "passiv_gruppe"
+                and v.get("kategorie", "workflow") == kat_filter
+            }
+
+            alle_gruppen = sorted(
+                (set(nach_gruppen.keys()) - {""}) | kat_passive,
+                key=lambda x: x.lower()
+            )
+
+            for gruppe in alle_gruppen:
+                kurzname   = gruppe.split("/")[-1]
+                ist_passiv = gruppe in passive_gruppen
+                hat_master = kurzname in engine.templates and (
+                    engine.templates[kurzname].get("gruppe", "").replace("\\", "/")
+                    == "/".join(gruppe.split("/")[:-1])
+                    or kurzname == gruppe
+                )
+
+                if hat_master:
+                    prefix = "★ "
+                elif ist_passiv:
+                    prefix = "📦 "
+                else:
+                    prefix = "📁 "
+
+                kinder = sorted(n for n in nach_gruppen.get(gruppe, []) if n != kurzname)
+
+                if not kinder and not hat_master:
+                    ziel_menu.add_command(
+                        label=f"{prefix}{kurzname}  (leer)",
+                        foreground="#555555",
+                        state="disabled",
+                    )
+                    continue
+
+                sub = tk.Menu(ziel_menu, tearoff=0, bg="#1a1a1a", fg="#ffffff",
+                              activebackground="#333333", activeforeground="#ffffff",
+                              font=("Segoe UI", 9))
+                ziel_menu.add_cascade(label=f"{prefix}{kurzname}", menu=sub)
+
+                if hat_master:
+                    sub.add_command(
+                        label=f"★ {kurzname}  (Master)",
+                        foreground="#ffca28",
+                        command=lambda n=kurzname: _waehlen(n),
+                    )
+                    if kinder:
+                        sub.add_separator()
+
+                for name in kinder:
+                    sub.add_command(label=f"  {name}", command=lambda n=name: _waehlen(n))
+
+            if not nach_gruppen and not kat_passive:
+                ziel_menu.add_command(label="  (keine Templates)", state="disabled")
+
+        # ── Menubutton ────────────────────────────────────────────────────────
+        btn = tk.Menubutton(
+            eltern_frame,
+            textvariable=tpl_var,
+            bg="#1a1a1a", fg="#ffffff",
+            relief=tk.FLAT, bd=2,
+            font=("Segoe UI", 9),
+            width=22,
+            anchor="w",
+            cursor="hand2",
+        )
+        btn.pack(side=tk.LEFT)
+
+        haupt_menu = tk.Menu(btn, tearoff=0, bg="#1a1a1a", fg="#ffffff",
+                             activebackground="#333333", activeforeground="#ffffff",
+                             font=("Segoe UI", 9))
+        btn["menu"] = haupt_menu
+
+        # Kategorie-Ebene: Workflow + State als Kaskaden
+        wf_menu = tk.Menu(haupt_menu, tearoff=0, bg="#1a1a1a", fg="#ffffff",
+                          activebackground="#333333", activeforeground="#ffffff",
+                          font=("Segoe UI", 9))
+        haupt_menu.add_cascade(label="🔄 Workflow", menu=wf_menu)
+        _gruppen_menu_fuellen(wf_menu, "workflow")
+
+        st_menu = tk.Menu(haupt_menu, tearoff=0, bg="#1a1a1a", fg="#ffffff",
+                          activebackground="#333333", activeforeground="#ffffff",
+                          font=("Segoe UI", 9))
+        haupt_menu.add_cascade(label="🚩 State", menu=st_menu)
+        _gruppen_menu_fuellen(st_menu, "state")
+
+        return btn
+
+    def _variablen_picker_bauen(self, eltern_frame, var_var):
+        """Grupierter Variablen-Picker: State / OCR / Daten-Listen."""
+
+        def _waehlen(name):
+            var_var.set(name)
+
+        def _sub(parent):
+            return tk.Menu(parent, tearoff=0, bg="#1a1a1a", fg="#ffffff",
+                           activebackground="#333333", activeforeground="#ffffff",
+                           font=("Segoe UI", 9))
+
+        btn = tk.Menubutton(
+            eltern_frame,
+            textvariable=var_var,
+            bg="#1a1a1a", fg="#ffffff",
+            relief=tk.FLAT, bd=2,
+            font=("Segoe UI", 9),
+            width=22, anchor="w",
+            cursor="hand2",
+        )
+        btn.pack(side=tk.LEFT)
+
+        haupt = _sub(btn)
+        btn["menu"] = haupt
+
+        # ── 🔵 State (True / False) ───────────────────────────────────────
+        st_menu = _sub(haupt)
+        haupt.add_cascade(label="🔵 State  (True / False)", menu=st_menu)
+        try:
+            states = sorted(self.bot.app.state.game_states.keys())
+        except Exception:
+            states = []
+        if states:
+            for name in states:
+                st_menu.add_command(
+                    label=f"  {name}",
+                    command=lambda n=name: _waehlen(f"state::{n}"),
+                )
+        else:
+            st_menu.add_command(label="  (keine States)", state="disabled")
+
+        # ── 🔤 OCR (Zahl / Timer) ─────────────────────────────────────────
+        ocr_menu = _sub(haupt)
+        haupt.add_cascade(label="🔤 OCR  (Zahl / Timer)", menu=ocr_menu)
+        try:
+            ocr_vars = sorted(self.bot.app.state.get_all_ocr().keys())
+        except Exception:
+            ocr_vars = []
+        if ocr_vars:
+            for name in ocr_vars:
+                ocr_menu.add_command(
+                    label=f"  {name}",
+                    command=lambda n=name: _waehlen(f"ocr::{n}"),
+                )
+        else:
+            ocr_menu.add_command(label="  (keine OCR-Variablen)", state="disabled")
+
+        # ── 📊 Daten-Listen (Transform / Berechnung) ──────────────────────
+        db_menu = _sub(haupt)
+        haupt.add_cascade(label="📊 Daten-Listen", menu=db_menu)
+        try:
+            from core import daten_manager as dm
+            listen = dm.alle_listen()
+            if listen:
+                for liste in listen:
+                    lsub = _sub(db_menu)
+                    db_menu.add_cascade(label=f"  {liste['name']}", menu=lsub)
+
+                    trans  = dm.transformationen_der_liste(liste["id"])
+                    berech = dm.berechnungen_der_liste(liste["id"])
+
+                    if trans:
+                        lsub.add_command(label="— Transformationen —",
+                                         state="disabled", foreground="#666666")
+                        for t in trans:
+                            lsub.add_command(
+                                label=f"  {t['name']}",
+                                command=lambda ln=liste["name"], tn=t["name"]:
+                                    _waehlen(f"db::{ln}::{tn}"),
+                            )
+                    if berech:
+                        if trans:
+                            lsub.add_separator()
+                        lsub.add_command(label="— Berechnungen —",
+                                         state="disabled", foreground="#666666")
+                        for b in berech:
+                            lsub.add_command(
+                                label=f"  {b['name']}",
+                                command=lambda ln=liste["name"], bn=b["name"]:
+                                    _waehlen(f"db::{ln}::{bn}"),
+                            )
+                    if not trans and not berech:
+                        lsub.add_command(label="  (keine Ausgaben)", state="disabled")
+            else:
+                db_menu.add_command(label="  (keine Listen)", state="disabled")
+        except Exception:
+            db_menu.add_command(label="  (DB nicht verfügbar)", state="disabled")
+
+        return btn
+
     # ── Zoom & Pan ───────────────────────────────────────────────────────────
 
     def _zoomen(self, event):
@@ -550,7 +783,24 @@ class WorkflowEditorDialog:
             "zu":       ziel_node["id"],
             "port_ein": "in",
         })
+
+        # Auto-Vererbung: suche → klick übernimmt Template automatisch
+        self._template_vererben(von["node"], ziel_node)
+
         self._alles_neu_zeichnen()
+
+    def _template_vererben(self, von_node, zu_node):
+        """Überträgt das Template von einem Suche-Node auf einen Klick-Node,
+        wenn der Klick-Node noch kein Template hat."""
+        if von_node.get("typ") not in ("suche", "suche_optional"):
+            return
+        if zu_node.get("typ") != "klick":
+            return
+        if zu_node.get("template"):
+            return  # Klick-Node hat bereits ein Template → nicht überschreiben
+        tpl = von_node.get("template", "")
+        if tpl:
+            zu_node["template"] = tpl
 
     # ── Node-Verwaltung ──────────────────────────────────────────────────────
 
@@ -640,14 +890,9 @@ class WorkflowEditorDialog:
             f.pack(fill=tk.X, pady=3)
             tk.Label(f, text="Template:", bg="#2d2d2d", fg="#aaaaaa",
                      font=("Segoe UI", 9), width=12, anchor="w").pack(side=tk.LEFT)
-            tpl_var   = tk.StringVar(value=node.get("template", ""))
-            templates = sorted(self.bot.template_engine.templates.keys()) if self.bot else []
-            if templates:
-                opt = tk.OptionMenu(f, tpl_var, *templates)
-                opt.configure(bg="#1a1a1a", fg="#ffffff", relief=tk.FLAT,
-                              font=("Segoe UI", 9), width=20, activebackground="#333333")
-                opt["menu"].configure(bg="#1a1a1a", fg="#ffffff")
-                opt.pack(side=tk.LEFT)
+            tpl_var = tk.StringVar(value=node.get("template", ""))
+            if self.bot:
+                self._template_picker_bauen(f, tpl_var)
             else:
                 tk.Entry(f, textvariable=tpl_var, bg="#1a1a1a", fg="#ffffff",
                          relief=tk.FLAT, bd=4, font=("Segoe UI", 9),
@@ -664,17 +909,9 @@ class WorkflowEditorDialog:
             f.pack(fill=tk.X, pady=3)
             tk.Label(f, text="Variable:", bg="#2d2d2d", fg="#aaaaaa",
                      font=("Segoe UI", 9), width=12, anchor="w").pack(side=tk.LEFT)
-            var_var   = tk.StringVar(value=node.get("variable", ""))
-            variablen = []
+            var_var = tk.StringVar(value=node.get("variable", ""))
             if self.bot:
-                try:    variablen = sorted(self.bot.app.bot_state.ocr_daten.keys())
-                except: pass
-            if variablen:
-                opt = tk.OptionMenu(f, var_var, *variablen)
-                opt.configure(bg="#1a1a1a", fg="#ffffff", relief=tk.FLAT,
-                              font=("Segoe UI", 9), width=18, activebackground="#333333")
-                opt["menu"].configure(bg="#1a1a1a", fg="#ffffff")
-                opt.pack(side=tk.LEFT)
+                self._variablen_picker_bauen(f, var_var)
             else:
                 tk.Entry(f, textvariable=var_var, bg="#1a1a1a", fg="#ffffff",
                          relief=tk.FLAT, bd=4, font=("Segoe UI", 9),
