@@ -10,7 +10,7 @@
   - Transformation: z.B. `00:00:44` -> `44s`.
   - Aktions-Möglichkeit: Was passiert bei Ablauf (00:00:00)? (z.B. Status-Update in DB).
 
-- [ ] **Erweiterte Header-Icons**
+- [X] **Erweiterte Header-Icons**
   - Icons für "Scannbereich" (ROI) in den Workflow-Templates anzeigen, wenn ein separater Bereich gesetzt ist.
 
 - [ ] **Status-Durchreichung in Passiven Gruppen**

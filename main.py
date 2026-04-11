@@ -173,6 +173,7 @@ class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
             ("🚩", "#ff7043", "State Template — setzt einen Game-State wenn erkannt"),
             ("🔤", "#55aaff", "OCR konfiguriert"),
             ("🖱",  "#ff6600", "Klick-Zone konfiguriert"),
+            ("🎯",  "#ffca28", "Scan-Bereich (ROI) konfiguriert"),
             ("⚙",  "#aaaaaa", "Gruppen-Bedingungen konfiguriert"),
             ("(2)", "#888888", "Anzahl der Varianten (z.B. Name__2, Name__3)"),
         ]

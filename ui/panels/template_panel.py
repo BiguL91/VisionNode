@@ -163,6 +163,7 @@ class TemplatePanel:
             if s.get("kategorie") == "state" or s.get("set_states"): m += " 🚩"
             if name in templates_mit_ocr: m += " 🔤"
             if name in klick_konfig: m += " 🖱"
+            if s.get("scan_regions"): m += " 🎯"
             return m
 
         if not alle_gruppen:
@@ -230,7 +231,7 @@ class TemplatePanel:
         
         # 1. Icons und Präfixe entfernen
         clean_text = text.strip()
-        for icon in ["🚩", "🔤", "🖱", "★", "📁", "📦", "└─", "⚙"]:
+        for icon in ["🚩", "🔤", "🖱", "★", "📁", "📦", "└─", "⚙", "🎯"]:
             clean_text = clean_text.replace(icon, "")
         clean_text = clean_text.strip()
         

@@ -43,8 +43,11 @@ bug.png
 test.png
 test.py
 
-# ── Datenbank (lokale Nutzerdaten) ──────────────────────────────
+# ── Datenbank (lokale Nutzerdaten & SQLite-Hilfsdateien) ─────────
 *.db
+*.db-journal
+*.db-shm
+*.db-wal
 
 # ── Sonstiges ───────────────────────────────────────────────────
 *.log
