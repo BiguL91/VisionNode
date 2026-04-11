@@ -24,6 +24,7 @@ template_farben.json
 ocr_regionen.json
 schedule.json
 workflows.json
+master_workflows.json
 
 # ── Lokale Dokumentation (nicht öffentlich) ─────────────────────
 ai.md
