@@ -2,10 +2,10 @@
 
 QTableWidget,
 QTableView {
-    background-color: #181825;
-    color: #cdd6f4;
-    gridline-color: #313244;
-    border: 1px solid #313244;
+    background-color: #161616;
+    color: #cccccc;
+    gridline-color: #2a2a2a;
+    border: 1px solid #2a2a2a;
     border-radius: 4px;
     outline: none;
 }
@@ -18,40 +18,40 @@ QTableView::item {
 
 QTableWidget::item:selected,
 QTableView::item:selected {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #2a2a2a;
+    color: #cccccc;
 }
 
 QTableWidget::item:hover,
 QTableView::item:hover {
-    background-color: #252525;
+    background-color: #202020;
 }
 
 QHeaderView {
-    background-color: #181825;
+    background-color: #161616;
 }
 
 QHeaderView::section {
-    background-color: #252525;
-    color: #888888;
+    background-color: #1e1e1e;
+    color: #666666;
     font-size: 11px;
     font-weight: bold;
     padding: 5px 8px;
     border: none;
-    border-right: 1px solid #313244;
-    border-bottom: 1px solid #313244;
+    border-right: 1px solid #2a2a2a;
+    border-bottom: 1px solid #2a2a2a;
 }
 
 QHeaderView::section:hover {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #2a2a2a;
+    color: #aaaaaa;
 }
 
 /* QTreeWidget */
 QTreeWidget {
-    background-color: #181825;
-    color: #cdd6f4;
-    border: 1px solid #313244;
+    background-color: #161616;
+    color: #cccccc;
+    border: 1px solid #2a2a2a;
     border-radius: 4px;
     outline: none;
 }
@@ -62,27 +62,27 @@ QTreeWidget::item {
 }
 
 QTreeWidget::item:selected {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #2a2a2a;
+    color: #cccccc;
 }
 
 QTreeWidget::item:hover {
-    background-color: #252525;
+    background-color: #202020;
 }
 
 QTreeWidget::branch {
-    background-color: #181825;
+    background-color: #161616;
 }
 
 QTreeWidget::branch:selected {
-    background-color: #313244;
+    background-color: #2a2a2a;
 }
 
 /* QListWidget */
 QListWidget {
-    background-color: #181825;
-    color: #cdd6f4;
-    border: 1px solid #313244;
+    background-color: #161616;
+    color: #cccccc;
+    border: 1px solid #2a2a2a;
     border-radius: 4px;
     outline: none;
 }
@@ -93,10 +93,10 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #2a2a2a;
+    color: #cccccc;
 }
 
 QListWidget::item:hover {
-    background-color: #252525;
+    background-color: #202020;
 }

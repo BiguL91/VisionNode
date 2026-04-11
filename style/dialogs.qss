@@ -1,44 +1,44 @@
 /* ── Dialoge & Tabs ─────────────────────────────────────────────────────────── */
 
 QDialog {
-    background-color: #1e1e2e;
+    background-color: #1a1a1a;
 }
 
 /* Tabs */
 QTabWidget::pane {
-    border: 1px solid #313244;
+    border: 1px solid #2a2a2a;
     border-radius: 0 4px 4px 4px;
-    background-color: #1e1e2e;
+    background-color: #1a1a1a;
 }
 
 QTabBar::tab {
-    background-color: #181825;
-    color: #888888;
+    background-color: #141414;
+    color: #666666;
     padding: 6px 16px;
-    border: 1px solid #313244;
+    border: 1px solid #2a2a2a;
     border-bottom: none;
     border-radius: 4px 4px 0 0;
     margin-right: 2px;
 }
 
 QTabBar::tab:selected {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
-    border-bottom-color: #1e1e2e;
+    background-color: #1a1a1a;
+    color: #cccccc;
+    border-bottom-color: #1a1a1a;
 }
 
 QTabBar::tab:hover {
-    background-color: #252525;
-    color: #cdd6f4;
+    background-color: #202020;
+    color: #aaaaaa;
 }
 
 /* GroupBox */
 QGroupBox {
-    border: 1px solid #313244;
+    border: 1px solid #2a2a2a;
     border-radius: 4px;
     margin-top: 8px;
     padding-top: 8px;
-    color: #888888;
+    color: #666666;
     font-size: 11px;
     font-weight: bold;
 }
@@ -47,12 +47,12 @@ QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
     padding: 0 6px;
-    color: #888888;
+    color: #666666;
 }
 
 /* Splitter */
 QSplitter::handle {
-    background-color: #313244;
+    background-color: #2a2a2a;
 }
 
 QSplitter::handle:horizontal {
@@ -64,12 +64,12 @@ QSplitter::handle:vertical {
 }
 
 QSplitter::handle:hover {
-    background-color: #89b4fa;
+    background-color: #5a8fc0;
 }
 
 /* MessageBox */
 QMessageBox {
-    background-color: #1e1e2e;
+    background-color: #1a1a1a;
 }
 
 QMessageBox QPushButton {
