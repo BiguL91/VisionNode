@@ -93,12 +93,19 @@ class ActionEngine:
         time.sleep(sekunden)
 
     def auf_template_warten(self, template_name, matches_func,
-                             timeout=10.0, intervall=0.2):
+                             timeout=10.0, intervall=0.2, log_func=None, laeuft_func=None):
         """Wartet bis ein Template erkannt wird. Gibt True zurück wenn gefunden.
-        matches_func: Funktion die aktuelle Match-Liste zurückgibt (z.B. lambda: self.aktuelle_matches)
+        matches_func: Funktion die aktuelle Match-Liste zurückgibt
         """
         ende = time.time() + timeout
         while time.time() < ende:
+            if laeuft_func and not laeuft_func():
+                return False
+            
+            rest = max(0.0, ende - time.time())
+            if log_func:
+                log_func(f"__timer__{rest:.1f}")
+            
             matches = matches_func()
             if any(m[0] == template_name for m in matches):
                 return True

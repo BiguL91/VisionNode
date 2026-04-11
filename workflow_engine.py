@@ -1,5 +1,6 @@
 import json
 import os
+import time
 
 WORKFLOWS_DATEI = "workflows.json"
 SCHEDULE_DATEI  = "schedule.json"
@@ -82,7 +83,7 @@ class WorkflowEngine:
 
     # ── Node ausführen ───────────────────────────────────────────────────────
 
-    def _node_ausfuehren(self, node, action_engine, matches_func, ocr_func=None, log_func=None):
+    def _node_ausfuehren(self, node, action_engine, matches_func, ocr_func=None, log_func=None, laeuft_func=None):
         """Führt einen einzelnen Node aus.
         Gibt den Namen des ausgehenden Ports zurück (z.B. "out", "success", "failure", "true", "false").
         Gibt None zurück bei unbekanntem Typ.
@@ -97,6 +98,8 @@ class WorkflowEngine:
                 node["template"], matches_func,
                 timeout=node.get("timeout", 10),
                 intervall=0.3,
+                log_func=log_func,
+                laeuft_func=laeuft_func
             )
             return "success" if ok else "failure"
 
@@ -106,6 +109,8 @@ class WorkflowEngine:
                 node["template"], matches_func,
                 timeout=node.get("timeout", 3),
                 intervall=0.3,
+                log_func=log_func,
+                laeuft_func=laeuft_func
             )
             return "out"
 
@@ -115,7 +120,20 @@ class WorkflowEngine:
             return "out" if ok else "failure"
 
         elif typ == "warten":
-            action_engine.warten(node.get("sekunden", 1.0))
+            sekunden = node.get("sekunden", 1.0)
+            start_zeit = time.time()
+            while time.time() - start_zeit < sekunden:
+                if laeuft_func and not laeuft_func():
+                    return None # Abbruch der Node-Ausführung
+                
+                rest = max(0.0, sekunden - (time.time() - start_zeit))
+                if log_func:
+                    log_func(f"__timer__{rest:.1f}")
+                schlaf_zeit = min(0.1, rest)
+                if schlaf_zeit > 0:
+                    time.sleep(schlaf_zeit)
+                else:
+                    break
             return "out"
 
         elif typ == "zurueck":

@@ -1,5 +1,7 @@
 import tkinter as tk
 import uuid
+import threading
+import time
 from collections import defaultdict
 
 
@@ -451,6 +453,13 @@ class WorkflowEditorDialog:
     def _node_detail(self, node):
         """Kurztext der Node-Parameter."""
         typ = node.get("typ")
+        nid = node.get("id")
+
+        # Live-Countdown während der Simulation zeigen
+        if self._sim_aktiv and self._sim_zustand.get(nid) == "aktiv":
+            prog = self._sim_progress.get(nid)
+            if prog: return prog
+
         if typ in ("suche", "suche_optional", "klick"):
             tpl = node.get("template", "–")
             to  = node.get("timeout")
@@ -1021,6 +1030,112 @@ class WorkflowEditorDialog:
 
     # ── Simulation ───────────────────────────────────────────────────────────
 
+    class SimulatedActionEngine:
+        """Imitiert die ActionEngine für die Simulation.
+        Fragt bei jeder Aktion nach: Simulieren oder Ausführen?
+        """
+        def __init__(self, parent_dialog, real_engine, log_func):
+            self.parent = parent_dialog
+            self.real   = real_engine
+            self.log    = log_func
+
+        def _entscheidung_einholen(self, titel, msg):
+            """Fragt den Nutzer via UI nach der gewünschten Aktion."""
+            # Da wir in einem Thread sind, nutzen wir eine Thread-sichere Abfrage
+            ergebnis = {"wahl": "sim"} # Default: nur loggen
+            event = threading.Event()
+
+            def _ui_abfrage():
+                popup = tk.Toplevel(self.parent.dialog)
+                popup.title("Aktion Bestätigen")
+                popup.configure(bg="#2d2d2d")
+                popup.geometry("350x180")
+                popup.resizable(False, False)
+                popup.grab_set()
+                
+                # Zentrieren
+                px = self.parent.dialog.winfo_x() + (self.parent.dialog.winfo_width() // 2) - 175
+                py = self.parent.dialog.winfo_y() + (self.parent.dialog.winfo_height() // 2) - 90
+                popup.geometry(f"+{px}+{py}")
+
+                tk.Label(popup, text=titel, bg="#2d2d2d", fg="#ffffff",
+                         font=("Segoe UI", 10, "bold")).pack(pady=(15, 5))
+                tk.Label(popup, text=msg, bg="#2d2d2d", fg="#aaaaaa",
+                         font=("Segoe UI", 9), wraplength=300).pack(pady=(0, 20))
+
+                btn_f = tk.Frame(popup, bg="#2d2d2d")
+                btn_f.pack(fill=tk.X, padx=20)
+
+                def _wahl(w):
+                    ergebnis["wahl"] = w
+                    popup.destroy()
+                    event.set()
+
+                tk.Button(btn_f, text="Simulieren", bg="#444444", fg="white",
+                          relief=tk.FLAT, padx=10, pady=5, width=10,
+                          command=lambda: _wahl("sim")).pack(side=tk.LEFT, padx=2)
+                
+                tk.Button(btn_f, text="ADB Ausführen", bg="#2ea043", fg="white",
+                          relief=tk.FLAT, padx=10, pady=5, width=12,
+                          command=lambda: _wahl("adb")).pack(side=tk.LEFT, padx=2)
+                
+                tk.Button(btn_f, text="Abbrechen", bg="#da3633", fg="white",
+                          relief=tk.FLAT, padx=10, pady=5, width=10,
+                          command=lambda: _wahl("stop")).pack(side=tk.LEFT, padx=2)
+
+                popup.protocol("WM_DELETE_WINDOW", lambda: _wahl("stop"))
+
+            self.parent.dialog.after(0, _ui_abfrage)
+            event.wait() # Warten bis Nutzer geklickt hat
+            return ergebnis["wahl"]
+
+        def auf_template_warten(self, template, matches_func, timeout=10, intervall=0.3, log_func=None, laeuft_func=None):
+            # Nutzt die echte Logik der ActionEngine und gibt log_func/laeuft_func weiter
+            return self.real.auf_template_warten(template, matches_func, timeout, intervall, log_func=log_func, laeuft_func=laeuft_func)
+
+        def template_tippen(self, template, matches, log_func=None):
+            for m in matches:
+                if m[0] == template:
+                    _, mx, my, mw, mh = m[:5]
+                    kx, ky = self.real.klickpunkt_berechnen(template, mx, my, mw, mh)
+                    
+                    wahl = self._entscheidung_einholen("KLICK-AKTION", f"Soll auf '{template}' an ({kx}, {ky}) geklickt werden?")
+                    
+                    if wahl == "stop":
+                        self.parent._simulation_stoppen()
+                        return False
+                    
+                    if wahl == "adb":
+                        self.log(f"[ADB] Klick auf {template} ({kx}, {ky})", "success")
+                        return self.real.template_tippen(template, matches, log_func=None)
+                    else:
+                        self.log(f"[SIM] Klick auf {template} ({kx}, {ky}) (nur simuliert)", "info")
+                        return True
+            return False
+
+        def warten(self, sekunden):
+            time.sleep(min(sekunden, 2.0))
+
+        def zurueck(self):
+            wahl = self._entscheidung_einholen("ZURÜCK", "Soll der Zurück-Button gedrückt werden?")
+            if wahl == "adb":
+                self.log("[ADB] Zurück-Button", "success")
+                self.real.zurueck()
+            elif wahl == "stop":
+                self.parent._simulation_stoppen()
+            else:
+                self.log("[SIM] Zurück-Button (nur simuliert)", "info")
+
+        def home(self):
+            wahl = self._entscheidung_einholen("HOME", "Soll der Home-Button gedrückt werden?")
+            if wahl == "adb":
+                self.log("[ADB] Home-Button", "success")
+                self.real.home()
+            elif wahl == "stop":
+                self.parent._simulation_stoppen()
+            else:
+                self.log("[SIM] Home-Button (nur simuliert)", "info")
+
     def _simulation_toggle(self):
         if self._sim_aktiv:
             self._simulation_stoppen()
@@ -1035,6 +1150,7 @@ class WorkflowEditorDialog:
 
         self._sim_aktiv   = True
         self._sim_zustand = {}
+        self._sim_progress = {}
         self._sim_btn.config(text="⏹ Stopp", bg="#b71c1c")
 
         # Log leeren
@@ -1042,7 +1158,11 @@ class WorkflowEditorDialog:
         self.log_text.delete("1.0", tk.END)
         self.log_text.config(state=tk.DISABLED)
 
-        self._sim_log("▶ Simulation gestartet", "info")
+        self._sim_log("▶ Live-Simulation gestartet", "info")
+        
+        # Hilfs-Engines für die Simulation vorbereiten
+        self._sim_engine = self.SimulatedActionEngine(self, self.bot.action_engine, self._sim_log)
+        
         nodes_index = {n["id"]: n for n in self.nodes}
         self._simulation_schritt(start, nodes_index, 0)
 
@@ -1050,11 +1170,12 @@ class WorkflowEditorDialog:
         self._sim_aktiv = False
         self._sim_btn.config(text="▶ Simulieren", bg="#1565c0")
         self._sim_zustand = {}
+        self._sim_progress = {}
         self._alles_neu_zeichnen()
         self._status_aktualisieren()
 
     def _simulation_schritt(self, node, nodes_index, schritt):
-        """Rekursiver Simulations-Schritt via after() – blockiert UI nicht."""
+        """Führt einen Node mit echten Daten aus und traversiert zum nächsten."""
         if not self._sim_aktiv or node is None or schritt > 200:
             self._simulation_fertig()
             return
@@ -1064,33 +1185,44 @@ class WorkflowEditorDialog:
 
         # Node als aktiv markieren
         self._sim_zustand[nid] = "aktiv"
+        self._sim_progress.pop(nid, None)
         self._alles_neu_zeichnen()
 
         detail = self._node_detail(node)
         self._sim_log(f"► {typ.upper()}" + (f":  {detail}" if detail else ""), "aktiv")
 
-        def _nach_pause():
-            if not self._sim_aktiv:
-                return
+        def _ausfuehren():
+            if not self._sim_aktiv: return
 
-            # Port wählen (Simulation: immer Erfolg-Pfad)
-            _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
-            if not aus_ports:
-                self._sim_zustand[nid] = "success"
-                self._alles_neu_zeichnen()
+            # Live-Daten Funktionen vorbereiten
+            def m_func(): return self.bot.app.state.active_matches
+            def o_func():
+                # Kombiniert OCR-Werte und Game-States für die Engine
+                data = dict(self.bot.app.state.ocr_values)
+                for s_name, s_val in self.bot.app.state.game_states.items():
+                    data[f"__state__{s_name}"] = "true" if s_val else "false"
+                # Auch Template-OCR hinzufügen
+                data.update(self.bot.app.state.template_ocr_values)
+                return data
+
+            # Echte Logik der WorkflowEngine nutzen
+            port = self.bot.workflow_engine._node_ausfuehren(
+                node, self._sim_engine, m_func, ocr_func=o_func, 
+                log_func=self._sim_log, laeuft_func=lambda: self._sim_aktiv
+            )
+
+            if port is None:
+                self._sim_log(f"  !! Unbekannter Node-Typ: {typ}", "failure")
+                self._sim_zustand[nid] = "failure"
                 self._simulation_fertig()
                 return
 
-            # Ersten verfügbaren Port bevorzugen; success/true vor failure/false
-            bevorzugt = ["success", "true", "out"] + aus_ports
-            port = next((p for p in bevorzugt if p in aus_ports), aus_ports[0])
-
-            # Status des Nodes setzen
+            # Status des Nodes setzen (visuell)
             self._sim_zustand[nid] = "success" if port in ("success", "true", "out") else "failure"
+            self._sim_progress.pop(nid, None) # Timer nach Abschluss löschen
             self._alles_neu_zeichnen()
-
-            tag = "success" if self._sim_zustand[nid] == "success" else "failure"
-            self._sim_log(f"  → Port: {port}", tag)
+            
+            self._sim_log(f"  → Port: {port}", "success" if self._sim_zustand[nid] == "success" else "failure")
 
             # Nächsten Node über Verbindungen suchen
             naechster = None
@@ -1103,11 +1235,11 @@ class WorkflowEditorDialog:
                 self._sim_log("  (kein Folge-Node → Ende)", "done")
                 self.dialog.after(400, self._simulation_fertig)
             else:
-                self.dialog.after(400, lambda: self._simulation_schritt(naechster, nodes_index, schritt + 1))
+                self.dialog.after(300, lambda: self._simulation_schritt(naechster, nodes_index, schritt + 1))
 
-        # Pause je nach Node-Typ
-        verzoegerung = 400 if typ == "start" else 900
-        self.dialog.after(verzoegerung, _nach_pause)
+        # Threading nutzen, da _node_ausfuehren (z.B. bei 'suche') blockieren kann
+        import threading
+        threading.Thread(target=_ausfuehren, daemon=True).start()
 
     def _simulation_fertig(self):
         if not self._sim_aktiv:
@@ -1117,8 +1249,32 @@ class WorkflowEditorDialog:
         self._sim_btn.config(text="▶ Simulieren", bg="#1565c0")
         self._status_aktualisieren()
 
+
     def _sim_log(self, text, tag="done"):
-        """Schreibt eine Zeile ins Log-Panel."""
+        """Schreibt eine Zeile ins Log-Panel oder aktualisiert Timer."""
+        if text.startswith("__timer__"):
+            try:
+                val = text[9:]
+                # Aktiven Node finden
+                fuer_nid = None
+                for nid, status in self._sim_zustand.items():
+                    if status == "aktiv":
+                        # Nur Nodes mit Timer-Logik sollen Fortschritt anzeigen
+                        node = next((n for n in self.nodes if n["id"] == nid), None)
+                        if node and node.get("typ") in ("suche", "suche_optional", "warten"):
+                            self._sim_progress[nid] = f"⏳ {val}s"
+                            fuer_nid = nid
+                        break
+                
+                if fuer_nid:
+                    # Gezieltes Redraw NUR für diesen Node
+                    tag = f"node_{fuer_nid}"
+                    self.canvas.delete(tag)
+                    node = next((n for n in self.nodes if n["id"] == fuer_nid), None)
+                    if node: self._node_zeichnen(node)
+            except: pass
+            return
+
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, text + "\n", tag)
         self.log_text.see(tk.END)
