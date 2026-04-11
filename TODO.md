@@ -13,7 +13,7 @@
 - [X] **Erweiterte Header-Icons**
   - Icons für "Scannbereich" (ROI) in den Workflow-Templates anzeigen, wenn ein separater Bereich gesetzt ist.
 
-- [ ] **Status-Durchreichung in Passiven Gruppen**
+- [X] **Status-Durchreichung in Passiven Gruppen**
   - Prüfung, ob Zustände tiefer als eine Ebene durchgereicht werden.
   - Scannbereiche (ROI) von passiven Gruppen an Kind-Elemente vererben.
 

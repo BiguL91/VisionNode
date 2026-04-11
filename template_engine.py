@@ -542,7 +542,7 @@ class TemplateEngine:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)
         self._gpu_cache = {}
 
-    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None):
+    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None, scan_regions=None):
         """Speichert eine passive Gruppe (kein Bild, nur Bedingungen) und legt den Ordner an."""
         bestehend = self.settings.get(gruppe_name, {})
         kat = kategorie or bestehend.get("kategorie", "workflow")
@@ -557,6 +557,7 @@ class TemplateEngine:
             "gruppe": g_val,
             "condition_states": condition_states,
             "kategorie": kat,
+            "scan_regions": [list(r) for r in scan_regions] if scan_regions else [],
         }
         # Ordner nach Settings-Update bauen (Hierarchie wird über _gruppe_ordnerpfad aufgelöst)
         ordner = self._gruppe_ordnerpfad(gruppe_name)
@@ -625,6 +626,29 @@ class TemplateEngine:
             self._gpu_cache[key] = {"t_zm": t_zm, "t_norm": t_norm, "N": N, "is_masked": False}
         return self._gpu_cache[key]
 
+    def _get_effective_regions(self, name):
+        """Gibt die Scan-Bereiche (ROI) für ein Template zurück (erbt von Gruppen falls nötig)."""
+        # 1. Eigene Regionen des Templates
+        tpl_data = self.templates.get(name)
+        if tpl_data and tpl_data.get("scan_regions"):
+            return tpl_data["scan_regions"]
+            
+        # 2. Gruppe prüfen (hierarchisch nach oben)
+        # Wir holen uns den Gruppen-Vollpfad
+        g = tpl_data["gruppe"] if tpl_data else self.settings.get(name, {}).get("gruppe")
+        if not g:
+            return []
+            
+        teile = g.split("/")
+        # Von unten nach oben suchen (spezifischere Gruppe zuerst)
+        for i in range(len(teile), 0, -1):
+            pfad = "/".join(teile[:i])
+            eintrag = self.settings.get(pfad, {})
+            if isinstance(eintrag, dict) and eintrag.get("scan_regions"):
+                return eintrag["scan_regions"]
+        
+        return []
+
     @torch.no_grad()
     def matches_suchen_np(self, screenshot_bgr, game_states=None):
         if not self.templates: return []
@@ -684,7 +708,8 @@ class TemplateEngine:
         master_ergebnisse = self._batch_match(img_m, master_namen, s_eff)
         # ROI Matching für Master
         for name in master_namen:
-            regions = self.templates[name].get("scan_regions")
+            # ROI Vererbung nutzen (🎯 Icon zeigt an, wenn eine Region aktiv ist!)
+            regions = self._get_effective_regions(name)
             if regions:
                 for reg in regions:
                     rx0, ry0, rx1, ry1 = reg
@@ -738,7 +763,10 @@ class TemplateEngine:
         
         for name in template_namen:
             tpl_data = self.templates[name]
-            if ox == 0 and oy == 0 and tpl_data.get("scan_regions") and name in template_namen: continue
+            
+            # ROI Vererbung auch beim Batch-Überspringen berücksichtigen (Performance!)
+            eff_regions = self._get_effective_regions(name)
+            if ox == 0 and oy == 0 and eff_regions and name in template_namen: continue
             
             s_limit = schwellwert_override if schwellwert_override is not None else tpl_data["match_schwellwert"]
             gd = self._get_gpu_template(name, s_eff)

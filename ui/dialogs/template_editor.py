@@ -1146,9 +1146,14 @@ class TemplateEditor:
                 if umbenennen or gruppe_geandert:
                     self.template_engine.gruppe_umbenennen(alter_name, n, neue_uebergeordnete_gruppe=uebergeordnet)
 
+                aktuelle_scan_regions = self.initial_scan_regions
+                if self.roi_editor and self.roi_editor.window.winfo_exists():
+                    aktuelle_scan_regions = self.roi_editor.get_regions()
+
                 self.template_engine.gruppe_config_speichern(
                     n, list(self.condition_states),
-                    uebergeordnete_gruppe=uebergeordnet, kategorie=self.kategorie)
+                    uebergeordnete_gruppe=uebergeordnet, kategorie=self.kategorie,
+                    scan_regions=list(aktuelle_scan_regions))
                 
                 if umbenennen: aktion = "umbenannt"
                 elif alter_name: aktion = "aktualisiert"

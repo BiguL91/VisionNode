@@ -200,11 +200,11 @@ class TemplatePanel:
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#ffca28")
                 elif ist_passiv:
-                    label = f"{praefix}📦 [{kurzname}]{cfg_mark}"
+                    label = f"{praefix}📦 [{kurzname}]{_template_mark(kurzname)}{cfg_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#7a9abf")
                 else:
-                    label = f"{praefix}📁 [{kurzname}]{cfg_mark}"
+                    label = f"{praefix}📁 [{kurzname}]{_template_mark(kurzname)}{cfg_mark}"
                     self.template_liste.insert(tk.END, label)
                     self.template_liste.itemconfig(tk.END, fg="#888888")
 
