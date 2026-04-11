@@ -72,6 +72,6 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v0.5.0 – **Hierarchic ROI & OCR Power-Up**.
+v0.5.1 – **Hotfix: Master-Kind ROI Sync**.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

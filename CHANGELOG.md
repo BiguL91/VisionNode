@@ -2,6 +2,15 @@
 
 ---
 
+## v0.5.1 (Hotfix: Master-Kind ROI Sync)
+
+### 🛠 Fixes
+- **Logik-Fix: Master-Kind-Hierarchie**: Behebung eines Fehlers, bei dem Kinder-Templates innerhalb gefundener Master-Instanzen (Crops) fälschlicherweise übersprungen wurden, wenn die übergeordnete Gruppe einen statischen ROI (🎯) besaß.
+- **Koordinaten-Korrektur**: Präzise Zusammenführung von Crop-Offsets und Kind-Koordinaten bei unterschiedlichen Skalierungsstufen.
+- **Varianten-Support für Gruppen**: Sicherstellung, dass auch Varianten eines Masters (z.B. `Name__2`) ihre Kinder-Suche korrekt auslösen.
+
+---
+
 ## v0.5.0 (Hierarchic ROI & OCR Power-Up)
 
 ### ✨ Features & Highlights

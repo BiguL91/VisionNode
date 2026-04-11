@@ -704,11 +704,11 @@ class TemplateEngine:
             else:
                 master_namen.append(name)
         
-        # Master suchen
-        master_ergebnisse = self._batch_match(img_m, master_namen, s_eff)
-        # ROI Matching für Master
+        # Master suchen (Full-Screen) - ROIs hier überspringen
+        master_ergebnisse = self._batch_match(img_m, master_namen, s_eff, is_full_scan=True)
+        # ROI Matching für Master (🎯) - Hier NIEMALS überspringen
         for name in master_namen:
-            # ROI Vererbung nutzen (🎯 Icon zeigt an, wenn eine Region aktiv ist!)
+            # ROI Vererbung nutzen
             regions = self._get_effective_regions(name)
             if regions:
                 for reg in regions:
@@ -716,34 +716,58 @@ class TemplateEngine:
                     sx0, sy0, sx1, sy1 = int(rx0*s_eff), int(ry0*s_eff), int(rx1*s_eff), int(ry1*s_eff)
                     if sx1 > sx0 and sy1 > sy0:
                         roi_crop = img_m[:, :, sy0:sy1, sx0:sx1]
-                        master_ergebnisse.extend(self._batch_match(roi_crop, [name], s_eff, offset=(sx0, sy0)))
+                        master_ergebnisse.extend(self._batch_match(roi_crop, [name], s_eff, offset=(sx0, sy0), is_full_scan=False))
 
         master_gefiltert = self._nms(master_ergebnisse)
         final_results = []
         treffer_pro_gruppe = defaultdict(list)
         for m in master_gefiltert:
-            name, rx, ry, rw, rh, score = m
-            # Ein Master ist ein Key in kinder_nach_gruppe, wenn er Kinder hat
-            if name in kinder_nach_gruppe:
-                treffer_pro_gruppe[name].append(m)
+            name = m[0]
+            # WICHTIG: Wir müssen prüfen, ob dieser Master (oder sein Basisname bei Varianten) Kinder hat
+            master_key = name
+            if master_key not in kinder_nach_gruppe and "__" in master_key:
+                master_key = master_key.split("__")[0]
+            
+            if master_key in kinder_nach_gruppe:
+                # Wir ordnen den Treffer der Gruppe des Basis-Masters zu
+                treffer_pro_gruppe[master_key].append(m)
             else:
                 final_results.append(m)
         
+        # 5. Dynamische ROI-Vererbung (Master-Kind): Kinder in gefundenen Master-Instanzen suchen
         for master_name, treffer_liste in treffer_pro_gruppe.items():
+            # master_name ist hier der Basisname (z.B. 'Icon_Rechteck')
             kinder_namen = kinder_nach_gruppe[master_name]
             for m_treffer in treffer_liste:
-                m_rx, m_ry = m_treffer[1], m_treffer[2]
+                # Koordinaten des gefundenen Masters auf dem Referenz-System (iw, ih)
+                m_rx, m_ry, m_rw, m_rh = m_treffer[1], m_treffer[2], m_treffer[3], m_treffer[4]
+                
+                # Wir berechnen den Crop-Bereich auf img_m (Padding hinzufügen!)
+                # WICHTIG: x0/y0 sind auf der GPU-Skalierung (img_m)
                 pad = 4
                 x0, y0 = max(0, int(m_rx*s_eff)-pad), max(0, int(m_ry*s_eff)-pad)
-                x1, y1 = min(tw_t, int((m_rx+m_treffer[3])*s_eff)+pad), min(th_t, int((m_ry+m_treffer[4])*s_eff)+pad)
+                x1, y1 = min(tw_t, int((m_rx+m_rw)*s_eff)+pad), min(th_t, int((m_ry+m_rh)*s_eff)+pad)
+                
                 if x1 > x0 and y1 > y0:
                     crop = img_m[:, :, y0:y1, x0:x1]
-                    k_res = self._batch_match(crop, kinder_namen, s_eff, schwellwert_override=0.7)
+                    # Suche Kinder im Crop (Dynamischer ROI) - Hier NIEMALS überspringen!
+                    k_res = self._batch_match(crop, kinder_namen, s_eff, schwellwert_override=0.7, is_full_scan=False)
                     if k_res:
+                        # Bestes Kind gewinnt (NMS innerhalb der Gruppe)
                         k_res.sort(key=lambda x: x[5], reverse=True)
                         best_k = k_res[0]
-                        final_results.append([best_k[0], (x0/s_eff)+best_k[1], (y0/s_eff)+best_k[2], best_k[3], best_k[4], best_k[5]])
-                    else: final_results.append(m_treffer)
+                        # Koordinaten-Zusammenführung (beide müssen im Referenz-System sein!)
+                        final_results.append([
+                            best_k[0], 
+                            (x0/s_eff) + best_k[1], 
+                            (y0/s_eff) + best_k[2], 
+                            best_k[3], 
+                            best_k[4], 
+                            best_k[5]
+                        ])
+                    else:
+                        # Falls kein Kind gefunden wurde, bleibt der Master als Treffer stehen
+                        final_results.append(m_treffer)
 
         output = []
         for name, rx_ref, ry_ref, rw_ref, rh_ref, score in final_results:
@@ -753,7 +777,7 @@ class TemplateEngine:
         return self._nms(output)
 
 
-    def _batch_match(self, img_tensor, template_namen, s_eff, schwellwert_override=None, offset=(0,0)):
+    def _batch_match(self, img_tensor, template_namen, s_eff, schwellwert_override=None, offset=(0,0), is_full_scan=False):
         results = []
         if img_tensor.size(2) == 0 or img_tensor.size(3) == 0: return []
         th_t, tw_t = img_tensor.shape[2:]
@@ -764,9 +788,12 @@ class TemplateEngine:
         for name in template_namen:
             tpl_data = self.templates[name]
             
-            # ROI Vererbung auch beim Batch-Überspringen berücksichtigen (Performance!)
-            eff_regions = self._get_effective_regions(name)
-            if ox == 0 and oy == 0 and eff_regions and name in template_namen: continue
+            # ROI Vererbung nur beim Full-Screen-Scan überspringen!
+            # In einem Crop (is_full_scan=False) müssen wir ALLES suchen.
+            if is_full_scan:
+                eff_regions = self._get_effective_regions(name)
+                if eff_regions:
+                    continue
             
             s_limit = schwellwert_override if schwellwert_override is not None else tpl_data["match_schwellwert"]
             gd = self._get_gpu_template(name, s_eff)
