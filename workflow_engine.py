@@ -2,13 +2,16 @@ import json
 import os
 
 WORKFLOWS_DATEI = "workflows.json"
-SCHEDULE_DATEI = "schedule.json"
+SCHEDULE_DATEI  = "schedule.json"
+
+# Schutz gegen Endlosschleifen im Graphen
+MAX_SCHRITTE = 1000
 
 
 class WorkflowEngine:
     def __init__(self):
-        self.workflows = {}   # name -> [schritte]
-        self.schedule = []    # [workflow_name, ...]
+        self.workflows = {}   # name -> {"nodes": [...], "connections": [...]}
+        self.schedule  = []   # [workflow_name, ...]
         self._laden()
 
     # ── Laden / Speichern ────────────────────────────────────────────────────
@@ -37,8 +40,11 @@ class WorkflowEngine:
 
     # ── Workflows ────────────────────────────────────────────────────────────
 
-    def workflow_speichern(self, name, schritte):
-        self.workflows[name] = schritte
+    def workflow_speichern(self, name, graph):
+        """Speichert einen Workflow-Graphen.
+        graph = {"nodes": [...], "connections": [...]}
+        """
+        self.workflows[name] = graph
         self._workflows_speichern()
 
     def workflow_loeschen(self, name):
@@ -74,76 +80,148 @@ class WorkflowEngine:
             self.schedule[index], self.schedule[ziel] = self.schedule[ziel], self.schedule[index]
             self._schedule_speichern()
 
-    # ── Ausführung ───────────────────────────────────────────────────────────
+    # ── Node ausführen ───────────────────────────────────────────────────────
 
-    def schritt_ausfuehren(self, schritt, action_engine, matches_func, ocr_func=None, log_func=None):
-        """Führt einen einzelnen Schritt aus. Gibt True bei Erfolg zurück."""
-        typ = schritt.get("typ")
+    def _node_ausfuehren(self, node, action_engine, matches_func, ocr_func=None, log_func=None):
+        """Führt einen einzelnen Node aus.
+        Gibt den Namen des ausgehenden Ports zurück (z.B. "out", "success", "failure", "true", "false").
+        Gibt None zurück bei unbekanntem Typ.
+        """
+        typ = node.get("typ")
 
-        if typ == "suche":
-            return action_engine.auf_template_warten(
-                schritt["template"], matches_func,
-                timeout=schritt.get("timeout", 10),
+        if typ == "start":
+            return "out"
+
+        elif typ == "suche":
+            ok = action_engine.auf_template_warten(
+                node["template"], matches_func,
+                timeout=node.get("timeout", 10),
                 intervall=0.3,
             )
+            return "success" if ok else "failure"
+
         elif typ == "suche_optional":
-            # Kein Fehler wenn nicht gefunden
+            # Läuft immer durch, auch wenn Template nicht gefunden
             action_engine.auf_template_warten(
-                schritt["template"], matches_func,
-                timeout=schritt.get("timeout", 3),
+                node["template"], matches_func,
+                timeout=node.get("timeout", 3),
                 intervall=0.3,
             )
-            return True
+            return "out"
+
         elif typ == "klick":
             matches = matches_func()
-            return action_engine.template_tippen(schritt["template"], matches,
-                                                  log_func=log_func)
-        elif typ == "warte":
-            action_engine.warten(schritt.get("sekunden", 1.0))
-            return True
+            ok = action_engine.template_tippen(node["template"], matches, log_func=log_func)
+            return "out" if ok else "failure"
+
+        elif typ == "warten":
+            action_engine.warten(node.get("sekunden", 1.0))
+            return "out"
+
         elif typ == "zurueck":
             action_engine.zurueck()
-            return True
+            return "out"
+
         elif typ == "home":
             action_engine.home()
-            return True
+            return "out"
+
         elif typ == "bedingung":
             if ocr_func is None:
-                return False
-            variable = schritt.get("variable", "")
-            operator = schritt.get("operator", "=")
-            soll = schritt.get("wert", "")
-            ist = ocr_func().get(variable, "")
+                return "false"
+            variable = node.get("variable", "")
+            operator = node.get("operator", "=")
+            soll     = node.get("wert", "")
+            ist      = ocr_func().get(variable, "")
+            ergebnis = False
             try:
                 a = float(str(ist).replace(",", "."))
                 b = float(str(soll).replace(",", "."))
-                if operator == ">":  return a > b
-                if operator == "<":  return a < b
-                if operator == ">=": return a >= b
-                if operator == "<=": return a <= b
-                if operator in ("=", "=="): return a == b
-                if operator == "!=": return a != b
+                if   operator == ">":          ergebnis = a > b
+                elif operator == "<":          ergebnis = a < b
+                elif operator == ">=":         ergebnis = a >= b
+                elif operator == "<=":         ergebnis = a <= b
+                elif operator in ("=", "=="):  ergebnis = a == b
+                elif operator == "!=":         ergebnis = a != b
             except (ValueError, AttributeError):
-                if operator in ("=", "=="): return str(ist) == str(soll)
-                if operator == "!=": return str(ist) != str(soll)
+                if   operator in ("=", "=="): ergebnis = str(ist) == str(soll)
+                elif operator == "!=":        ergebnis = str(ist) != str(soll)
+            return "true" if ergebnis else "false"
+
+        return None  # Unbekannter Node-Typ
+
+    # ── Graph-Traversierung ──────────────────────────────────────────────────
+
+    def _naechsten_node(self, node_id, port_aus, nodes_index, connections):
+        """Findet den Ziel-Node für eine Verbindung (node_id + port_aus)."""
+        for conn in connections:
+            if conn["von"] == node_id and conn["port_aus"] == port_aus:
+                return nodes_index.get(conn["zu"])
+        return None
+
+    def workflow_ausfuehren(self, name, action_engine, matches_func,
+                            log_func=None, laeuft_func=None, ocr_func=None):
+        """Traversiert den Workflow-Graphen ab dem Start-Node.
+        Gibt True bei erfolgreichem Durchlauf zurück, False bei Fehler oder Abbruch.
+        """
+        graph = self.workflows.get(name)
+        if not graph:
+            if log_func:
+                log_func(f"[{name}] Workflow nicht gefunden.")
             return False
 
-        return False
+        nodes       = graph.get("nodes", [])
+        connections = graph.get("connections", [])
 
-    def workflow_ausfuehren(self, name, action_engine, matches_func, log_func=None, laeuft_func=None, ocr_func=None):
-        """Führt einen Workflow aus. Gibt True bei Erfolg, False bei Fehler zurück."""
-        schritte = self.workflows.get(name, [])
-        for i, schritt in enumerate(schritte):
-            # Abbruch wenn Bot gestoppt wurde
+        # Schnellzugriff id → node
+        nodes_index = {n["id"]: n for n in nodes}
+
+        # Start-Node suchen
+        start_node = next((n for n in nodes if n.get("typ") == "start"), None)
+        if not start_node:
+            if log_func:
+                log_func(f"[{name}] Kein Start-Node vorhanden – Abbruch.")
+            return False
+
+        aktueller_node  = start_node
+        schritt_zaehler = 0
+
+        while aktueller_node is not None:
+
+            # Bot-Stopp-Signal prüfen
             if laeuft_func and not laeuft_func():
                 return False
-            typ = schritt.get("typ", "?")
-            detail = schritt.get("template", schritt.get("sekunden", ""))
-            if log_func:
-                log_func(f"[{name}] Schritt {i + 1}/{len(schritte)}: {typ} {detail}")
-            ok = self.schritt_ausfuehren(schritt, action_engine, matches_func, ocr_func=ocr_func, log_func=log_func)
-            if not ok:
+
+            # Endlosschleifen abfangen
+            schritt_zaehler += 1
+            if schritt_zaehler > MAX_SCHRITTE:
                 if log_func:
-                    log_func(f"[{name}] Schritt {i + 1} fehlgeschlagen – Workflow abgebrochen.")
+                    log_func(f"[{name}] Limit von {MAX_SCHRITTE} Schritten erreicht – Abbruch.")
                 return False
+
+            typ     = aktueller_node.get("typ", "?")
+            node_id = aktueller_node.get("id", "?")
+
+            # Log-Ausgabe (Start-Node überspringen, ist uninteressant)
+            if log_func and typ != "start":
+                detail = aktueller_node.get("template", aktueller_node.get("sekunden", ""))
+                log_func(f"[{name}] {node_id} ({typ}): {detail}")
+
+            # Node ausführen → ausgehenden Port ermitteln
+            port_aus = self._node_ausfuehren(
+                aktueller_node, action_engine, matches_func,
+                ocr_func=ocr_func, log_func=log_func
+            )
+
+            if port_aus is None:
+                if log_func:
+                    log_func(f"[{name}] Node '{node_id}': unbekannter Typ '{typ}' – Abbruch.")
+                return False
+
+            # Nächsten Node über Verbindung suchen
+            aktueller_node = self._naechsten_node(node_id, port_aus, nodes_index, connections)
+
+        # Kein Folge-Node mehr → Workflow abgeschlossen
+        if log_func:
+            log_func(f"[{name}] Workflow '{name}' abgeschlossen.")
         return True

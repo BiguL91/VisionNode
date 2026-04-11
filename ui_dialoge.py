@@ -299,34 +299,21 @@ class DialogeMixin:
         tk.Button(dialog, text="Speichern", bg="#2ea043", fg="white", command=lambda: dialog.destroy()).pack(side=tk.RIGHT, padx=16, pady=12)
         self.root.wait_window(dialog); return ergebnis[0]
 
-    def _workflow_editor_dialog(self, name, schritte):
-        ergebnis = [None]; schritte = list(schritte); dialog = tk.Toplevel(self.root); dialog.title(f"Workflow: {name}"); dialog.configure(bg="#2d2d2d"); dialog.geometry("500x600"); dialog.grab_set()
-        name_var = tk.StringVar(value=name); tk.Entry(dialog, textvariable=name_var, bg="#1a1a1a", fg="#ffffff", relief=tk.FLAT, bd=4).pack(fill=tk.X, padx=16, pady=10)
-        schritt_liste = tk.Listbox(dialog, bg="#1a1a1a", fg="#cccccc", font=("Segoe UI", 9), relief=tk.FLAT); schritt_liste.pack(fill=tk.BOTH, expand=True, padx=16)
-        def update():
-            schritt_liste.delete(0, tk.END)
-            for s in schritte: schritt_liste.insert(tk.END, f"{s['typ'].upper()}: {s.get('template', s.get('sekunden', ''))}" + (f" (TO: {s['timeout']}s)" if "timeout" in s else ""))
-        update()
-        f = tk.Frame(dialog, bg="#2d2d2d"); f.pack(fill=tk.X, padx=16, pady=4)
-        def add(t):
-            if t == "warten": schritte.append({"typ": "warten", "sekunden": 2})
-            else:
-                a = self._get_template_auswahl()
-                if a: schritte.append({"typ": t, "template": a, **({"timeout": 10} if t == "suche" else {})})
-            update()
-        tk.Button(f, text="+ Klick", command=lambda: add("klick")).pack(side=tk.LEFT, padx=2)
-        tk.Button(f, text="+ Suche", command=lambda: add("suche")).pack(side=tk.LEFT, padx=2)
-        tk.Button(f, text="+ Warten", command=lambda: add("warten")).pack(side=tk.LEFT)
-        def move(d):
-            s = schritt_liste.curselection()
-            if s:
-                i = s[0]; j = i+d
-                if 0 <= j < len(schritte): schritte[i], schritte[j] = schritte[j], schritte[i]; update(); schritt_liste.selection_set(j)
-        tk.Button(f, text="↑", command=lambda: move(-1)).pack(side=tk.LEFT, padx=(10, 2))
-        tk.Button(f, text="↓", command=lambda: move(1)).pack(side=tk.LEFT)
-        tk.Button(f, text="Del", command=lambda: (schritt_liste.curselection() and (schritte.pop(schritt_liste.curselection()[0]), update()))).pack(side=tk.LEFT, padx=10)
-        tk.Button(dialog, text="Speichern", bg="#2ea043", fg="white", command=lambda: (ergebnis.__setitem__(0, (name_var.get(), schritte)), dialog.destroy())).pack(side=tk.RIGHT, padx=16, pady=12)
-        self.root.wait_window(dialog); return ergebnis[0]
+    def _workflow_editor_dialog(self, name, graph):
+        """Öffnet den visuellen Workflow-Editor 2.0 (Blueprint-Stil).
+        graph = {"nodes": [...], "connections": [...]} oder {} für neuen Workflow.
+        Gibt (name, graph) zurück oder None bei Abbruch.
+        """
+        from ui.dialogs.workflow_editor import WorkflowEditorDialog
+        ergebnis = [None]
+
+        def callback(neuer_name, neuer_graph):
+            if neuer_name is not None:
+                ergebnis[0] = (neuer_name, neuer_graph)
+
+        WorkflowEditorDialog(self.root, self, name, graph, callback)
+        self.root.wait_window(self.root.winfo_children()[-1])
+        return ergebnis[0]
 
     def _einstellungen_dialog(self):
         dialog = tk.Toplevel(self.root); dialog.title("Einstellungen"); dialog.configure(bg="#2d2d2d"); dialog.grab_set()

@@ -84,8 +84,10 @@ class WorkflowPanel:
         self.workflow_liste.delete(0, tk.END)
         if self.workflow_engine.workflows:
             for name in sorted(self.workflow_engine.workflows.keys()):
-                anzahl = len(self.workflow_engine.workflows[name])
-                self.workflow_liste.insert(tk.END, f"  {name}  ({anzahl} Schritte)")
+                graph  = self.workflow_engine.workflows[name]
+                n_nodes = len(graph.get("nodes", []))
+                n_conn  = len(graph.get("connections", []))
+                self.workflow_liste.insert(tk.END, f"  {name}  ({n_nodes} Nodes, {n_conn} Links)")
         else:
             self.workflow_liste.insert(tk.END, "  (Keine Workflows)")
 
@@ -107,27 +109,29 @@ class WorkflowPanel:
         return eintrag.split("  (")[0].strip()
 
     def _workflow_neu(self):
-        res = self.bot._workflow_editor_dialog(None, [])
+        res = self.bot._workflow_editor_dialog(None, {})
         if res is None: return
-        name, schritte = res
+        name, graph = res
         if name:
-            self.workflow_engine.workflow_speichern(name, schritte)
+            self.workflow_engine.workflow_speichern(name, graph)
             self._workflows_liste_aktualisieren()
-            self.bot._log(f"Workflow erstellt: {name} ({len(schritte)} Schritte)")
+            n = len(graph.get("nodes", []))
+            self.bot._log(f"Workflow erstellt: {name} ({n} Nodes)")
 
     def _workflow_bearbeiten(self):
         name = self._get_auswahl_name()
         if not name: return
-        schritte = list(self.workflow_engine.workflows.get(name, []))
-        ergebnis = self.bot._workflow_editor_dialog(name, schritte)
+        graph    = dict(self.workflow_engine.workflows.get(name, {}))
+        ergebnis = self.bot._workflow_editor_dialog(name, graph)
         if ergebnis is None: return
-        neuer_name, neue_schritte = ergebnis
+        neuer_name, neuer_graph = ergebnis
         if neuer_name != name:
             self.workflow_engine.workflow_umbenennen(name, neuer_name)
-        self.workflow_engine.workflow_speichern(neuer_name, neue_schritte)
+        self.workflow_engine.workflow_speichern(neuer_name, neuer_graph)
         self._workflows_liste_aktualisieren()
         self._schedule_liste_aktualisieren()
-        self.bot._log(f"Workflow gespeichert: {neuer_name} ({len(neue_schritte)} Schritte)")
+        n = len(neuer_graph.get("nodes", []))
+        self.bot._log(f"Workflow gespeichert: {neuer_name} ({n} Nodes)")
 
     def _workflow_loeschen(self):
         name = self._get_auswahl_name()
