@@ -17,8 +17,11 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
   - **Multi-Varianten-Support**: Beliebig viele Bild-Varianten pro Template (`name`, `name__2`, `name__3`) für robuste Erkennung.
   - **PyTorch Template Matching**: Blitzschnelle MNCC-Erkennung direkt auf der GPU.
   - **Auto-Bbox Korrektur**: Präzise Klickpunkte durch automatische Inhalts-Erkennung.
-  - **EasyOCR (GPU)**: Texterkennung in Echtzeit mit Farbfilter & Pipette.
+  - **EasyOCR (GPU)**: Texterkennung in Echtzeit mit Farbfilter, Pipette und **Umlaute-Support (DE)**.
   - **Maskiertes Matching**: Voller Alpha-Kanal Support für präzise Icons.
+- **Hierarchische ROI-Vererbung (Scan-Bereiche)**
+  - **🎯 Fadenkreuz-System**: Templates erben automatisch die Scan-Bereiche ihrer Eltern-Gruppen.
+  - Maximale Performance: Nur relevante Bildschirmbereiche werden gescannt, ohne jedes Template einzeln konfigurieren zu müssen.
 - **Game-State-Management**
   - Templates können Spielzustände setzen (`set_states`) und nur bei bestimmten Zuständen aktiv sein (`condition_states`).
   - Logische Verknüpfung: AND (müssen alle zutreffen) und OR (einer reicht) kombinierbar.
@@ -29,10 +32,12 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 - **Workflow & Automation**
   - Visueller Editor zum Erstellen komplexer Abläufe (suche, klick, warte, bedingung)
   - **Scheduler**: Geordnete Queue-Abarbeitung für endlose Automatisierung
+- **UI & Performance (Surgical Updates)**
+  - **Flackerfreie Listen**: Nur geänderte Werte werden aktualisiert, kein kompletter Widget-Rebuild pro Intervall.
+  - **Daten-Panel**: Live-Update berechneter Werte (Transformationen, Formeln, Timer-Ablauf).
 - **Template Editor (All-in-One)**
   - **Tab-Leiste**: Ignorieren, Klick-Zone, Scannbereiche, OCR und Zustände – alles direkt im Editor.
   - **Varianten-Navigation**: Master/Version-Anzeige mit `◀ ▶` Pfeilen, Löschen von Varianten (Master geschützt).
-  - **Neue Variante aus bestehendem Template**: Automatische Erkennung ob Name existiert → direktes Speichern als `name__N`.
   - **Non-Stop Workflow**: Speichern schließt den Editor nicht – schnelles Bearbeiten mehrerer Varianten hintereinander.
 - **Entwickler-Tools**
   - **ROI-Editor (Scannbereiche)**: Begrenze die Suche auf spezifische Bildschirmbereiche für maximale Performance.
@@ -67,6 +72,6 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v0.4.4 – **Dateisystem-Management & Logging Upgrade**.
+v0.5.0 – **Hierarchic ROI & OCR Power-Up**.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)
