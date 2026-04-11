@@ -17,6 +17,7 @@ class DatenPanel:
         self._listen_cache = []      # Liste aller Listen-Dicts
         self._ausgeklappt = {}       # listen_id → bool (ob aufgeklappt)
         self._tabellen_frames = {}   # listen_id → Inhalt-Frame
+        self._wert_labels = {}       # listen_id → {(zeile_name, spalte_idx): tk.Label}
 
         datenbank_initialisieren()
         self._setup_ui()
@@ -70,6 +71,7 @@ class DatenPanel:
     def _alles_aufbauen(self):
         """Baut alle Listen-Blöcke untereinander neu auf."""
         self._tabellen_frames = {}
+        self._wert_labels = {}
         for w in self._inner.winfo_children():
             w.destroy()
 
@@ -137,27 +139,26 @@ class DatenPanel:
         pfeil_lbl.bind("<Button-1>", _toggle)
         header.bind("<Button-1>", _toggle)
 
-    def _tabelle_zeichnen(self, parent, l):
-        """Zeichnet die Tabelle einer Liste in den gegebenen Frame."""
-        for w in parent.winfo_children():
-            w.destroy()
+    # ── Werte-Berechnung (geteilt zwischen Aufbau und Update) ────────────────
 
+    def _werte_berechnen(self, l):
+        """Berechnet OCR-Werte, Transforms und Berechnungen für eine Liste.
+        Schreibt neue Werte in den Cache.
+        Gibt zurück: (ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen)
+        """
         spalten = spalten_der_liste(l["id"])
         zeilen_namen = zeilen_der_liste(l["id"])
         transformationen = transformationen_der_liste(l["id"])
         berechnungen = berechnungen_der_liste(l["id"])
 
-        # 1. Gedächtnis laden: Alles aus Cache als Basis
-        db_cache = cache_lesen(l["id"]) # var_name -> (wert, zeit)
+        db_cache = cache_lesen(l["id"])
         ocr_werte = {k: v for k, v in db_cache.items()}
 
-        # 2. Aktuelle OCR-Rohwerte (Live)
         ocr_roh_live = {}
         if hasattr(self.bot, "app"):
             ocr_roh_live.update(self.bot.app.state.ocr_values)
             ocr_roh_live.update(self.bot.app.state.template_ocr_values)
 
-        # 3. Live-OCR erzwingen (Reset auf '—' bei Wegfall)
         ausgabe_namen = {t["name"] for t in transformationen}
         ausgabe_namen.update({b["name"] for b in berechnungen})
         alle_ocr_namen = set(self.bot.ocr_engine.regionen.keys())
@@ -166,43 +167,35 @@ class DatenPanel:
         jetzt = time.time()
         neue_cache_werte = {}
 
-        # Alle aktuellen Live-Werte durchgehen und in ocr_werte / Cache übertragen
         for name, val in ocr_roh_live.items():
             if name in ausgabe_namen: continue
             if val not in (None, "", "—"):
                 ocr_werte[name] = (val, jetzt)
                 neue_cache_werte[name] = val
 
-        # Sicherstellen, dass auch konfigurierte aber gerade nicht sichtbare OCRs
-        # zumindest mit "—" initialisiert werden, falls sie noch nie im Cache waren.
         for name in alle_ocr_namen:
             if name not in ocr_werte and name not in ausgabe_namen:
                 ocr_werte[name] = ("—", jetzt)
 
-        # Debug-Log Setting
-        log_debug = self.bot.app.settings.get("log_daten_berechnungen", False)
+        log_debug = hasattr(self.bot, "app") and self.bot.app.settings.get("log_daten_berechnungen", False)
 
-        # 4. Transformer anwenden
         for t in transformationen:
             rohwert = ocr_roh_live.get(t["ocr_var"])
             if rohwert not in (None, "", "—"):
                 wert = transformation_anwenden(rohwert, t["typ"])
                 if wert not in ("", "—", "?"):
-                    # Logging bei Änderung
                     alt_wert = db_cache.get(t["name"], ("—", 0))[0]
                     if log_debug and str(wert) != str(alt_wert):
                         self.bot.app._log(f"[Transform] {t['name']}: {rohwert} -> {wert}")
                     ocr_werte[t["name"]] = (wert, jetzt)
                     neue_cache_werte[t["name"]] = wert
                     if t["typ"] == "timer":
-                        # Deadline einmalig setzen wenn OCR frischen Wert liefert
                         try:
                             deadline = jetzt + float(wert)
                             neue_cache_werte[f"Timer.{t['name']}._deadline"] = str(deadline)
                         except (ValueError, TypeError):
                             pass
             elif t["typ"] == "timer":
-                # OCR nicht sichtbar → aus Deadline weiterzählen
                 deadline_eintrag = db_cache.get(f"Timer.{t['name']}._deadline")
                 if deadline_eintrag and deadline_eintrag[0] not in (None, "", "—", "?"):
                     try:
@@ -217,54 +210,54 @@ class DatenPanel:
                     except (ValueError, TypeError):
                         pass
 
-        # 5. Berechnungen anwenden (Zwischenberechnungen zuerst)
         berech_sortiert = (
             [b for b in berechnungen if b.get("typ") == "zwischen"] +
             [b for b in berechnungen if b.get("typ") != "zwischen"]
         )
         for b in berech_sortiert:
             ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, l["update_intervall"])
-            if ergebnis in ("?", "—") or not b["formel_json"]:
-                pass
-            else:
+            if ergebnis not in ("?", "—") and b["formel_json"]:
                 alt_wert = db_cache.get(b["name"], ("—", 0))[0]
                 if log_debug and str(ergebnis) != str(alt_wert):
                     self.bot.app._log(f"[Berechnung] {b['name']}: {ergebnis}")
-                
                 ocr_werte[b["name"]] = (ergebnis, jetzt)
                 neue_cache_werte[b["name"]] = ergebnis
 
-        # Neue Werte in Cache schreiben
         for var_name, wert in neue_cache_werte.items():
             cache_schreiben(l["id"], var_name, wert)
+
+        berech_namen = {b["name"] for b in berechnungen}
+        zuordnungen = zuordnungen_der_liste(l["id"])
+
+        return ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen
+
+    # ── Tabelle: Vollaufbau ──────────────────────────────────────────────────
+
+    def _tabelle_zeichnen(self, parent, l):
+        """Vollständiger Widget-Aufbau der Tabelle. Speichert Label-Refs für spätere Updates."""
+        for w in parent.winfo_children():
+            w.destroy()
+
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen(l)
 
         if not spalten:
             tk.Label(parent, text="Keine Spalten — Edit zum Konfigurieren.",
                      bg="#2d2d2d", fg="#555555", font=("Segoe UI", 8)).pack(anchor="w", padx=6, pady=4)
             return
 
-        # Datenzeilen (aus konfigurierten Zeilen-Namen)
         if not zeilen_namen:
             tk.Label(parent, text="(Keine Zeilen — Edit zum Konfigurieren)", bg="#2d2d2d",
                      fg="#444444", font=("Segoe UI", 8), padx=6, pady=3).pack(anchor="w")
             return
 
-        # Berechnungs-Namen für farbliche Markierung sammeln
-        berech_namen = {b["name"] for b in berechnungen}
-
-        # Spezifische Zell-Zuordnungen laden
-        zuordnungen = zuordnungen_der_liste(l["id"])
-
-        # Grid-Tabelle: Header + Daten in einem Frame → pixelgenaue Spaltenausrichtung
         tabel = tk.Frame(parent, bg="#1a1a1a")
         tabel.pack(fill=tk.X, pady=(0, 2))
 
-        # Spaltenbreiten festlegen
         tabel.grid_columnconfigure(0, minsize=95)
         for i in range(len(spalten)):
             tabel.grid_columnconfigure(i + 1, minsize=72)
 
-        # Header-Zeile (Zeile 0)
+        # Header-Zeile
         tk.Label(tabel, text="Zeile", bg="#1a1a1a", fg="#555555",
                  font=("Segoe UI", 8, "bold"), padx=6, pady=2, anchor="w"
                  ).grid(row=0, column=0, sticky="ew")
@@ -273,11 +266,11 @@ class DatenPanel:
                      font=("Consolas", 8, "bold"), padx=6, pady=2, anchor="e"
                      ).grid(row=0, column=i + 1, sticky="ew")
 
-        # Trennlinie
         tk.Frame(tabel, bg="#333333", height=1).grid(
             row=1, column=0, columnspan=len(spalten) + 1, sticky="ew")
 
-        # Datenzeilen (ab Zeile 2)
+        # Datenzeilen + Label-Refs speichern
+        wert_labels = {}
         for r, z in enumerate(zeilen_namen):
             hg = "#1a1a1a" if r % 2 == 0 else "#212121"
             row_idx = r + 2
@@ -287,10 +280,7 @@ class DatenPanel:
                      ).grid(row=row_idx, column=0, sticky="ew")
 
             for ci, sp in enumerate(spalten):
-                # 1. Spezifische Zuordnung (Zelle) prüfen
                 ocr_var = zuordnungen.get((z["name"], sp["id"]))
-
-                # 2. Falls keine Zelle: Globalen Spalten-Wert prüfen (inkl. Placeholder)
                 if not ocr_var:
                     ocr_var = sp.get("ocr_var")
                     if ocr_var and "{row}" in ocr_var:
@@ -298,21 +288,53 @@ class DatenPanel:
 
                 entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
                 wert = entry[0]
+                format_typ = sp.get("format", "standard")
+                anzeige_wert = self._format_wert(wert, format_typ)
+                farbe = "#4fc3f7" if ocr_var in berech_namen else "#cccccc"
 
+                lbl = tk.Label(tabel, text=anzeige_wert, bg=hg, fg=farbe,
+                               font=("Consolas", 8), padx=6, pady=2, anchor="e")
+                lbl.grid(row=row_idx, column=ci + 1, sticky="ew")
+                wert_labels[(z["name"], ci)] = lbl
+
+        self._wert_labels[l["id"]] = wert_labels
+
+    # ── Tabelle: Nur Werte aktualisieren ────────────────────────────────────
+
+    def _tabelle_werte_aktualisieren(self, l):
+        """Berechnet Werte neu und aktualisiert nur Label-Texte ohne Widget-Rebuild."""
+        labels = self._wert_labels.get(l["id"])
+        if not labels:
+            # Noch keine Labels → vollständiger Aufbau als Fallback
+            frame = self._tabellen_frames.get(l["id"])
+            if frame and frame.winfo_exists():
+                self._tabelle_zeichnen(frame, l)
+            return
+
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen(l)
+
+        for r, z in enumerate(zeilen_namen):
+            for ci, sp in enumerate(spalten):
+                ocr_var = zuordnungen.get((z["name"], sp["id"]))
+                if not ocr_var:
+                    ocr_var = sp.get("ocr_var")
+                    if ocr_var and "{row}" in ocr_var:
+                        ocr_var = ocr_var.replace("{row}", z["name"])
+
+                entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
+                wert = entry[0]
                 format_typ = sp.get("format", "standard")
                 anzeige_wert = self._format_wert(wert, format_typ)
 
-                farbe = "#4fc3f7" if ocr_var in berech_namen else "#cccccc"
-
-                tk.Label(tabel, text=anzeige_wert, bg=hg, fg=farbe,
-                         font=("Consolas", 8), padx=6, pady=2, anchor="e"
-                         ).grid(row=row_idx, column=ci + 1, sticky="ew")
+                lbl = labels.get((z["name"], ci))
+                if lbl and lbl.winfo_exists():
+                    lbl.config(text=anzeige_wert)
 
     def _format_wert(self, wert, format_typ):
         """Formatiert einen Wert für die UI-Anzeige."""
         if wert in (None, "", "—", "?"):
             return str(wert)
-        
+
         try:
             num = float(str(wert).replace(",", "."))
         except (ValueError, TypeError):
@@ -326,10 +348,10 @@ class DatenPanel:
             if abs(num) >= 10**3:
                 return f"{num / 10**3:.1f}K"
             return str(round(num, 1))
-        
+
         if format_typ == "0 (Ganzzahl)":
             return str(int(round(num)))
-        
+
         if format_typ == ".2 (2 Nachkomma)":
             return f"{num:.2f}"
 
@@ -392,7 +414,7 @@ class DatenPanel:
         self._update_job = self.bot.root.after(1000, self._auto_update)
 
     def _auto_update(self):
-        """Aktualisiert alle sichtbaren Tabellen periodisch."""
+        """Aktualisiert alle sichtbaren Tabellen periodisch (nur Werte, kein Rebuild)."""
         if not self._listen_cache:
             self._update_job = self.bot.root.after(5000, self._auto_update)
             return
@@ -402,9 +424,9 @@ class DatenPanel:
         for l in self._listen_cache:
             if not self._ausgeklappt.get(l["id"], True):
                 continue
-            frame = self._tabellen_frames.get(l["id"])
-            if frame and frame.winfo_exists():
-                self._tabelle_zeichnen(frame, l)
+            if not self._tabellen_frames.get(l["id"]):
+                continue
+            self._tabelle_werte_aktualisieren(l)
 
         self._update_job = self.bot.root.after(min_intervall * 1000, self._auto_update)
 
@@ -450,14 +472,12 @@ class DatenPanel:
                         self.bot.app._log(f"[Transform] {t['name']}: {rohwert} → {wert}")
                     cache_schreiben(l["id"], t["name"], wert)
                     if t["typ"] == "timer":
-                        # Deadline einmalig setzen wenn OCR frischen Wert liefert
                         try:
                             deadline = jetzt + float(wert)
                             cache_schreiben(l["id"], f"Timer.{t['name']}._deadline", str(deadline))
                         except (ValueError, TypeError):
                             pass
             elif t["typ"] == "timer":
-                # OCR nicht sichtbar → aus Deadline weiterzählen
                 deadline_eintrag = db_cache.get(f"Timer.{t['name']}._deadline")
                 if deadline_eintrag and deadline_eintrag[0] not in (None, "", "—", "?"):
                     try:
