@@ -1,0 +1,102 @@
+/* ── Tabellen & Bäume ───────────────────────────────────────────────────────── */
+
+QTableWidget,
+QTableView {
+    background-color: #181825;
+    color: #cdd6f4;
+    gridline-color: #313244;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    outline: none;
+}
+
+QTableWidget::item,
+QTableView::item {
+    padding: 4px 8px;
+    border: none;
+}
+
+QTableWidget::item:selected,
+QTableView::item:selected {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+QTableWidget::item:hover,
+QTableView::item:hover {
+    background-color: #252525;
+}
+
+QHeaderView {
+    background-color: #181825;
+}
+
+QHeaderView::section {
+    background-color: #252525;
+    color: #888888;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 5px 8px;
+    border: none;
+    border-right: 1px solid #313244;
+    border-bottom: 1px solid #313244;
+}
+
+QHeaderView::section:hover {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+/* QTreeWidget */
+QTreeWidget {
+    background-color: #181825;
+    color: #cdd6f4;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    outline: none;
+}
+
+QTreeWidget::item {
+    padding: 3px 4px;
+    border: none;
+}
+
+QTreeWidget::item:selected {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+QTreeWidget::item:hover {
+    background-color: #252525;
+}
+
+QTreeWidget::branch {
+    background-color: #181825;
+}
+
+QTreeWidget::branch:selected {
+    background-color: #313244;
+}
+
+/* QListWidget */
+QListWidget {
+    background-color: #181825;
+    color: #cdd6f4;
+    border: 1px solid #313244;
+    border-radius: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 5px 8px;
+    border: none;
+}
+
+QListWidget::item:selected {
+    background-color: #313244;
+    color: #cdd6f4;
+}
+
+QListWidget::item:hover {
+    background-color: #252525;
+}

@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "language": "English",
+    "code": "en",
+    "author": "TilesBot Team",
+    "version": "1.0"
+  },
+
+  "app_title": "Ai-Bot",
+
+  "btn_start": "▶  Start",
+  "btn_stop": "■  Stop",
+  "btn_settings": "Settings",
+  "btn_debug_off": "● Debug Off",
+  "btn_debug_on": "● Debug On",
+  "btn_snapshot": "📸 Snapshot",
+  "btn_add_ocr": "+ OCR Region",
+  "btn_add_template": "+ Template",
+  "btn_legend": "?",
+  "btn_rename": "✎  Rename",
+  "btn_delete": "✕  Delete",
+  "btn_add": "+ Add",
+  "btn_save": "Save",
+  "btn_cancel": "Cancel",
+  "btn_close": "Close",
+  "btn_apply": "Apply",
+  "btn_test": "Test",
+  "btn_only_active": "Active Only",
+
+  "panel_workflows": "WORKFLOWS",
+  "panel_workflow_templates": "WORKFLOW TEMPLATES",
+  "panel_state_templates": "STATE TEMPLATES",
+  "panel_ocr_vars": "OCR VARIABLES",
+  "panel_state_vars": "STATE VARIABLES",
+  "panel_log": "LOG",
+  "panel_data": "DATA LISTS",
+
+  "state_no_states": "(No states defined)",
+  "state_only_active_empty": "(No active states)",
+  "state_add_title": "Add State",
+  "state_add_label": "Variable name:",
+  "state_add_start_true": "Initial value: TRUE",
+  "state_rename_title": "Rename State",
+  "state_rename_label": "New name:",
+  "state_delete_confirm": "Really delete \"{name}\"?",
+
+  "snapshot_title": "Snapshot",
+  "snapshot_label": "Name for snapshot (e.g. MAIN_Menu):",
+  "snapshot_saved": "Snapshot saved: {path}",
+
+  "status_ready": "● Ready",
+  "status_running": "● Bot running",
+  "status_stopped": "● Stopped",
+  "status_searching_memu": "Searching for MEMUPlayer...",
+  "status_memu_not_found": "MEMUPlayer not found. Please start it.",
+  "status_bot_started": "Bot started.",
+  "status_bot_stopped": "Bot stopped.",
+
+  "legend_title": "Legend",
+  "legend_types": "TYPES",
+  "legend_markers": "MARKERS",
+
+  "dialog_yes": "Yes",
+  "dialog_no": "No",
+  "dialog_ok": "OK"
+}

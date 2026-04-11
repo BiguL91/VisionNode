@@ -8,3 +8,4 @@ mss
 windows-capture
 PyYAML
 numpy
+PyQt6

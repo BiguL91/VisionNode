@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "language": "Deutsch",
+    "code": "de",
+    "author": "TilesBot Team",
+    "version": "1.0"
+  },
+
+  "app_title": "Ai-Bot",
+
+  "btn_start": "▶  Start",
+  "btn_stop": "■  Stop",
+  "btn_settings": "Einstellungen",
+  "btn_debug_off": "● Debug Aus",
+  "btn_debug_on": "● Debug An",
+  "btn_snapshot": "📸 Snapshot",
+  "btn_add_ocr": "+ OCR-Region",
+  "btn_add_template": "+ Template",
+  "btn_legend": "?",
+  "btn_rename": "✎  Umbenennen",
+  "btn_delete": "✕  Löschen",
+  "btn_add": "+ Hinzufügen",
+  "btn_save": "Speichern",
+  "btn_cancel": "Abbrechen",
+  "btn_close": "Schließen",
+  "btn_apply": "Übernehmen",
+  "btn_test": "Test",
+  "btn_only_active": "Nur Aktive",
+
+  "panel_workflows": "WORKFLOWS",
+  "panel_workflow_templates": "WORKFLOW TEMPLATES",
+  "panel_state_templates": "STATE TEMPLATES",
+  "panel_ocr_vars": "OCR VARIABLEN",
+  "panel_state_vars": "STATE VARIABLEN",
+  "panel_log": "LOG",
+  "panel_data": "DATEN-LISTEN",
+
+  "state_no_states": "(Keine Zustände definiert)",
+  "state_only_active_empty": "(Keine aktiven Zustände)",
+  "state_add_title": "Zustand hinzufügen",
+  "state_add_label": "Name der Variable:",
+  "state_add_start_true": "Startwert: TRUE",
+  "state_rename_title": "Zustand umbenennen",
+  "state_rename_label": "Neuer Name:",
+  "state_delete_confirm": "\"{name}\" wirklich löschen?",
+
+  "snapshot_title": "Snapshot",
+  "snapshot_label": "Name für Snapshot (z.B. MAIN_Menü):",
+  "snapshot_saved": "Snapshot gespeichert: {path}",
+
+  "status_ready": "● Bereit",
+  "status_running": "● Bot läuft",
+  "status_stopped": "● Gestoppt",
+  "status_searching_memu": "Suche MEMUPlayer...",
+  "status_memu_not_found": "MEMUPlayer nicht gefunden. Bitte starten.",
+  "status_bot_started": "Bot gestartet.",
+  "status_bot_stopped": "Bot gestoppt.",
+
+  "legend_title": "Legende",
+  "legend_types": "TYPEN",
+  "legend_markers": "MARKIERUNGEN",
+
+  "dialog_yes": "Ja",
+  "dialog_no": "Nein",
+  "dialog_ok": "OK"
+}
