@@ -350,21 +350,32 @@ class TilesBotApp:
 
         while self.state.capture_active:
             if not self.state.running:
-                time.sleep(0.5); continue
+                time.sleep(0.5)
+                continue
             
-            schedule = self.workflow_engine.schedule
-            for wf_name in list(schedule):
-                if not self.state.running: break
-                log_wrapper(f"[Scheduler] Starte: {wf_name}")
-                self.workflow_engine.workflow_ausfuehren(
-                    wf_name, self.action_engine,
-                    lambda: self.state.active_matches,
-                    log_func=log_wrapper,
-                    laeuft_func=lambda: self.state.running,
-                    ocr_func=lambda: {
-                        **self.state.get_all_ocr(),
-                        **{f"__state__{k}": ("true" if v else "false")
-                           for k, v in self.state.game_states.items()},
-                    }
-                )
-            time.sleep(0.5)
+            master_name = self.workflow_engine.aktiver_master
+            if not master_name:
+                log_wrapper("[Bot] Kein aktiver Master-Flow (Schrittkette) gewählt.")
+                self.state.running = False
+                continue
+
+            log_wrapper(f"[Bot] Starte Schrittkette: {master_name}")
+            
+            # Die Engine führt nun den Master-Flow aus.
+            # Da dieser oft selbst ein Loop ist, läuft er bis zum Ende oder bis Stop gedrückt wird.
+            self.workflow_engine.workflow_ausfuehren(
+                master_name, self.action_engine,
+                lambda: self.state.active_matches,
+                log_func=log_wrapper,
+                laeuft_func=lambda: self.state.running,
+                ocr_func=lambda: {
+                    **self.state.get_all_ocr(),
+                    **{f"__state__{k}": ("true" if v else "false")
+                       for k, v in self.state.game_states.items()},
+                },
+                ist_master=True # Neuer Parameter um Master-spezifische Dinge zu triggern
+            )
+            
+            if self.state.running:
+                log_wrapper(f"[Bot] Schrittkette '{master_name}' beendet. Neustart in 1s...")
+                time.sleep(1.0)

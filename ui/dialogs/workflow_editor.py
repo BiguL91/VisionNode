@@ -23,6 +23,8 @@ NODE_FARBEN = {
     "zurueck":        "#8e24aa",
     "home":           "#8e24aa",
     "bedingung":      "#f9a825",
+    "call_workflow":  "#673ab7",
+    "priority_selector": "#fbc02d",
 }
 
 # (hat_eingang, [ausgangs_ports])
@@ -35,6 +37,8 @@ NODE_PORTS = {
     "zurueck":        (True,  ["out"]),
     "home":           (True,  ["out"]),
     "bedingung":      (True,  ["true", "false"]),
+    "call_workflow":  (True,  ["done", "failure"]),
+    "priority_selector": (True, []), # Dynamisch berechnet
 }
 
 PORT_FARBEN = {
@@ -43,6 +47,8 @@ PORT_FARBEN = {
     "failure": "#ef5350",
     "true":    "#4caf50",
     "false":   "#ef5350",
+    "done":    "#9c27b0",
+    "else":    "#ff5722",
     "in":      "#777777",
 }
 
@@ -165,6 +171,8 @@ class WorkflowEditorDialog:
             ("Zurueck",   "zurueck"),
             ("Home",      "home"),
             ("Bedingung", "bedingung"),
+            ("Workflow",  "call_workflow"),
+            ("Selector",  "priority_selector"),
         ]
         for label, typ in typen:
             farbe = NODE_FARBEN.get(typ, "#555555")
@@ -293,7 +301,14 @@ class WorkflowEditorDialog:
         y = self._cy(node["y"])
         w = NODE_BREITE * self._scale
         h = NODE_HOEHE  * self._scale
-        hat_ein, aus_ports = NODE_PORTS.get(node["typ"], (True, ["out"]))
+        
+        # Ports ermitteln
+        typ = node["typ"]
+        if typ == "priority_selector":
+            hat_ein = True
+            aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
+        else:
+            hat_ein, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
 
         if port_name == "in":
             return (x, y + h / 2)
@@ -355,7 +370,13 @@ class WorkflowEditorDialog:
         nid   = node["id"]
         farbe = NODE_FARBEN.get(typ, "#555555")
         tag   = f"node_{nid}"
-        hat_ein, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
+        
+        # Ports ermitteln (für Zeichnen)
+        if typ == "priority_selector":
+            hat_ein = True
+            aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
+        else:
+            hat_ein, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
 
         fs      = max(6,  int(8 * s))   # Schriftgröße Titel
         fs_par  = max(5,  int(8 * s))   # Schriftgröße Parameter
@@ -470,6 +491,8 @@ class WorkflowEditorDialog:
             return (f"{node.get('variable','?')} "
                     f"{node.get('operator','=')} "
                     f"{node.get('wert','0')}")
+        elif typ == "call_workflow":
+            return f"➔ {node.get('workflow', '–')}"
         return ""
 
     # ── Template-Picker (gruppiert) ───────────────────────────────────────────
@@ -704,6 +727,35 @@ class WorkflowEditorDialog:
 
         return btn
 
+    def _workflow_picker_bauen(self, eltern_frame, wf_var):
+        """Dropdown zum Auswählen eines anderen Workflows."""
+        def _waehlen(name):
+            wf_var.set(name)
+
+        aktuelle_workflows = sorted(self.bot.workflow_engine.workflows.keys())
+        # Eigenen Workflow-Namen entfernen um Rekursion-Endlos zu verhindern
+        try:
+            aktueller_name = self.name_var.get()
+            if aktueller_name in aktuelle_workflows:
+                aktuelle_workflows.remove(aktueller_name)
+        except: pass
+
+        btn = tk.Menubutton(
+            eltern_frame, textvariable=wf_var, bg="#1a1a1a", fg="#ffffff",
+            relief=tk.FLAT, bd=2, font=("Segoe UI", 9), width=22, anchor="w", cursor="hand2"
+        )
+        btn.pack(side=tk.LEFT)
+        menu = tk.Menu(btn, tearoff=0, bg="#1a1a1a", fg="#ffffff", activebackground="#333333")
+        btn["menu"] = menu
+
+        for name in aktuelle_workflows:
+            menu.add_command(label=f"🔄 {name}", command=lambda n=name: _waehlen(n))
+        
+        if not aktuelle_workflows:
+            menu.add_command(label="(keine anderen Workflows)", state="disabled")
+        
+        return btn
+
     # ── Zoom & Pan ───────────────────────────────────────────────────────────
 
     def _zoomen(self, event):
@@ -898,6 +950,10 @@ class WorkflowEditorDialog:
             node["variable"] = ""
             node["operator"] = ">"
             node["wert"]     = "0"
+        elif typ == "priority_selector":
+            node["ausgaenge"] = [
+                {"port": "Prio 1", "variable": "", "operator": "=", "wert": "true", "cooldown": 0, "max_runs": 0}
+            ]
 
         self.nodes.append(node)
         self._alles_neu_zeichnen()
@@ -1002,6 +1058,126 @@ class WorkflowEditorDialog:
                                font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=3)
             felder["operator"] = op_var
             zeile("Wert:", "wert", 12)
+
+        elif typ == "priority_selector":
+            # Spezieller Editor für den Selector
+            f_main = tk.Frame(inhalt, bg="#2d2d2d")
+            f_main.pack(fill=tk.BOTH, expand=True)
+            
+            # WICHTIG: Kopie der Daten für den Dialog
+            ausgaenge_liste = []
+            for a in node.get("ausgaenge", []):
+                d = dict(a)
+                # Falls noch kein logic_graph da ist, aber alte Bedingungen existieren -> konvertieren?
+                # (Lassen wir erst mal als Fallback in der Engine)
+                ausgaenge_liste.append(d)
+
+            def _liste_zeichnen():
+                # Vor dem Löschen: Aktuelle Werte aus den Variablen zurück in die Liste schreiben!
+                # Sonst gehen Änderungen beim Verschieben/Hinzufügen verloren.
+                for aus in ausgaenge_liste:
+                    if "port_var" in aus: aus["port"] = aus["port_var"].get()
+                    if "cooldown_var" in aus: 
+                        try: aus["cooldown"] = float(aus["cooldown_var"].get())
+                        except: aus["cooldown"] = 0
+                    if "max_runs_var" in aus:
+                        try: aus["max_runs"] = int(aus["max_runs_var"].get())
+                        except: aus["max_runs"] = 0
+
+                for w in f_liste.winfo_children(): w.destroy()
+                
+                # Header
+                h_f = tk.Frame(f_liste, bg="#252525")
+                h_f.pack(fill=tk.X, pady=(0, 5))
+                for txt, w in [("Port-Name", 15), ("Logik", 12), ("Wait (s)", 8), ("Limit", 8), ("Prio", 8)]:
+                    tk.Label(h_f, text=txt, bg="#252525", fg="#666666", font=("Segoe UI", 8, "bold"), width=w, anchor="w").pack(side=tk.LEFT, padx=2)
+
+                for i, aus in enumerate(ausgaenge_liste):
+                    row = tk.Frame(f_liste, bg="#2d2d2d")
+                    row.pack(fill=tk.X, pady=2)
+                    
+                    # Port Name
+                    p_var = tk.StringVar(value=aus.get("port", f"Prio {i+1}"))
+                    tk.Entry(row, textvariable=p_var, bg="#1a1a1a", fg="#ffffff", font=("Segoe UI", 9, "bold"), width=15, relief=tk.FLAT).pack(side=tk.LEFT, padx=2)
+                    aus["port_var"] = p_var
+                    
+                    # Logik Netzwerk (FUP) Button
+                    has_logic = "★" if aus.get("logic_graph") else "🛠"
+                    def _edit_logic(a_obj=aus):
+                        from ui.dialogs.logic_editor import LogicEditorDialog
+                        # Aktuellen Graph holen
+                        g = a_obj.get("logic_graph") or {"nodes": [], "connections": []}
+                        def _on_logic_save(new_graph):
+                            a_obj["logic_graph"] = new_graph
+                            _liste_zeichnen() # Button-Icon aktualisieren
+                        LogicEditorDialog(self.dialog, self.bot, a_obj.get("port", "Port"), g, _on_logic_save)
+
+                    tk.Button(row, text=f"{has_logic} Netzwerk", bg="#444", fg="#55ff88", font=("Segoe UI", 8), width=12, relief=tk.FLAT, command=_edit_logic).pack(side=tk.LEFT, padx=5)
+
+                    # Cooldown (Wait)
+                    c_var = tk.StringVar(value=str(aus.get("cooldown", 0)))
+                    tk.Entry(row, textvariable=c_var, bg="#1a1a1a", fg="#fbc02d", font=("Segoe UI", 9), width=8, relief=tk.FLAT).pack(side=tk.LEFT, padx=2)
+                    aus["cooldown_var"] = c_var
+                    
+                    # Max Runs (Limit)
+                    m_var = tk.StringVar(value=str(aus.get("max_runs", 0)))
+                    tk.Entry(row, textvariable=m_var, bg="#1a1a1a", fg="#ff7043", font=("Segoe UI", 9), width=8, relief=tk.FLAT).pack(side=tk.LEFT, padx=2)
+                    aus["max_runs_var"] = m_var
+                    
+                    # Aktionen
+                    tk.Button(row, text="↑", bg="#3a3a3a", fg="white", width=3, relief=tk.FLAT, command=lambda idx=i: _move(idx, -1)).pack(side=tk.LEFT, padx=1)
+                    tk.Button(row, text="↓", bg="#3a3a3a", fg="white", width=3, relief=tk.FLAT, command=lambda idx=i: _move(idx, 1)).pack(side=tk.LEFT, padx=1)
+                    tk.Button(row, text="✕", bg="#b71c1c", fg="white", width=3, relief=tk.FLAT, command=lambda idx=i: _del(idx)).pack(side=tk.LEFT, padx=1)
+
+            def _move(idx, dir):
+                target = idx + dir
+                if 0 <= target < len(ausgaenge_liste):
+                    ausgaenge_liste[idx], ausgaenge_liste[target] = ausgaenge_liste[target], ausgaenge_liste[idx]
+                    _liste_zeichnen()
+
+            def _del(idx):
+                if len(ausgaenge_liste) > 1:
+                    ausgaenge_liste.pop(idx)
+                    _liste_zeichnen()
+
+            def _add():
+                ausgaenge_liste.append({"port": f"Prio {len(ausgaenge_liste)+1}", "cooldown": 0, "max_runs": 0, "logic_graph": None})
+                _liste_zeichnen()
+
+            f_liste = tk.Frame(f_main, bg="#2d2d2d")
+            f_liste.pack(fill=tk.BOTH, expand=True)
+            _liste_zeichnen()
+            
+            tk.Button(f_main, text="+ Ausgang hinzufügen", bg="#1a3a1a", fg="#55ff88", relief=tk.FLAT, pady=5, command=_add).pack(fill=tk.X, pady=10)
+
+            def anwenden_selector():
+                neue_aus = []
+                for a in ausgaenge_liste:
+                    # Werte aus den UI-Variablen final übernehmen
+                    p_name = a["port_var"].get()
+                    try:
+                        neue_aus.append({
+                            "port": p_name,
+                            "cooldown": float(a["cooldown_var"].get()),
+                            "max_runs": int(a["max_runs_var"].get()),
+                            "logic_graph": a.get("logic_graph") # Der Graph selbst!
+                        })
+                    except: pass
+                
+                node["ausgaenge"] = neue_aus
+                # Verbindungen zu gelöschten oder umbenannten Ports entfernen/aktualisieren
+                gültige_ports = [a["port"] for a in neue_aus] + ["else"]
+                self.connections = [c for c in self.connections if not (c["von"] == node["id"] and c["port_aus"] not in gültige_ports)]
+                
+                popup.destroy()
+                self._alles_neu_zeichnen()
+            
+            # Button-Leiste unten
+            btn_f = tk.Frame(inhalt, bg="#2d2d2d")
+            btn_f.pack(fill=tk.X, pady=(10, 0))
+            tk.Button(btn_f, text="Abbrechen", bg="#444", fg="white", relief=tk.FLAT, padx=10, pady=4, command=popup.destroy).pack(side=tk.RIGHT, padx=(4, 0))
+            tk.Button(btn_f, text="Anwenden", bg="#2ea043", fg="white", relief=tk.FLAT, padx=10, pady=4, command=anwenden_selector).pack(side=tk.RIGHT)
+            return
 
         def anwenden():
             for key, var in felder.items():
