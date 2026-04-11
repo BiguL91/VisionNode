@@ -2,6 +2,25 @@
 
 ---
 
+## v0.6.0 (Workflow-Power & Live-Simulation)
+
+### ✨ Features & Highlights
+- **Workflow Editor 2.0 (Blueprint-Stil)**:
+  - Neuer visueller Canvas-Editor im Node-RED / Blueprint-Stil mit Bézier-Kurven.
+  - Nodes als farbige Kacheln (Start, Suche, Klick, Warten, Bedingung, etc.).
+  - Zoom (25% – 400%) und Pan-Funktion für große Graphen.
+  - Gruppierte Template- und Variablen-Picker (Workflow/State/DB).
+- **Graph-Modell & Engine**:
+  - `workflow_engine.py` komplett auf Graph-Modell umgestellt.
+  - Echtes Branching für Bedingungen (`true`/`false`) und Template-Suchen (`success`/`failure`).
+- **Live-Simulation & Interaktiver Debugger**:
+  - Simulation nutzt reale Bot-Daten (Matches, OCR, Game-States).
+  - **Interaktiver Debugger**: Bei Aktionen (Klick, Zurück, Home) erscheint ein Abfrage-Dialog (Simulieren vs. ADB Ausführen).
+  - **Echtzeit-Timer**: Live-Countdown (⏳) direkt auf den Node-Kacheln mit 0.1s Update-Intervall.
+  - Multithreaded-Ausführung sorgt für eine flüssige UI während der Simulation.
+
+---
+
 ## v0.5.1 (Hotfix: Master-Kind ROI Sync)
 
 ### 🛠 Fixes

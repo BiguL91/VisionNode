@@ -30,7 +30,9 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
   - Keine Mausbewegung erforderlich – der Bot arbeitet unsichtbar im Hintergrund
   - Stabilisierte Koordinaten-Umrechnung für Portrait- und Landscape-Modus
 - **Workflow & Automation**
-  - Visueller Editor zum Erstellen komplexer Abläufe (suche, klick, warte, bedingung)
+  - **Blueprint Workflow Editor 2.0**: Visueller Canvas-Editor (Node-RED / Unreal Stil) mit Bézier-Kurven für komplexe Logik-Graphen.
+  - **Live-Simulation & Interaktiver Debugger**: Teste Workflows mit echten Bot-Daten und entscheide bei jeder Aktion, ob sie nur simuliert oder wirklich via ADB ausgeführt werden soll.
+  - **Echtzeit-Timer**: Live-Countdown (⏳) direkt auf den Workflow-Kacheln während der Ausführung.
   - **Scheduler**: Geordnete Queue-Abarbeitung für endlose Automatisierung
 - **UI & Performance (Surgical Updates)**
   - **Flackerfreie Listen**: Nur geänderte Werte werden aktualisiert, kein kompletter Widget-Rebuild pro Intervall.
@@ -72,6 +74,6 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v0.5.1 – **Hotfix: Master-Kind ROI Sync**.
+v0.6.0 – **Workflow-Power & Live-Simulation**.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)
