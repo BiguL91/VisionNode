@@ -268,19 +268,26 @@ class TemplateEngine:
                 return True
         return False
 
-    def _eltern_conditions_pruefen(self, gruppe_pfad, game_states):
-        """Prüft Bedingungen aller Eltern-Ebenen eines Gruppe-Pfads (hierarchisch)."""
-        if not gruppe_pfad:
-            return True
-        teile = gruppe_pfad.split("/")
-        for i in range(len(teile)):
-            pfad = "/".join(teile[:i + 1])
-            eintrag = self.settings.get(pfad, {})
+    def _eltern_conditions_pruefen(self, gruppe_name, game_states):
+        """Prüft Bedingungen aller Eltern-Ebenen rekursiv über das 'gruppe'-Feld."""
+        current = gruppe_name
+        besucht = set()
+        
+        while current and current not in besucht:
+            besucht.add(current)
+            eintrag = self.settings.get(current, {})
             if not isinstance(eintrag, dict):
-                continue
+                break
+                
             conds = eintrag.get("condition_states", [])
             if conds and not self._condition_states_erfuellt(conds, game_states):
                 return False
+                
+            # Naechste Ebene nach oben
+            parent = eintrag.get("gruppe", "")
+            if parent == current: break # Circular guard
+            current = parent
+            
         return True
 
     def _hintergrund_maske_erstellen(self, bild_np, toleranz=30):
@@ -304,28 +311,29 @@ class TemplateEngine:
         bild_np = np.array(bild_pil.convert("RGB"))
 
         basis_name = name.split("__")[0]
-        # aktiv_gruppe: Gruppe ist immer der eigene Name
-        if typ == "aktiv_gruppe":
-            g_name = basis_name
-        else:
-            g_name = gruppe if gruppe else basis_name
+        # Ein Master (aktiv_gruppe) darf sich nicht selbst als Gruppe haben.
+        g_name = gruppe if gruppe and gruppe != name else ""
 
         # Kategorie früh bestimmen (wird für Pfad-Aufbau benötigt)
         if not kategorie:
             bestehend = self.settings.get(name, {})
             kategorie = bestehend.get("kategorie", "workflow")
 
-        # Ordnerpfad: aktiv_gruppe immer Master-Ebene; Templates folgen Gruppen-Hierarchie
+        # Ordnerpfad bestimmen
         if typ == "aktiv_gruppe":
-            ordner = os.path.join(TEMPLATES_ORDNER, kategorie, g_name)
-        else:
-            g_key = g_name.split("/")[-1]  # Kurzname = Settings-Key
-            if g_key in self.settings:
-                ordner = self._gruppe_ordnerpfad(g_key)
+            # Wenn es ein Master ist, ist sein Ordner der eigene Name (unter dem Parent)
+            if g_name:
+                ordner = os.path.join(TEMPLATES_ORDNER, kategorie, *g_name.split("/"), basis_name)
             else:
-                ordner = os.path.join(TEMPLATES_ORDNER, kategorie, g_name)
+                ordner = os.path.join(TEMPLATES_ORDNER, kategorie, basis_name)
+        else:
+            # Ein normales Template liegt im Ordner seiner Gruppe
+            if g_name:
+                ordner = self._gruppe_ordnerpfad(g_name.split("/")[-1] if "/" in g_name else g_name)
+            else:
+                ordner = os.path.join(TEMPLATES_ORDNER, kategorie)
+        
         os.makedirs(ordner, exist_ok=True)
-
         pfad = os.path.join(ordner, f"{name}.png")
 
         # Altes Template an anderer Stelle löschen?
@@ -634,26 +642,31 @@ class TemplateEngine:
         return self._gpu_cache[key]
 
     def _get_effective_regions(self, name):
-        """Gibt die Scan-Bereiche (ROI) für ein Template zurück (erbt von Gruppen falls nötig)."""
-        # 1. Eigene Regionen des Templates
-        tpl_data = self.templates.get(name)
-        if tpl_data and tpl_data.get("scan_regions"):
-            return tpl_data["scan_regions"]
-            
-        # 2. Gruppe prüfen (hierarchisch nach oben)
-        # Wir holen uns den Gruppen-Vollpfad
-        g = tpl_data["gruppe"] if tpl_data else self.settings.get(name, {}).get("gruppe")
-        if not g:
-            return []
-            
-        teile = g.split("/")
-        # Von unten nach oben suchen (spezifischere Gruppe zuerst)
-        for i in range(len(teile), 0, -1):
-            pfad = "/".join(teile[:i])
-            eintrag = self.settings.get(pfad, {})
-            if isinstance(eintrag, dict) and eintrag.get("scan_regions"):
-                return eintrag["scan_regions"]
+        """Gibt die Scan-Bereiche (ROI) für ein Template zurück (rekursive Vererbung von Gruppen)."""
+        current = name
+        besucht = set()
         
+        while current and current not in besucht:
+            besucht.add(current)
+            # 1. Prüfen ob Template-Daten oder Settings Regionen haben
+            data = self.templates.get(current)
+            if data and data.get("scan_regions"):
+                return data["scan_regions"]
+            
+            s = self.settings.get(current, {})
+            if isinstance(s, dict) and s.get("scan_regions"):
+                return s["scan_regions"]
+                
+            # 2. Ebene nach oben wandern
+            # Bei einem Template/Variante nehmen wir die Gruppe aus den Settings
+            parent = s.get("gruppe", "")
+            if not parent and data:
+                parent = data.get("gruppe", "")
+                
+            if parent == current or not parent:
+                break
+            current = parent
+            
         return []
 
     @torch.no_grad()

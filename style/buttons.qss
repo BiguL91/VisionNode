@@ -60,9 +60,34 @@ QPushButton#btn_del:hover {
 }
 
 /* ── Klein neutral ── */
-QPushButton#btn_sm {
+QPushButton#btn_sm,
+QPushButton#btn_ocr_action,
+QPushButton#btn_klick_action,
+QPushButton#btn_states_action,
+QPushButton#btn_ignorieren_action {
     padding: 4px 8px;
     min-width: 0;
+}
+
+QPushButton#btn_ocr_action {
+    color: #55aaff;
+}
+QPushButton#btn_ocr_action:hover {
+    background-color: #1a2a3a;
+}
+
+QPushButton#btn_klick_action {
+    color: #ff6600;
+}
+QPushButton#btn_klick_action:hover {
+    background-color: #3a251a;
+}
+
+QPushButton#btn_states_action {
+    color: #ffca28;
+}
+QPushButton#btn_states_action:hover {
+    background-color: #3a2a1a;
 }
 
 QPushButton#btn_sm:checked {
@@ -163,10 +188,17 @@ QPushButton#btn_debug_toggle:checked {
     border-color: #2ea043;
 }
 
-/* ── Klick-Button aktiv-Status ── */
-QPushButton#btn_klick[active="true"] {
-    background-color: #e65100;
+QPushButton#btn_klick_action[active="true"] {
+    background-color: #ff6600;
     color: #ffffff;
+    border-color: #ffcc88;
+}
+
+QPushButton#btn_sm[active="true"],
+QPushButton#btn_ignorieren_action[active="true"] {
+    background-color: #3a3a3a;
+    color: #ffffff;
+    border-color: #555555;
 }
 
 /* ── Master-Aktiv ── */

@@ -49,12 +49,12 @@ class TemplatePanel(QWidget):
             self.btn_bearbeiten.setObjectName("btn_sm")
             self.btn_loeschen   = QPushButton("✕ Lösch")
             self.btn_loeschen.setObjectName("btn_del_sm")
-            self.btn_ocr    = QPushButton("🔤 OCR")
-            self.btn_ocr.setObjectName("btn_sm")
-            self.btn_klick  = QPushButton("🖱 Klick")
-            self.btn_klick.setObjectName("btn_sm")
-            self.btn_gruppe = QPushButton("📦 Grupp")
-            self.btn_gruppe.setObjectName("btn_sm")
+            self.btn_ocr    = QPushButton(f"🔤 {lang.t('btn_ocr')}")
+            self.btn_ocr.setObjectName("btn_ocr_action")
+            self.btn_klick  = QPushButton(f"🖱 {lang.t('btn_click')}")
+            self.btn_klick.setObjectName("btn_klick_action")
+            self.btn_gruppe = QPushButton(f"🚩 {lang.t('tab_states')}")
+            self.btn_gruppe.setObjectName("btn_states_action")
 
             zeile1 = QHBoxLayout()
             zeile1.setSpacing(4)
@@ -84,38 +84,63 @@ class TemplatePanel(QWidget):
     def aktualisieren(self, templates: dict, settings: dict,
                       ocr_konfig: dict, klick_konfig: dict,
                       template_farbe_func, passive_gruppen_func):
-        """Baut die Liste neu auf."""
+        """Baut die Liste als echte Hierarchie neu auf."""
         self.liste.clear()
         self._last_gruppe = None
 
         templates_mit_ocr = {v.get("template") for v in ocr_konfig.values()}
 
+        # 1. Hilfsfunktion für Vollpfad-Berechnung
+        def get_vollpfad(name):
+            s = settings.get(name, {})
+            parent = s.get("gruppe", "")
+            if not parent or parent == name:
+                return name
+            return f"{parent}/{name}"
+
+        # 2. Daten sammeln und Baum strukturieren
+        # baum: { vollpfad_parent: [namen_der_kinder] }
+        baum = defaultdict(list)
+        name_to_vollpfad = {}
+
+        # Alle Templates (Master) sammeln
+        for name in templates.keys():
+            if name.startswith("_") or "__" in name:
+                continue
+            s = settings.get(name, {})
+            kat = s.get("kategorie", "workflow")
+            if self.filter_modus != "all" and kat != self.filter_modus:
+                continue
+            
+            vp = get_vollpfad(name)
+            name_to_vollpfad[name] = vp
+            
+            parent_pfad = s.get("gruppe", "")
+            # CLEANUP: Wenn gruppe == name, ist es ein Root-Master
+            if parent_pfad == name: 
+                parent_pfad = ""
+            
+            baum[parent_pfad].append(name)
+
+        # Alle passiven Gruppen sammeln
+        passiv_keys = passive_gruppen_func(self.filter_modus)
+        for p_name in passiv_keys:
+            vp = get_vollpfad(p_name)
+            name_to_vollpfad[p_name] = vp
+            
+            s = settings.get(p_name, {})
+            parent_pfad = s.get("gruppe", "")
+            # CLEANUP: Wenn gruppe == name, ist es ein Root-Master
+            if parent_pfad == p_name:
+                parent_pfad = ""
+                
+            if p_name not in baum[parent_pfad]:
+                baum[parent_pfad].append(p_name)
+
         # Varianten zählen
         varianten_count: dict[str, int] = defaultdict(int)
         for t_name in templates.keys():
             varianten_count[t_name.split("__")[0]] += 1
-
-        # Nach Gruppen sortieren
-        nach_gruppen: dict[str, list] = defaultdict(list)
-        for name, t in templates.items():
-            if name.startswith("_") or "__" in name:
-                continue
-            tpl_s = settings.get(name, {})
-            kategorie = tpl_s.get("kategorie", "workflow")
-            if self.filter_modus == "state" and kategorie != "state":
-                continue
-            if self.filter_modus == "workflow" and kategorie != "workflow":
-                continue
-            g = (t["gruppe"] or "").strip().replace("\\", "/")
-            nach_gruppen[g].append(name)
-
-        aktive_gruppen = set(nach_gruppen.keys()) - {""}
-        passive_gruppen = set(passive_gruppen_func(self.filter_modus))
-        alle_gruppen_set = aktive_gruppen | passive_gruppen
-        alle_gruppen = sorted(
-            alle_gruppen_set | {""} if "" in nach_gruppen else alle_gruppen_set,
-            key=lambda x: (x != "", x.lower())
-        )
 
         def mark(name):
             s = settings.get(name, {})
@@ -126,54 +151,65 @@ class TemplatePanel(QWidget):
             if s.get("scan_regions"): m += " 🎯"
             return m
 
-        if not alle_gruppen:
+        # 3. Rekursive Render-Funktion
+        from PyQt6.QtCore import QSize
+        
+        def render_node(node_name, tiefe=0):
+            praefix = "    " * (tiefe - 1) + "    └─ " if tiefe > 0 else ""
+            
+            s = settings.get(node_name, {})
+            typ = s.get("typ", "template")
+            kurzname = node_name
+            vollpfad = name_to_vollpfad.get(node_name, node_name)
+            
+            # Icon und Farbe bestimmen
+            farbe = "#cccccc"
+            icon = ""
+            cfg_mark = " ⚙" if s.get("condition_states") else ""
+            
+            if typ == "aktiv_gruppe":
+                icon = "★ "
+                farbe = "#ffca28"
+            elif typ == "passiv_gruppe":
+                icon = "📦 "
+                farbe = "#7a9abf"
+            elif node_name in templates: # Normales Template
+                farbe = "#cccccc"
+            else: # Unbekannter Ordner/Gruppe
+                icon = "📁 "
+                farbe = "#888888"
+
+            # Item hinzufügen
+            v = f" ({varianten_count[node_name]})" if varianten_count[node_name] > 1 else ""
+            label = f"{praefix}{icon}[{kurzname}]{v}{mark(node_name)}{cfg_mark}" if icon else f"{praefix}{kurzname}{v}{mark(node_name)}{cfg_mark}"
+            
+            self._item(label, farbe, gruppe_key=node_name if typ in ("aktiv_gruppe", "passiv_gruppe") else None)
+
+            # Kinder rendern (Templates die diesen Vollpfad als 'gruppe' haben)
+            kinder = sorted(baum.get(vollpfad, []), key=lambda x: (settings.get(x, {}).get("typ") != "template", x.lower()))
+            for kind in kinder:
+                if kind == node_name:
+                    continue
+                render_node(kind, tiefe + 1)
+
+        # 4. Startpunkt: Root-Elemente (parent_pfad == "")
+        root_items = sorted(baum.get("", []), key=lambda x: (settings.get(x, {}).get("typ") == "template", x.lower()))
+        
+        if not root_items:
             self._item("  (Keine Einträge)", "#555555")
             return
 
-        from PyQt6.QtCore import QSize
-        for i, gruppe in enumerate(alle_gruppen):
-            # Trennlinie VOR jeder Gruppe (außer der ersten)
+        for i, root_name in enumerate(root_items):
             if i > 0:
                 sep = QListWidgetItem("──────────────────────────")
                 sep.setFlags(Qt.ItemFlag.NoItemFlags)
                 sep.setForeground(QColor("#333333"))
-                sep.setSizeHint(QSize(0, 12))  # Sehr flache Trennlinie
+                sep.setSizeHint(QSize(0, 12))
                 sep.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.liste.addItem(sep)
+            
+            render_node(root_name, tiefe=0)
 
-            if not gruppe:
-                self._item("[Global]", "#888888", gruppe_key="")
-                for name in sorted(nach_gruppen[""]):
-                    v = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
-                    self._item(f"  {name}{v}{mark(name)}", "#cccccc")
-            else:
-                kurzname = gruppe.split("/")[-1]
-                tiefe    = gruppe.count("/")
-                basis_einzug = "    " * tiefe
-                praefix = ("    " * (tiefe - 1) + "    └─ ") if tiefe > 0 else ""
-
-                hat_master = kurzname in [t.split("/")[-1] for t in nach_gruppen.get(gruppe, [])]
-                ist_passiv = gruppe in passive_gruppen
-                hat_cfg = (kurzname in settings and isinstance(settings[kurzname], dict)
-                           and bool(settings[kurzname].get("condition_states")))
-                cfg_mark = " ⚙" if hat_cfg else ""
-
-                if hat_master:
-                    v = f" ({varianten_count[gruppe]})" if varianten_count[gruppe] > 1 else ""
-                    self._item(f"{praefix}★ [{kurzname}]{v}{mark(gruppe)}{cfg_mark}",
-                               "#ffca28", gruppe_key=gruppe)
-                elif ist_passiv:
-                    self._item(f"{praefix}📦 [{kurzname}]{mark(kurzname)}{cfg_mark}",
-                               "#7a9abf", gruppe_key=gruppe)
-                else:
-                    self._item(f"{praefix}📁 [{kurzname}]{mark(kurzname)}{cfg_mark}",
-                               "#888888", gruppe_key=gruppe)
-
-                for name in sorted(nach_gruppen.get(gruppe, [])):
-                    if name == gruppe:
-                        continue
-                    v = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
-                    self._item(f"{basis_einzug}    └─ {name}{v}{mark(name)}", "#cccccc")
 
     def get_auswahl_name(self) -> str | None:
         item = self.liste.currentItem()

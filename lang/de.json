@@ -26,6 +26,9 @@
   "btn_apply": "Übernehmen",
   "btn_test": "Test",
   "btn_only_active": "Nur Aktive",
+  "btn_ocr": "OCR",
+  "btn_click": "Klick-Zone",
+  "tab_states": "Zustände",
 
   "panel_workflows": "WORKFLOWS",
   "panel_workflow_templates": "WORKFLOW TEMPLATES",

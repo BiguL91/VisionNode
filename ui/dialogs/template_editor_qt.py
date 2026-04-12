@@ -270,13 +270,13 @@ class TemplateEditorQt(QDialog):
         tb_lay.setSpacing(4)
 
         self._btn_ignorieren = QPushButton("■ Ignorieren")
-        self._btn_ignorieren.setObjectName("btn_sm")
+        self._btn_ignorieren.setObjectName("btn_ignorieren_action")
         self._btn_ignorieren.setCursor(Qt.CursorShape.PointingHandCursor)
         # Modus-Styling wird via property gesteuert
         self._btn_ignorieren.clicked.connect(lambda: self._modus_setzen("ignore"))
 
-        self._btn_klick = QPushButton("⊕ Klick-Zone")
-        self._btn_klick.setObjectName("btn_sm")
+        self._btn_klick = QPushButton(f"🖱 {lang.t('btn_click')}")
+        self._btn_klick.setObjectName("btn_klick_action")
         self._btn_klick.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_klick.clicked.connect(lambda: self._modus_setzen("klick"))
 

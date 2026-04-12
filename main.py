@@ -446,12 +446,12 @@ class TilesBotWindow(QMainWindow):
 
         zeile2 = QHBoxLayout()
         zeile2.setSpacing(4)
-        btn_ocr      = QPushButton("🔤 OCR")
-        btn_ocr.setObjectName("btn_sm")
-        btn_klick    = QPushButton("🖱 Klick")
-        btn_klick.setObjectName("btn_sm")
-        btn_gruppe   = QPushButton("📦 Gruppe")
-        btn_gruppe.setObjectName("btn_sm")
+        btn_ocr      = QPushButton(f"🔤 {lang.t('btn_ocr')}")
+        btn_ocr.setObjectName("btn_ocr_action")
+        btn_klick    = QPushButton(f"🖱 {lang.t('btn_click')}")
+        btn_klick.setObjectName("btn_klick_action")
+        btn_gruppe   = QPushButton(f"🚩 {lang.t('tab_states')}")
+        btn_gruppe.setObjectName("btn_states_action")
         for btn in [btn_ocr, btn_klick, btn_gruppe]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             zeile2.addWidget(btn)
