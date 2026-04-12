@@ -268,27 +268,64 @@ class TemplateEngine:
                 return True
         return False
 
-    def _eltern_conditions_pruefen(self, gruppe_name, game_states):
-        """Prüft Bedingungen aller Eltern-Ebenen rekursiv über das 'gruppe'-Feld."""
-        current = gruppe_name
+    def _eltern_conditions_pruefen(self, pfad, game_states):
+        """Prüft Bedingungen aller Eltern-Ebenen rekursiv über einen Vollpfad."""
+        if not pfad: return True
+        current_path = pfad
         besucht = set()
         
-        while current and current not in besucht:
-            besucht.add(current)
-            eintrag = self.settings.get(current, {})
-            if not isinstance(eintrag, dict):
-                break
-                
-            conds = eintrag.get("condition_states", [])
-            if conds and not self._condition_states_erfuellt(conds, game_states):
-                return False
-                
-            # Naechste Ebene nach oben
-            parent = eintrag.get("gruppe", "")
-            if parent == current: break # Circular guard
-            current = parent
+        while current_path:
+            teile = current_path.split("/")
+            leaf = teile[-1]
+            if leaf in besucht: break
+            besucht.add(leaf)
             
+            eintrag = self.settings.get(leaf, {})
+            if isinstance(eintrag, dict):
+                conds = eintrag.get("condition_states", [])
+                if conds and not self._condition_states_erfuellt(conds, game_states):
+                    return False
+                
+                # Nächste Ebene im Pfad nach oben (z.B. A/B/C -> A/B)
+                if len(teile) > 1:
+                    current_path = "/".join(teile[:-1])
+                else:
+                    # Ende des Pfades erreicht, schauen ob Root-Master noch ein Parent hat
+                    current_path = eintrag.get("gruppe", "")
+            else:
+                break
         return True
+
+    def _get_effective_regions(self, name):
+        """Gibt die Scan-Bereiche (ROI) für ein Template zurück (rekursive Vererbung)."""
+        # 1. Das Template selbst prüfen
+        s = self.settings.get(name, {})
+        if isinstance(s, dict) and s.get("scan_regions"):
+            return s["scan_regions"]
+        
+        # 2. Eltern-Hierarchie über den Pfad abklappern
+        current_path = s.get("gruppe", "") if isinstance(s, dict) else ""
+        besucht = {name}
+        
+        while current_path:
+            teile = current_path.split("/")
+            leaf = teile[-1]
+            if leaf in besucht: break
+            besucht.add(leaf)
+            
+            eintrag = self.settings.get(leaf, {})
+            if isinstance(eintrag, dict):
+                if eintrag.get("scan_regions"):
+                    return eintrag["scan_regions"]
+                
+                # Eine Ebene höher gehen
+                if len(teile) > 1:
+                    current_path = "/".join(teile[:-1])
+                else:
+                    current_path = eintrag.get("gruppe", "")
+            else:
+                break
+        return []
 
     def _hintergrund_maske_erstellen(self, bild_np, toleranz=30):
         h, w = bild_np.shape[:2]
@@ -640,34 +677,6 @@ class TemplateEngine:
             t_norm = t_zm.pow(2).sum().sqrt()
             self._gpu_cache[key] = {"t_zm": t_zm, "t_norm": t_norm, "N": N, "is_masked": False}
         return self._gpu_cache[key]
-
-    def _get_effective_regions(self, name):
-        """Gibt die Scan-Bereiche (ROI) für ein Template zurück (rekursive Vererbung von Gruppen)."""
-        current = name
-        besucht = set()
-        
-        while current and current not in besucht:
-            besucht.add(current)
-            # 1. Prüfen ob Template-Daten oder Settings Regionen haben
-            data = self.templates.get(current)
-            if data and data.get("scan_regions"):
-                return data["scan_regions"]
-            
-            s = self.settings.get(current, {})
-            if isinstance(s, dict) and s.get("scan_regions"):
-                return s["scan_regions"]
-                
-            # 2. Ebene nach oben wandern
-            # Bei einem Template/Variante nehmen wir die Gruppe aus den Settings
-            parent = s.get("gruppe", "")
-            if not parent and data:
-                parent = data.get("gruppe", "")
-                
-            if parent == current or not parent:
-                break
-            current = parent
-            
-        return []
 
     @torch.no_grad()
     def matches_suchen_np(self, screenshot_bgr, game_states=None):

@@ -4,6 +4,7 @@ Kernlogik (template_engine, action_engine, bot) bleibt vollständig unangetastet
 """
 from __future__ import annotations
 import os
+from lang import lang
 
 try:
     import cv2
@@ -220,7 +221,10 @@ class TemplateEditorQt(QDialog):
             self.orig_bild_ref = aktueller_ausschnitt[0]
         self.einlern_modus_callback = einlern_modus_callback
 
-        self.setWindowTitle("Template aktualisieren" if bearbeiten_name else "Template speichern")
+        # Dynamischen Fenstertitel setzen
+        prefix = "Template" if bearbeiten_name else "Neues Template"
+        self.setWindowTitle(f"{prefix}: {bearbeiten_name or initial_name or '??'}")
+        
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.setModal(False)
 
@@ -838,7 +842,8 @@ class TemplateEditorQt(QDialog):
 
     def _states_konfigurieren(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Zustände konfigurieren")
+        name = self.bearbeiten_name or self.name_entry.text().strip() or "Unbenannt"
+        dialog.setWindowTitle(f"Zustände: {name}")
         dialog.setMinimumSize(600, 540)
         dialog.setObjectName("template_states_dialog")
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
