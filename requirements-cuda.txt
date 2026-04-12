@@ -1,0 +1,12 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+pywin32
+opencv-python
+easyocr
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+Pillow
+mss
+windows-capture
+PyYAML
+numpy
+PyQt6

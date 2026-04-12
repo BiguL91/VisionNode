@@ -4,7 +4,7 @@ Daten-Listen-Editor (Qt). Ersetzt DatenListeEditor (tkinter).
 Tabs: OCR-Transform | Berechnung | Struktur | Mapping
 """
 import time
-import lang
+from lang import lang
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QTabWidget, QWidget, QScrollArea, QFrame,

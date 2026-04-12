@@ -1,57 +1,42 @@
-# ── Virtuelle Umgebung ─────────────────────────────────────────
+# ── Virtuelle Umgebungen ──
 .venv/
 .venv313/
 venv/
 env/
 
-# ── Python Cache ────────────────────────────────────────────────
+# ── Python Cache ──
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# ── Lokale App-Konfiguration (Fenstergröße etc.) ────────────────
-app_config.json
-
-# ── Benutzerdaten (spielspezifisch, nicht ins Repo) ─────────────
+# ── Benutzerdaten (Lokal / Spielspezifisch) ──
+# Hier liegen alle PNGs, JSONs und DB-Dateien
 templates/
 snapshots/
 debug/
-settings.json
-template_settings.json
-template_klicks.json
-template_ocr.json
-template_farben.json
-ocr_regionen.json
-schedule.json
-workflows.json
-master_workflows.json
 
-# ── Lokale Dokumentation (nicht öffentlich) ─────────────────────
+# ── Lokale Dokumentation ──
 ai.md
 UNRELEASED.md
 REINFORCEMENT.md
 ideen.md
 überlegung.md
 
-# ── Claude Code / IDE ───────────────────────────────────────────
+# ── Claude Code / IDE ──
 .claude/
 
-# ── Backup & Entwicklungsartefakte ──────────────────────────────
+# ── Backup & temporäre Artefakte ──
 backup/
-engines/
-loops.py
-bug.png
-test.png
-test.py
-
-# ── Datenbank (lokale Nutzerdaten & SQLite-Hilfsdateien) ─────────
-*.db
-*.db-journal
-*.db-shm
-*.db-wal
-
-# ── Sonstiges ───────────────────────────────────────────────────
 *.log
 *.tmp
 *.txt
+!requirements.txt
+!requirements-cuda.txt
+bug.png
+test.png
+
+# ── SQLite Hilfsdateien ──
+*.db-journal
+*.db-shm
+*.db-wal

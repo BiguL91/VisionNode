@@ -1,7 +1,7 @@
 """Lädt alle QSS-Dateien aus dem style/ Ordner und gibt sie kombiniert zurück."""
 import os
 
-_STYLE_DIR = os.path.join(os.path.dirname(__file__), "style")
+_STYLE_DIR = os.path.dirname(__file__)
 
 # Reihenfolge ist wichtig: base zuerst, dann spezifische (CSS-Kaskade)
 _ORDER = ["base", "scrollbars", "buttons", "inputs", "tables", "panels", "dialogs"]

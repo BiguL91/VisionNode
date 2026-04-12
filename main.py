@@ -1,535 +1,1179 @@
-import tkinter as tk
-import threading
-import time
-import json
+"""
+TilesBot Hauptfenster (Qt) — Ersetzt main.py (tkinter).
+Einstiegspunkt: python main_qt.py
+
+Architektur:
+    VorschauLabel   — Custom QLabel für Live-Vorschau + Overlays + Einlern-Maus
+    TilesBotWindow  — QMainWindow, verbindet alle Qt-Panels via Signals
+"""
+from __future__ import annotations
 import os
-import cv2
-from PIL import Image, ImageTk
+import json
+import threading
 
+from style import style
+
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
+    QPushButton, QLabel, QLineEdit, QComboBox, QInputDialog,
+    QMessageBox, QScrollArea, QSizePolicy, QApplication, QFrame,
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG
+from PyQt6.QtGui import (
+    QImage, QPixmap, QPainter, QPen, QColor, QFont, QCloseEvent,
+)
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from PIL import Image as _PILImage
+except ImportError:
+    _PILImage = None
+
+# ── Core ─────────────────────────────────────────────────────────────────────
 from core.main_app import TilesBotApp
-from ui_panels import PanelsMixin
-from ui_dialoge import DialogeMixin
-from einlern import EinlernMixin
-from helpers import _template_farbe
+from core.helpers import _template_farbe
 
-APP_CONFIG_DATEI = "app_config.json"
+# ── Qt Panels ─────────────────────────────────────────────────────────────────
+from ui.panels.log_panel_qt      import LogPanel      as LogPanelQt
+from ui.panels.state_panel_qt    import StatePanel    as StatePanelQt
+from ui.panels.workflow_panel_qt import WorkflowPanel as WorkflowPanelQt
+from ui.panels.variable_panel_qt import VariablePanel as VariablePanelQt
+from ui.panels.template_panel_qt import TemplatePanel as TemplatePanelQt
+from ui.panels.daten_panel_qt    import DatenPanel    as DatenPanelQt
 
-class TilesBot(PanelsMixin, DialogeMixin, EinlernMixin):
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Ai-Bot")
-        self.root.configure(bg="#1e1e1e")
-        self._fenster_automatisch_skaliert = False
+# ── Qt Widgets / Dialoge ──────────────────────────────────────────────────────
+from ui.widgets.collapsible_panel  import CollapsiblePanel
+from ui.dialogs.template_editor_qt import TemplateEditorQt
+from ui.dialogs.workflow_editor_qt import WorkflowEditorDialogQt
+from ui.dialogs.daten_editor_qt    import DatenListeEditorQt
+from ui.dialogs.einheiten_dialog_qt import EinheitenDialogQt
+from ui.dialogs.typ_dialog_qt      import TypDialog
+from ui.dialogs.legende_dialog_qt  import LegendDialog
+from ui.dialogs.state_dialogs_qt   import StateHinzufuegenDialog, StateUmbenennenDialog
+from ui.dialogs.settings_dialog_qt import SettingsDialog
+from ui.dialogs.gruppe_editor_qt   import GruppeEditorQt
+from ui.dialogs.ocr_dialog_qt      import OCRKonfigDialog
 
-        # Core App initialisieren
+APP_CONFIG_DATEI = os.path.join("templates", "settings", "app_config.json")
+DISPLAY_FPS_DEFAULT = 30
+
+
+# ── Helper ───────────────────────────────────────────────────────────────────
+
+def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float, int, int]:
+    """BGR numpy → QPixmap, skaliert auf max_w × max_h.
+    Gibt (pixmap, scale, offset_x, offset_y) zurück.
+    """
+    if cv2 is None:
+        return QPixmap(), 1.0, 0, 0
+    h, w = frame_bgr.shape[:2]
+    skala = min(max_w / w, max_h / h)
+    nw, nh = int(w * skala), int(h * skala)
+    resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
+    pm = QPixmap.fromImage(qimg)
+    ox = (max_w - nw) // 2
+    oy = (max_h - nh) // 2
+    return pm, skala, ox, oy
+
+
+# ── VorschauLabel ─────────────────────────────────────────────────────────────
+
+class VorschauLabel(QLabel):
+    """Live-Preview Widget.
+    - Zeichnet Frame + Overlays (Match-Boxen, OCR-Regionen) via paintEvent
+    - Maus-Drag für Einlern-/OCR-Modus: emittiert region_ausgewaehlt
+    """
+    region_ausgewaehlt = pyqtSignal(int, int, int, int)  # orig x0,y0,x1,y1
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet("background:#1a1a1a;")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(400, 300)
+
+        self._pixmap:    QPixmap | None = None
+        self._skala:     float          = 1.0
+        self._offset_x:  int            = 0
+        self._offset_y:  int            = 0
+        self._status:    str            = "Suche MEMUPlayer..."
+
+        self._matches:       list  = []
+        self._ocr_regionen:  dict  = {}
+        self._ocr_werte:     dict  = {}
+        self._ocr_konf:      dict  = {}   # template_ocr configurations
+
+        self._aktiv:    bool            = False   # Einlern/OCR-Modus aktiv
+        self._start:    QPoint | None   = None
+        self._current:  QPoint | None   = None
+
+    # ── Daten-Update ──────────────────────────────────────────────────────────
+
+    def set_frame(self, frame_bgr, matches, ocr_regionen, ocr_werte, template_ocr_konf):
+        w, h = self.width(), self.height()
+        if w < 10 or h < 10:
+            return
+        pm, skala, ox, oy = _frame_to_qpixmap(frame_bgr, w, h)
+        self._pixmap    = pm
+        self._skala     = skala
+        self._offset_x  = ox
+        self._offset_y  = oy
+        self._matches       = matches
+        self._ocr_regionen  = ocr_regionen
+        self._ocr_werte     = ocr_werte
+        self._ocr_konf      = template_ocr_konf
+        self.update()
+
+    def set_status(self, text: str):
+        self._status = text
+        self._pixmap = None
+        self.update()
+
+    # ── Einlern-Modus ─────────────────────────────────────────────────────────
+
+    def set_aktiv(self, aktiv: bool):
+        self._aktiv  = aktiv
+        self._start  = None
+        self._current = None
+        self.setCursor(
+            Qt.CursorShape.CrossCursor if aktiv else Qt.CursorShape.ArrowCursor
+        )
+        self.update()
+
+    def _screen_to_orig(self, pos: QPoint) -> tuple[int, int]:
+        return (
+            int((pos.x() - self._offset_x) / self._skala),
+            int((pos.y() - self._offset_y) / self._skala),
+        )
+
+    def mousePressEvent(self, e):
+        if not self._aktiv:
+            return
+        self._start   = e.pos()
+        self._current = e.pos()
+        self.update()
+
+    def mouseMoveEvent(self, e):
+        if not self._aktiv or not self._start:
+            return
+        self._current = e.pos()
+        self.update()
+
+    def mouseReleaseEvent(self, e):
+        if not self._aktiv or not self._start:
+            return
+        x0, y0 = self._screen_to_orig(self._start)
+        x1, y1 = self._screen_to_orig(e.pos())
+        self._start   = None
+        self._current = None
+        self.update()
+        if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
+            self.region_ausgewaehlt.emit(
+                min(x0, x1), min(y0, y1),
+                max(x0, x1), max(y0, y1),
+            )
+
+    # ── Paint ─────────────────────────────────────────────────────────────────
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor("#1a1a1a"))
+
+        if self._pixmap:
+            p.drawPixmap(self._offset_x, self._offset_y, self._pixmap)
+            self._zeichne_overlays(p)
+        else:
+            p.setPen(QColor("#555555"))
+            p.setFont(QFont("Segoe UI", 11))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._status)
+
+        # Auswahl-Rechteck im Einlern-Modus
+        if self._aktiv and self._start and self._current:
+            pen = QPen(QColor("#1e88e5"), 2, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            x0 = min(self._start.x(), self._current.x())
+            y0 = min(self._start.y(), self._current.y())
+            x1 = max(self._start.x(), self._current.x())
+            y1 = max(self._start.y(), self._current.y())
+            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+
+        p.end()
+
+    def _zeichne_overlays(self, p: QPainter):
+        ox, oy, s = self._offset_x, self._offset_y, self._skala
+        p.setFont(QFont("Segoe UI", 7))
+
+        # 1. Globale OCR-Regionen
+        p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
+        for r_name, r in self._ocr_regionen.items():
+            rx = int(ox + r["x"] * s)
+            ry = int(oy + r["y"] * s)
+            rw = int(r["breite"] * s)
+            rh = int(r["hoehe"] * s)
+            p.drawRect(rx, ry, rw, rh)
+            val = self._ocr_werte.get(r_name, "")
+            p.setPen(QColor("#ffca28"))
+            p.drawText(rx + 2, ry + 12, f"{r_name}: {val}")
+            p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
+
+        # 2. Template-OCR nach Template gruppieren
+        ocr_by_tmpl: dict[str, list] = {}
+        for k, cfg in self._ocr_konf.items():
+            ocr_by_tmpl.setdefault(cfg.get("template", k), []).append(cfg)
+
+        # 3. Matches
+        for match in self._matches:
+            name, mx, my, mw, mh, score = match[:6]
+            farbe = QColor(_template_farbe(name))
+            cx = int(ox + mx * s)
+            cy = int(oy + my * s)
+            cw = int(mw * s)
+            ch = int(mh * s)
+
+            p.setPen(QPen(farbe, 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(cx, cy, cw, ch)
+
+            p.setPen(farbe)
+            p.drawText(cx + 2, max(cy - 2, 10), f"{name} {score:.2f}")
+
+            # Template-OCR Crop-Bereiche
+            for cfg in ocr_by_tmpl.get(name, []):
+                cl = cfg.get("crop_links",  0) / 100
+                co = cfg.get("crop_oben",   0) / 100
+                cr = cfg.get("crop_rechts", 0) / 100
+                cu = cfg.get("crop_unten",  0) / 100
+                rcx = int(cx + cl * cw)
+                rcy = int(cy + co * ch)
+                rcw = int(cw * (1 - cl - cr))
+                rch = int(ch * (1 - co - cu))
+                p.setPen(QPen(QColor("#00bcd4"), 1, Qt.PenStyle.DashLine))
+                p.drawRect(rcx, rcy, rcw, rch)
+
+
+# ── Hauptfenster ──────────────────────────────────────────────────────────────
+
+class TilesBotWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Ai-Bot")
+
+        # Core
         self.app = TilesBotApp(log_callback=self._log)
-        
-        # Abwärtskompatibilität für Mixins (Shortcuts zu den Engines)
-        self.template_engine = self.app.template_engine
-        self.ocr_engine = self.app.ocr_engine
-        self.action_engine = self.app.action_engine
-        self.workflow_engine = self.app.workflow_engine
-        self.einstellungen = self.app.settings
+        self.template_engine  = self.app.template_engine
+        self.ocr_engine       = self.app.ocr_engine
+        self.action_engine    = self.app.action_engine
+        self.workflow_engine  = self.app.workflow_engine
+        self.einstellungen    = self.app.settings
 
         # UI State
         self.einlern_modus = False
-        self._bearbeiten_name = None
+        self.ocr_modus     = False
+        self._geplanter_typ      = None
+        self._geplante_kategorie = None
         self._aktueller_ausschnitt = None
-        self._einlern_dialog_fenster = None
-        self._einlern_vorschau_callback = None
-        self.ocr_modus = False
-        self._nur_aktive_variablen = False
-        self._ocr_konfig_callback = None
-        
-        # Zeichnen State
-        self._vorschau_foto = None
-        self.auswahl_start = None
-        self.auswahl_rect_id = None
+        self._aktiver_template_panel = None
+        self._nur_aktive_variablen   = False
 
         self._gui_aufbauen()
+        self._connect_signals()
         self._fenster_groesse_initialisieren()
-        self._canvas_maus_binden()
-        
-        # Start Sequenz
+
+        # Panels initial befüllen
+        self._panels_aktualisieren()
+
+        # Start-Sequenz
         if self.app.find_memu():
             self.app.start()
             self._start_display_loop()
         else:
-            self._log("MEMUPlayer nicht gefunden. Bitte starten.")
+            self._vorschau.set_status("MEMUPlayer nicht gefunden. Bitte starten.")
             self._check_memu_retry()
+
+    # ── GUI Aufbau ────────────────────────────────────────────────────────────
+
+    def _gui_aufbauen(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(8, 8, 8, 0)
+        root.setSpacing(0)
+
+        # ── Haupt-Splitter ────────────────────────────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
+        root.addWidget(splitter, stretch=1)
+
+        # Linke Spalte (Workflows)
+        self._spalte_links = self._setup_linke_spalte()
+        splitter.addWidget(self._spalte_links)
+
+        # Mitte (Live-Vorschau)
+        self._vorschau = VorschauLabel()
+        splitter.addWidget(self._vorschau)
+
+        # Rechte Spalte 1 (Templates, OCR, State, Log)
+        self._spalte_rechts1 = self._setup_rechte_spalte1()
+        splitter.addWidget(self._spalte_rechts1)
+
+        # Rechte Spalte 2 (Daten-Listen)
+        self._spalte_rechts2 = self._setup_rechte_spalte2()
+        splitter.addWidget(self._spalte_rechts2)
+
+        splitter.setSizes([260, 800, 320, 280])
+        splitter.setStretchFactor(1, 1)  # Vorschau nimmt restlichen Platz
+
+        # ── Toolbar ───────────────────────────────────────────────────────────
+        toolbar = self._setup_toolbar()
+        root.addWidget(toolbar)
+
+    def _setup_linke_spalte(self) -> QWidget:
+        w = QWidget()
+        w.setMinimumWidth(200)
+        l = QVBoxLayout(w)
+        l.setContentsMargins(0, 0, 4, 0)
+        l.setSpacing(0)
+
+        panel = CollapsiblePanel("WORKFLOWS", expanded=True, stretch=True)
+        self.workflow_panel = WorkflowPanelQt()
+        panel.content_layout.addWidget(self.workflow_panel)
+        l.addWidget(panel, stretch=1)
+        return w
+
+    def _setup_rechte_spalte1(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumWidth(260)
+
+        container = QWidget()
+        l = QVBoxLayout(container)
+        l.setContentsMargins(4, 0, 0, 0)
+        l.setSpacing(0)
+
+        # Workflow-Templates
+        wt_panel = CollapsiblePanel("WORKFLOW TEMPLATES", expanded=True, stretch=True)
+        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True)
+        wt_panel.content_layout.addWidget(self.template_panel)
+
+        # Neu-Button im Header
+        btn_neu = QPushButton("+ Neu")
+        btn_neu.setStyleSheet("background:#1a3a1a;color:#55ff88;font-size:10px;padding:1px 6px;")
+        btn_neu.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_neu.clicked.connect(self._template_neu_erstellen)
+        wt_panel.set_header_extra(btn_neu)
+        l.addWidget(wt_panel, stretch=2)
+
+        # State-Templates
+        st_panel = CollapsiblePanel("STATE TEMPLATES", expanded=True)
+        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=True)
+        st_panel.content_layout.addWidget(self.state_template_panel)
+        l.addWidget(st_panel)
+
+        # OCR-Variablen
+        ocr_panel_coll = CollapsiblePanel("OCR VARIABLEN", expanded=True, stretch=True)
+        self.ocr_panel = VariablePanelQt()
+        ocr_panel_coll.content_layout.addWidget(self.ocr_panel)
+        # Nur-Aktive Button im Header
+        self._btn_nur_aktive = QPushButton("Nur Aktive")
+        self._btn_nur_aktive.setCheckable(True)
+        self._btn_nur_aktive.setStyleSheet("background:#1a1a1a;color:#555555;font-size:10px;padding:1px 6px;")
+        self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_nur_aktive.toggled.connect(self._nur_aktive_toggle)
+        ocr_panel_coll.set_header_extra(self._btn_nur_aktive)
+        l.addWidget(ocr_panel_coll, stretch=2)
+
+        # State-Variablen
+        sv_panel = CollapsiblePanel("STATE VARIABLEN", expanded=True)
+        self.state_panel = StatePanelQt()
+        sv_panel.content_layout.addWidget(self.state_panel)
+        # Hinzufügen-Button im Header
+        btn_add_state = QPushButton("➕")
+        btn_add_state.setStyleSheet("background:#1a1a1a;color:#555555;font-size:10px;padding:1px 6px;")
+        btn_add_state.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_add_state.clicked.connect(self._state_hinzufuegen)
+        sv_panel.set_header_extra(btn_add_state)
+        l.addWidget(sv_panel)
+
+        # Log
+        log_panel_coll = CollapsiblePanel("LOG", expanded=True, stretch=True)
+        self.log_panel = LogPanelQt()
+        log_panel_coll.content_layout.addWidget(self.log_panel)
+        l.addWidget(log_panel_coll, stretch=2)
+
+        l.addStretch()
+        scroll.setWidget(container)
+        return scroll
+
+    def _setup_rechte_spalte2(self) -> QWidget:
+        w = QWidget()
+        w.setMinimumWidth(220)
+        l = QVBoxLayout(w)
+        l.setContentsMargins(4, 0, 0, 0)
+        l.setSpacing(0)
+
+        panel = CollapsiblePanel("DATEN-LISTEN", expanded=True, stretch=True)
+        self.daten_panel = DatenPanelQt(bot_ref=self)
+        panel.content_layout.addWidget(self.daten_panel)
+        l.addWidget(panel, stretch=1)
+        return w
+
+    def _setup_toolbar(self) -> QWidget:
+        toolbar = QFrame()
+        toolbar.setObjectName("toolbar_frame")
+        toolbar.setStyleSheet("QFrame#toolbar_frame{background:#252525;}")
+        toolbar.setFixedHeight(44)
+
+        l = QHBoxLayout(toolbar)
+        l.setContentsMargins(10, 4, 10, 4)
+        l.setSpacing(6)
+
+        # Start / Stop
+        self.start_btn = QPushButton("▶ Start")
+        self.start_btn.setObjectName("btn_start")
+        self.start_btn.clicked.connect(self._start)
+        l.addWidget(self.start_btn)
+
+        self.stop_btn = QPushButton("■ Stop")
+        self.stop_btn.setObjectName("btn_stop")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._stop)
+        l.addWidget(self.stop_btn)
+
+        # Status
+        self.status_label = QLabel("● Bereit")
+        self.status_label.setStyleSheet("color:#888888;")
+        l.addWidget(self.status_label)
+
+        l.addStretch()
+
+        # Rechts: Debug / OCR / + Template / Snapshot / Einstellungen / ?
+        self.debug_btn = QPushButton("● Debug Aus")
+        self.debug_btn.setStyleSheet("background:#3a3a3a;color:#555555;")
+        self.debug_btn.clicked.connect(self._debug_umschalten)
+        l.addWidget(self.debug_btn)
+
+        self.ocr_btn = QPushButton("+ OCR-Region")
+        self.ocr_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        self.ocr_btn.clicked.connect(self._ocr_modus_umschalten)
+        l.addWidget(self.ocr_btn)
+
+        self.einlern_btn = QPushButton("+ Template")
+        self.einlern_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        self.einlern_btn.clicked.connect(self._einlern_modus_umschalten)
+        l.addWidget(self.einlern_btn)
+
+        snapshot_btn = QPushButton("📸 Snapshot")
+        snapshot_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        snapshot_btn.clicked.connect(self._snapshot_erstellen)
+        l.addWidget(snapshot_btn)
+
+        settings_btn = QPushButton("Einstellungen")
+        settings_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        settings_btn.clicked.connect(self._einstellungen_dialog)
+        l.addWidget(settings_btn)
+
+        legende_btn = QPushButton("?")
+        legende_btn.setStyleSheet("background:#3a3a3a;color:#555555;font-weight:bold;")
+        legende_btn.setFixedWidth(28)
+        legende_btn.clicked.connect(self._legende_zeigen)
+        l.addWidget(legende_btn)
+
+        return toolbar
+
+    # ── Signal-Verbindungen ───────────────────────────────────────────────────
+
+    def _connect_signals(self):
+        # Vorschau-Selektion
+        self._vorschau.region_ausgewaehlt.connect(self._region_ausgewaehlt)
+
+        # Workflow-Panel
+        self.workflow_panel.master_neu_requested.connect(self._master_neu)
+        self.workflow_panel.master_bearbeiten_requested.connect(self._master_bearbeiten)
+        self.workflow_panel.master_loeschen_requested.connect(self._master_loeschen)
+        self.workflow_panel.master_aktiv_requested.connect(self._master_aktiv_setzen)
+        self.workflow_panel.workflow_neu_requested.connect(self._workflow_neu)
+        self.workflow_panel.workflow_bearbeiten_requested.connect(self._workflow_bearbeiten)
+        self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
+
+        # Template-Panels
+        for panel in [self.template_panel, self.state_template_panel]:
+            panel.neu_laden_requested.connect(self._template_neu_laden)
+            panel.bearbeiten_requested.connect(self._template_bearbeiten)
+            panel.loeschen_requested.connect(self._template_loeschen)
+            panel.ocr_konfigurieren_requested.connect(self._ocr_konfigurieren)
+            panel.klick_konfigurieren_requested.connect(self._klick_konfigurieren)
+            panel.gruppe_konfigurieren_requested.connect(self._gruppe_konfigurieren)
+
+        # Variable-Panel (OCR)
+        self.ocr_panel.feste_region_loeschen.connect(
+            lambda n: (self.ocr_engine.region_loeschen(n), self._panels_aktualisieren()))
+        self.ocr_panel.template_ocr_loeschen.connect(
+            lambda n: (self.ocr_engine.template_ocr_deaktivieren(n), self._panels_aktualisieren()))
+
+        # State-Panel
+        self.state_panel.rename_requested.connect(self._state_umbenennen)
+        self.state_panel.delete_requested.connect(self._state_loeschen)
+
+        # Daten-Panel
+        self.daten_panel.liste_bearbeiten_requested.connect(self._liste_bearbeiten_dialog)
+        self.daten_panel.einheiten_requested.connect(self._einheiten_dialog)
+
+    # ── Display Loop ──────────────────────────────────────────────────────────
 
     def _check_memu_retry(self):
         if self.app.find_memu():
             self.app.start()
             self._start_display_loop()
         else:
-            self.root.after(3000, self._check_memu_retry)
+            QTimer.singleShot(3000, self._check_memu_retry)
 
-    def _gui_aufbauen(self):
-        haupt = tk.Frame(self.root, bg="#1e1e1e")
-        haupt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+    def _start_display_loop(self):
+        fps = self.einstellungen.get("display_fps", DISPLAY_FPS_DEFAULT)
+        self._display_timer = QTimer(self)
+        self._display_timer.setInterval(1000 // fps)
+        self._display_timer.timeout.connect(self._display_tick)
+        self._display_timer.start()
 
-        # Spalte 1 (links): Workflows & Schedule
-        spalte_links = tk.Frame(haupt, bg="#1e1e1e", width=260)
-        spalte_links.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 4))
-        spalte_links.pack_propagate(False)
+    def _display_tick(self):
+        if not self.app.state.capture_active:
+            return
+        frame = self.app.current_screenshot_np
+        if frame is None:
+            return
 
-        self._aktiver_template_panel = None
-        self._panel_erstellen(spalte_links, "WORKFLOWS", self._workflows_panel, expand=True)
-
-        # Mitte: Live-Vorschau (flexibel)
-        mitte = tk.Frame(haupt, bg="#2d2d2d", relief=tk.FLAT, bd=1)
-        mitte.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
-
-        self.vorschau_canvas = tk.Canvas(mitte, bg="#1a1a1a", highlightthickness=0)
-        self.vorschau_canvas.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
-        self.canvas_bild_id = self.vorschau_canvas.create_image(0, 0, anchor="nw", tags="bild")
-        self.canvas_status_id = self.vorschau_canvas.create_text(
-            0, 0, text="Suche MEMUPlayer...", fill="#555555",
-            font=("Segoe UI", 11), anchor="center", tags="status"
+        ocr_konf = dict(self.ocr_engine.template_ocr_konfigurationen())
+        self._vorschau.set_frame(
+            frame,
+            list(self.app.state.active_matches),
+            dict(self.ocr_engine.regionen),
+            dict(self.app.state.ocr_values),
+            ocr_konf,
         )
 
-        # Spalte 2 (rechts): Templates, OCR, State, Log
-        spalte_rechts1 = tk.Frame(haupt, bg="#1e1e1e", width=320)
-        spalte_rechts1.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 4))
-        spalte_rechts1.pack_propagate(False)
+        # Panel-Updates
+        matches = list(self.app.state.active_matches)
+        match_namen = {m[0] for m in matches}
+        match_namen |= {m[6] for m in matches if len(m) > 6}
 
-        self._panel_erstellen(spalte_rechts1, "WORKFLOW TEMPLATES", self._templates_panel, expand=True,
-                              kopf_extra=self._workflow_templates_kopf_extra)
-        self._panel_erstellen(spalte_rechts1, "STATE TEMPLATES", self._state_templates_panel)
-        self._template_buttons_bereich(spalte_rechts1)
-        self._panel_erstellen(spalte_rechts1, "OCR VARIABLEN", self._ocr_panel,
-                              expand=True, kopf_extra=self._variablen_kopf_extra)
-        self._panel_erstellen(spalte_rechts1, "STATE VARIABLEN", self._state_panel,
-                              kopf_extra=self._state_kopf_extra)
-        self._panel_erstellen(spalte_rechts1, "LOG", self._log_panel, expand=True)
+        if not hasattr(self, "_letzte_match_namen") or self._letzte_match_namen != match_namen:
+            self._letzte_match_namen = match_namen
+            self.ocr_panel.aktualisieren(
+                dict(self.ocr_engine.regionen),
+                ocr_konf,
+                _template_farbe,
+            )
 
-        # Spalte 3 (ganz rechts): Daten-Listen
-        self._spalte_rechts2 = tk.Frame(haupt, bg="#1e1e1e", width=280)
-        self._spalte_rechts2.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 0))
-        self._spalte_rechts2.pack_propagate(False)
+        alle_ocr_werte = {**self.app.state.ocr_values, **self.app.state.template_ocr_values}
+        self.ocr_panel.werte_aktualisieren(
+            alle_ocr_werte,
+            match_namen,
+            ocr_konf,
+            self._nur_aktive_variablen,
+        )
+        self.state_panel.werte_aktualisieren(dict(self.app.state.game_states))
 
-        self._panel_erstellen(self._spalte_rechts2, "DATEN-LISTEN", self._daten_panel, expand=True)
-
-        # Unten: Buttons
-        leiste = tk.Frame(self.root, bg="#252525", height=45)
-        leiste.pack(fill=tk.X, padx=8, pady=(0, 8))
-
-        self.start_btn = tk.Button(leiste, text="▶ Start", bg="#2ea043", fg="white", 
-                                   font=("Segoe UI", 9, "bold"), relief=tk.FLAT, 
-                                   padx=15, pady=5, command=self._start)
-        self.start_btn.pack(side=tk.LEFT, padx=10)
-
-        self.stop_btn = tk.Button(leiste, text="■ Stop", bg="#da3633", fg="white", 
-                                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, 
-                                  padx=15, pady=5, state=tk.DISABLED, command=self._stop)
-        self.stop_btn.pack(side=tk.LEFT, padx=5)
-
-        # Rechte Buttons
-        tk.Button(leiste, text="Einstellungen", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9), 
-                  relief=tk.FLAT, padx=10, command=self._einstellungen_dialog).pack(side=tk.RIGHT, padx=5)
-        
-        self.debug_btn = tk.Button(leiste, text="● Debug Aus", bg="#3a3a3a", fg="#555555", font=("Segoe UI", 9), 
-                                   relief=tk.FLAT, padx=10, command=self._debug_umschalten)
-        self.debug_btn.pack(side=tk.RIGHT, padx=5)
-
-        # Button existiert für Status-Updates (einlern.py), wird aber nicht angezeigt
-        self.einlern_btn = tk.Button(leiste, text="+ Template", bg="#3a3a3a", fg="#cccccc", font=("Segoe UI", 9),
-                                     relief=tk.FLAT, padx=10, command=self._einlern_modus_umschalten)
-
-        self.snapshot_btn = tk.Button(leiste, text="📸 Snapshot", bg="#3a3a3a", fg="#cccccc",
-                                      font=("Segoe UI", 9), relief=tk.FLAT, padx=12,
-                                      cursor="hand2", command=self._snapshot_erstellen)
-        self.snapshot_btn.pack(side=tk.RIGHT, padx=5)
-
-        self.ocr_btn = tk.Button(leiste, text="+ OCR-Region", bg="#3a3a3a", fg="#cccccc",
-                                 font=("Segoe UI", 9), relief=tk.FLAT, padx=10,
-                                 cursor="hand2", command=self._ocr_modus_umschalten)
-        self.ocr_btn.pack(side=tk.RIGHT, padx=5)
-
-        tk.Button(leiste, text="?", bg="#3a3a3a", fg="#555555",
-                  font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=8,
-                  cursor="hand2", command=self._legende_zeigen).pack(side=tk.RIGHT, padx=(0, 2))
-
-        self.status_label = tk.Label(leiste, text="● Bereit", bg="#252525", fg="#888888", font=("Segoe UI", 9))
-        self.status_label.pack(side=tk.LEFT, padx=20)
-
-    def _legende_zeigen(self):
-        import tkinter as tk
-        win = tk.Toplevel(self.root)
-        win.title("Legende")
-        win.configure(bg="#2d2d2d")
-        win.resizable(False, False)
-        win.grab_set()
-
-        eintraege = [
-            ("TYPEN", None, None),
-            ("★  [Name]",   "#ffca28", "Aktive Gruppe — hat Bild, erkennt sich selbst als Gruppe"),
-            ("📦 [Name]",   "#7a9abf", "Passive Gruppe — kein Bild, nur Bedingungen"),
-            ("📁 [Name]",   "#888888", "Ordner — Gruppe ohne eigenes Master-Template"),
-            ("    └─ Name", "#cccccc", "Kind-Template — gehört zur übergeordneten Gruppe"),
-            ("", None, None),
-            ("MARKIERUNGEN", None, None),
-            ("🚩", "#ff7043", "State Template — setzt einen Game-State wenn erkannt"),
-            ("🔤", "#55aaff", "OCR konfiguriert"),
-            ("🖱",  "#ff6600", "Klick-Zone konfiguriert"),
-            ("🎯",  "#ffca28", "Scan-Bereich (ROI) konfiguriert"),
-            ("⚙",  "#aaaaaa", "Gruppen-Bedingungen konfiguriert"),
-            ("(2)", "#888888", "Anzahl der Varianten (z.B. Name__2, Name__3)"),
-        ]
-
-        tk.Label(win, text="Symbol-Legende", bg="#2d2d2d", fg="#ffffff",
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=20, pady=(14, 8))
-
-        for symbol, farbe, beschreibung in eintraege:
-            if beschreibung is None:
-                if symbol:
-                    tk.Label(win, text=symbol, bg="#2d2d2d", fg="#555555",
-                             font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=20, pady=(6, 2))
-                else:
-                    tk.Frame(win, bg="#3a3a3a", height=1).pack(fill=tk.X, padx=20, pady=4)
-                continue
-            zeile = tk.Frame(win, bg="#2d2d2d")
-            zeile.pack(fill=tk.X, padx=20, pady=1)
-            tk.Label(zeile, text=symbol, bg="#2d2d2d", fg=farbe,
-                     font=("Segoe UI", 9), width=12, anchor="w").pack(side=tk.LEFT)
-            tk.Label(zeile, text=beschreibung, bg="#2d2d2d", fg="#888888",
-                     font=("Segoe UI", 8), anchor="w").pack(side=tk.LEFT, padx=(8, 0))
-
-        tk.Button(win, text="Schließen", bg="#3a3a3a", fg="#aaaaaa",
-                  font=("Segoe UI", 9), relief=tk.FLAT, padx=10, pady=4,
-                  cursor="hand2", command=win.destroy).pack(pady=(10, 14))
+    # ── Bot-Steuerung ─────────────────────────────────────────────────────────
 
     def _start(self):
         self.app.start_bot()
-        self.start_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
         self._status_setzen("● Bot läuft", "#2ea043")
         self._log("Bot gestartet.")
 
     def _stop(self):
         self.app.stop_bot()
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         self._status_setzen("● Gestoppt", "#888888")
         self._log("Bot gestoppt.")
 
     def _snapshot_erstellen(self):
         snap_np = self.app.current_screenshot_np
-        if snap_np is None: return
-        from tkinter import simpledialog
-        name = simpledialog.askstring("Snapshot", "Name für Snapshot (z.B. MAIN_Menü):")
-        if name:
+        if snap_np is None:
+            return
+        name, ok = QInputDialog.getText(self, "Snapshot", "Name für Snapshot:")
+        if ok and name:
             os.makedirs("snapshots", exist_ok=True)
             pfad = os.path.join("snapshots", f"{name}.png")
-            cv2.imwrite(pfad, snap_np)
-            self._log(f"Snapshot gespeichert: {pfad}")
-
-    def _start_display_loop(self):
-        self._display_timer()
-
-    def _display_timer(self):
-        if not self.app.state.capture_active: return
-        
-        fps = self.einstellungen.get("display_fps", 30)
-        
-        frame = self.app.current_screenshot_np
-        if frame is not None:
-            self._update_preview(frame)
-            
-            # Struktur-Update für Variablen (bei Neuerkennungen oder Wegfall)
-            match_namen = set()
-            for m in self.app.state.active_matches:
-                match_namen.add(m[0])
-                if len(m) > 6: match_namen.add(m[6])
-            
-            if not hasattr(self, "_letzte_match_namen") or self._letzte_match_namen != match_namen:
-                self._letzte_match_namen = match_namen
-                self._timer_panel_aktualisieren()
-
-            # Werte-Update
-            self._timer_werte_aktualisieren(self.app.state.ocr_values)
-            self._template_ocr_werte_aktualisieren(self.app.state.template_ocr_values)
-            self._state_werte_aktualisieren(self.app.state.game_states)
-            
-        self.root.after(1000 // fps, self._display_timer)
-
-    def _update_preview(self, frame_bgr):
-        cb = self.vorschau_canvas.winfo_width()
-        ch = self.vorschau_canvas.winfo_height()
-        if cb < 50 or ch < 10: return
-
-        h_orig, w_orig = frame_bgr.shape[:2]
-
-        # Beim ersten Frame: Fensterbreite so anpassen dass Canvas = Bildbreite
-        if not self._fenster_automatisch_skaliert:
-            self._fenster_automatisch_skaliert = True
-            delta = w_orig - cb
-            if abs(delta) > 10:
-                neue_breite = self.root.winfo_width() + delta
-                self.root.geometry(f"{neue_breite}x{self.root.winfo_height()}")
-        skala = min(cb / w_orig, ch / h_orig)
-        anzeige_b, anzeige_h = int(w_orig * skala), int(h_orig * skala)
-        
-        # Scale & Convert
-        frame_klein = cv2.resize(frame_bgr, (anzeige_b, anzeige_h), interpolation=cv2.INTER_AREA)
-        frame_rgb = cv2.cvtColor(frame_klein, cv2.COLOR_BGR2RGB)
-        bild_pil = Image.fromarray(frame_rgb)
-        
-        offset_x = (cb - anzeige_b) // 2
-        offset_y = (ch - anzeige_h) // 2
-        
-        # State für Mixins updaten
-        self.bild_offset_x = offset_x
-        self.bild_offset_y = offset_y
-        self.bild_skalierung_x = skala
-        self.bild_skalierung_y = skala
-        self.aktueller_screenshot = self.app.current_screenshot_pil
-
-        if not self._vorschau_foto or self._vorschau_foto.width() != anzeige_b:
-            self._vorschau_foto = ImageTk.PhotoImage(bild_pil)
-        else:
-            self._vorschau_foto.paste(bild_pil)
-        
-        self.vorschau_canvas.itemconfig(self.canvas_bild_id, image=self._vorschau_foto)
-        self.vorschau_canvas.coords(self.canvas_bild_id, offset_x, offset_y)
-        self.vorschau_canvas.itemconfig(self.canvas_status_id, text="")
-        
-        # Overlays zeichnen
-        self.vorschau_canvas.delete("match")
-        
-        # 1. Globale OCR
-        for r_name, r_data in self.ocr_engine.regionen.items():
-            rx = offset_x + r_data["x"] * skala
-            ry = offset_y + r_data["y"] * skala
-            rw, rh = r_data["breite"] * skala, r_data["hoehe"] * skala
-            self.vorschau_canvas.create_rectangle(rx, ry, rx+rw, ry+rh, outline="#ffca28", dash=(2,2), tags="match")
-            val = self.app.state.ocr_values.get(r_name, "")
-            self.vorschau_canvas.create_text(rx+2, ry+2, text=f"{r_name}: {val}", fill="#ffca28", font=("Segoe UI", 7), anchor="nw", tags="match")
-
-        # 2. Template-OCR Konfiguration vorbereiten
-        ocr_konf = self.ocr_engine.template_ocr_konfigurationen()
-        ocr_by_template = {}
-        for en, k in ocr_konf.items():
-            ocr_by_template.setdefault(k.get("template", en), []).append(k)
-
-        # 3. Matches und deren OCR-Bereiche zeichnen
-        for match in self.app.state.active_matches:
-            name, mx, my, mw, mh, score = match[:6]
-            # ... Rest des Codes ...
-            farbe = _template_farbe(name)
-            cx, cy = offset_x + mx * skala, offset_y + my * skala
-            cw, ch = mw * skala, mh * skala
-            
-            # Haupt-Match Rahmen
-            self.vorschau_canvas.create_rectangle(cx, cy, cx+cw, cy+ch, outline=farbe, width=2, tags="match")
-            
-            label = f"{name} {score:.2f}"
-            for ocr_name, ocr_val in self.app.state.template_ocr_values.items():
-                if ocr_name.startswith(f"{name}_") or ocr_name == name:
-                    if ocr_val: label += f"  [{ocr_val}]"
-            self.vorschau_canvas.create_text(cx+2, cy-10, text=label, fill=farbe, font=("Segoe UI", 7), anchor="nw", tags="match")
-
-            # OCR-Crop-Bereiche (Cyan)
-            for k in ocr_by_template.get(name, []):
-                cl = k.get("crop_links",  0) / 100
-                co = k.get("crop_oben",   0) / 100
-                cr = k.get("crop_rechts", 0) / 100
-                cu = k.get("crop_unten",  0) / 100
-                
-                # Relativ zur Match-Bbox zeichnen
-                rcx = cx + cl * cw
-                rcy = cy + co * ch
-                rcw = cw * (1 - cl - cr)
-                rch = ch * (1 - co - cu)
-                
-                self.vorschau_canvas.create_rectangle(
-                    rcx, rcy, rcx + rcw, rcy + rch,
-                    outline="#00bcd4", width=1, dash=(2, 2), tags="match"
-                )
+            if cv2:
+                cv2.imwrite(pfad, snap_np)
+                self._log(f"Snapshot gespeichert: {pfad}")
 
     def _debug_umschalten(self):
         if self.ocr_engine.debug_filter == "Aus":
             self.ocr_engine.debug_filter = "Alle"
-            self.debug_btn.config(text="● Debug An", bg="#1a3a1a", fg="#2ea043")
+            self.debug_btn.setText("● Debug An")
+            self.debug_btn.setStyleSheet("background:#1a3a1a;color:#2ea043;")
         else:
             self.ocr_engine.debug_filter = "Aus"
-            self.debug_btn.config(text="● Debug Aus", bg="#3a3a3a", fg="#555555")
+            self.debug_btn.setText("● Debug Aus")
+            self.debug_btn.setStyleSheet("background:#3a3a3a;color:#555555;")
 
-    def _state_variable_hinzufuegen_dialog(self):
-        """Öffnet einen kleinen Dialog zum Hinzufügen einer neuen State-Variable."""
-        d = tk.Toplevel(self.root)
-        d.title("Zustand hinzufügen")
-        d.geometry("300x180")
-        d.configure(bg="#2d2d2d")
-        d.transient(self.root)
-        d.grab_set()
+    # ── Einlern-Modus ─────────────────────────────────────────────────────────
 
-        # Center on screen
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
-        d.geometry(f"+{max(0, x)}+{max(0, y)}")
+    def _einlern_modus_umschalten(self):
+        if self.ocr_modus:
+            self._ocr_modus_umschalten()
+        self.einlern_modus = not self.einlern_modus
+        if self.einlern_modus:
+            self.einlern_btn.setText("✕ Abbrechen")
+            self.einlern_btn.setStyleSheet("background:#1565c0;color:white;")
+            self._vorschau.set_aktiv(True)
+            self._log("Einlern-Modus aktiv – Region auf der Vorschau auswählen.")
+            self._einlern_dialog_oeffnen()
+        else:
+            self._geplanter_typ = None
+            self._geplante_kategorie = None
+            self._aktueller_ausschnitt = None
+            self.einlern_btn.setText("+ Template")
+            self.einlern_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+            self._vorschau.set_aktiv(False)
 
-        tk.Label(d, text="Name der Variable:", bg="#2d2d2d", fg="#cccccc", 
-                 font=("Segoe UI", 9)).pack(pady=(20, 5))
-        
-        name_var = tk.StringVar()
-        entry = tk.Entry(d, textvariable=name_var, bg="#1a1a1a", fg="#ffffff", 
-                         insertbackground="white", font=("Segoe UI", 10), relief=tk.FLAT, bd=4)
-        entry.pack(padx=30, fill=tk.X)
-        entry.focus()
-        entry.bind("<Return>", lambda e: add())
+    def _ocr_modus_umschalten(self):
+        if self.einlern_modus:
+            self._einlern_modus_umschalten()
+        self.ocr_modus = not self.ocr_modus
+        if self.ocr_modus:
+            self.ocr_btn.setText("✕ Abbrechen")
+            self.ocr_btn.setStyleSheet("background:#6a1b9a;color:white;")
+            self._vorschau.set_aktiv(True)
+            self._log("OCR-Modus aktiv – Region auf der Vorschau auswählen.")
+        else:
+            self.ocr_btn.setText("+ OCR-Region")
+            self.ocr_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+            self._vorschau.set_aktiv(False)
 
-        val_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(d, text="Startwert: TRUE", variable=val_var, bg="#2d2d2d", fg="#cccccc", 
-                       selectcolor="#1a1a1a", activebackground="#2d2d2d", font=("Segoe UI", 9)).pack(pady=10)
+    def _region_ausgewaehlt(self, x0: int, y0: int, x1: int, y1: int):
+        screenshot = self.app.current_screenshot_pil
+        if screenshot is None:
+            self._log("Kein Screenshot verfügbar.")
+            return
 
-        def add():
-            n = name_var.get().strip()
-            if not n: return
-            self.app.state.set_game_state(n, val_var.get())
-            self._state_panel_aktualisieren()
-            d.destroy()
+        if self.ocr_modus:
+            self._ocr_region_speichern(x0, y0, x1, y1)
+            return
 
-        tk.Button(d, text="Hinzufügen", bg="#2ea043", fg="white", relief=tk.FLAT, 
-                  padx=15, pady=5, font=("Segoe UI", 9, "bold"), command=add).pack(pady=5)
+        if self.einlern_modus and _PILImage:
+            ausschnitt = screenshot.crop((x0, y0, x1, y1))
+            self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0)
+            # Öffne/update Template-Editor wenn bereits offen
+            if hasattr(self, "_einlern_editor") and self._einlern_editor and \
+                    self._einlern_editor.isVisible():
+                self._einlern_editor._vorschau_setzen(ausschnitt, x1 - x0, y1 - y0)
 
-    def _state_variable_umbenennen_dialog(self, alter_name):
-        """Öffnet einen Dialog zum Umbenennen einer State-Variable."""
-        d = tk.Toplevel(self.root)
-        d.title("Zustand umbenennen")
-        d.geometry("300x150")
-        d.configure(bg="#2d2d2d")
-        d.transient(self.root)
-        d.grab_set()
+    def _ocr_region_speichern(self, x0: int, y0: int, x1: int, y1: int):
+        name, ok = QInputDialog.getText(self, "OCR-Region", "Name der Region:")
+        if not ok or not name:
+            return
+        modi = ["Timer", "Zahl", "Text"]
+        modus_str, ok2 = QInputDialog.getItem(self, "OCR-Modus", "Modus:", modi, 1, False)
+        if not ok2:
+            return
+        self.ocr_engine.region_hinzufuegen(name, x0, y0, x1 - x0, y1 - y0, modus_str)
+        self._panels_aktualisieren()
+        self._log(f"OCR-Region gespeichert: \"{name}\" ({modus_str}, {x1-x0}×{y1-y0}px)")
+        self._ocr_modus_umschalten()
 
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
-        d.geometry(f"+{max(0, x)}+{max(0, y)}")
+    def _einlern_dialog_oeffnen(self):
+        editor = TemplateEditorQt(
+            parent=self,
+            bot=self,
+            bearbeiten_name=None,
+            aktueller_ausschnitt=self._aktueller_ausschnitt,
+            typ=self._geplanter_typ or "template",
+            kategorie=self._geplante_kategorie or "workflow",
+        )
+        self._einlern_editor = editor
 
-        tk.Label(d, text="Neuer Name:", bg="#2d2d2d", fg="#cccccc",
-                 font=("Segoe UI", 9)).pack(pady=(20, 5))
+        def on_close():
+            if self.einlern_modus:
+                self._einlern_modus_umschalten()
 
-        name_var = tk.StringVar(value=alter_name)
-        entry = tk.Entry(d, textvariable=name_var, bg="#1a1a1a", fg="#ffffff",
-                         insertbackground="white", font=("Segoe UI", 10), relief=tk.FLAT, bd=4)
-        entry.pack(padx=30, fill=tk.X)
-        entry.focus()
-        entry.select_range(0, tk.END)
-        entry.bind("<Return>", lambda e: umbenennen())
+        editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        editor.destroyed.connect(on_close)
+        editor.show()
 
-        def umbenennen():
-            neuer_name = name_var.get().strip()
-            if not neuer_name or neuer_name == alter_name:
-                d.destroy()
+    # ── Template-Aktionen ─────────────────────────────────────────────────────
+
+    def _template_neu_erstellen(self):
+        result = TypDialog.ausfuehren(self)
+        if result is None:
+            return
+        typ, kategorie = result[0], result[1]
+        if typ == "passiv_gruppe":
+            art = result[2].get("art", "master") if len(result) > 2 else "master"
+            self._passiv_gruppe_erstellen_dialog(kategorie, ist_master=(art == "master"))
+        else:
+            self._geplanter_typ = typ
+            self._geplante_kategorie = kategorie
+            self._einlern_modus_umschalten()
+
+    def _template_bearbeiten(self, name: str):
+        editor = TemplateEditorQt(
+            parent=self,
+            bot=self,
+            bearbeiten_name=name,
+            typ=self.template_engine.settings.get(name, {}).get("typ", "template"),
+            kategorie=self.template_engine.settings.get(name, {}).get("kategorie", "workflow"),
+        )
+        editor.show()
+
+    def _template_loeschen(self, name: str):
+        antwort = QMessageBox.question(
+            self, "Template löschen",
+            f"Template \"{name}\" wirklich löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if antwort == QMessageBox.StandardButton.Yes:
+            self.template_engine.template_loeschen(name)
+            self.app.reload_templates()
+            self._panels_aktualisieren()
+            self._log(f"Template gelöscht: {name}")
+
+    def _template_neu_laden(self):
+        self.app.reload_templates()
+        self._panels_aktualisieren()
+        self._log("Templates neu geladen.")
+
+    def _ocr_konfigurieren(self, name: str):
+        dlg = OCRKonfigDialog(name, bot=self, parent=self)
+        dlg.gespeichert.connect(self._panels_aktualisieren)
+        dlg.show()
+
+    def _klick_konfigurieren(self, name: str):
+        """Öffnet Klickzone-Dialog für ein Template (einfacher QDialog)."""
+        if _PILImage is None:
+            self._log("PIL nicht verfügbar.")
+            return
+        import os
+        pfad = self.template_engine.templates.get(name, {}).get("pfad") or \
+               os.path.join("templates", f"{name}.png")
+        if not os.path.exists(pfad):
+            self._log(f"Template-Bild nicht gefunden: {pfad}")
+            return
+
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        from ui.dialogs.roi_editor_qt import ROIEditorQt
+
+        pil = _PILImage.open(pfad).convert("RGBA")
+        bbox = self.template_engine.templates.get(name, {}).get("bbox")
+        if bbox:
+            bx, by, bw, bh = bbox
+            pil = pil.crop((bx, by, bx + bw, by + bh))
+
+        # Nutze ROIEditorQt vereinfacht — zeige einfaches QDialog mit Click-Point
+        self._klick_dialog(name, pil)
+
+    def _klick_dialog(self, name: str, pil_bild):
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        from PyQt6.QtGui import QPixmap, QImage
+        from PyQt6.QtCore import QPoint
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Klickzone — {name}")
+        dlg.setModal(True)
+
+        tw, th = pil_bild.size
+        skala = max(3.0, min(8.0, 300 / max(tw, th)))
+        nw, nh = int(tw * skala), int(th * skala)
+        scaled = pil_bild.resize((nw, nh), _PILImage.LANCZOS).convert("RGB")
+        qimg = QImage(scaled.tobytes(), nw, nh, nw * 3, QImage.Format.Format_RGB888)
+        pm = QPixmap.fromImage(qimg)
+
+        class KlickCanvas(QLabel):
+            klick_gesetzt = pyqtSignal(float, float)
+
+            def __init__(self):
+                super().__init__()
+                self.setPixmap(pm)
+                self._punkt: QPoint | None = None
+                konfig = self.window()  # can't access outer scope here
+                self.setCursor(Qt.CursorShape.CrossCursor)
+                self._rx = self._ry = None
+                k = None
+                try:
+                    import TilesBotWindow  # noop
+                except Exception:
+                    pass
+
+            def mousePressEvent(self, e):
+                self._punkt = e.pos()
+                self._rx = round(e.pos().x() / self.width()  * 100, 1)
+                self._ry = round(e.pos().y() / self.height() * 100, 1)
+                self.update()
+
+            def paintEvent(self, ev):
+                super().paintEvent(ev)
+                if self._punkt:
+                    p = QPainter(self)
+                    p.setPen(QPen(QColor("#ff6600"), 2))
+                    px, py = self._punkt.x(), self._punkt.y()
+                    p.drawLine(px - 8, py, px + 8, py)
+                    p.drawLine(px, py - 8, px, py + 8)
+                    p.end()
+
+        root = QVBoxLayout(dlg)
+        canvas = KlickCanvas()
+        root.addWidget(canvas)
+
+        # Bestehenden Punkt laden
+        konfig = self.action_engine.klickzonen_laden()
+        if name in konfig:
+            k = konfig[name]
+            canvas._rx = k["klick_rel_x"]
+            canvas._ry = k["klick_rel_y"]
+            canvas._punkt = QPoint(int(k["klick_rel_x"] / 100 * nw),
+                                   int(k["klick_rel_y"] / 100 * nh))
+            canvas.update()
+
+        info = QLabel("Klick-Punkt setzen.")
+        info.setStyleSheet("color:#888888;")
+        root.addWidget(info)
+
+        btn_save = QPushButton("Speichern")
+        btn_save.setObjectName("btn_primary")
+
+        def speichern():
+            if canvas._rx is not None:
+                self.action_engine.klickzone_speichern(name, canvas._rx, canvas._ry)
+                self._log(f"Klickzone gespeichert: {name} ({canvas._rx}%, {canvas._ry}%)")
+            dlg.accept()
+
+        btn_save.clicked.connect(speichern)
+        root.addWidget(btn_save)
+        dlg.exec()
+
+    def _gruppe_konfigurieren(self, name: str):
+        settings = self.template_engine.settings.get(name, {})
+        bekannte = sorted(self.app.state.game_states.keys())
+        raw = settings.get("condition_states", [])
+        dlg = GruppeEditorQt(name, bekannte, raw, parent=self)
+
+        def on_gespeichert(gruppe_name, conditions):
+            if name not in self.template_engine.settings:
+                self.template_engine.settings[name] = {}
+            self.template_engine.settings[name]["condition_states"] = conditions
+            with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
+                json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self.app.reload_templates()
+            self._panels_aktualisieren()
+            self._log(f"Gruppen-Konfiguration gespeichert: {gruppe_name}")
+
+        dlg.gespeichert.connect(on_gespeichert)
+        dlg.exec()
+
+    # ── Passiv-Gruppe ─────────────────────────────────────────────────────────
+
+    def _passiv_gruppe_erstellen_dialog(self, kategorie: str = "workflow", ist_master: bool = True):
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Passive Gruppe erstellen")
+        dlg.setModal(True)
+        dlg.setFixedWidth(320)
+
+        root = QVBoxLayout(dlg)
+        art_lbl = QLabel("Master Gruppe" if ist_master else "Untergeordnete Gruppe")
+        art_lbl.setStyleSheet(f"color:{'#7a9abf' if ist_master else '#9abf7a'};font-weight:bold;")
+        root.addWidget(art_lbl)
+
+        root.addWidget(QLabel("Gruppen-Name:"))
+        name_edit = QLineEdit()
+        root.addWidget(name_edit)
+
+        combo = None
+        if not ist_master:
+            root.addWidget(QLabel("Übergeordnete Gruppe:"))
+            combo = QComboBox()
+            verfuegbar = sorted([
+                g for g, v in self.template_engine.settings.items()
+                if isinstance(v, dict)
+                and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe")
+                and v.get("kategorie") == kategorie
+            ])
+            combo.addItems(verfuegbar)
+            root.addWidget(combo)
+
+        err_lbl = QLabel("")
+        err_lbl.setStyleSheet("color:#da3633;")
+        root.addWidget(err_lbl)
+
+        btn_erstellen = QPushButton("Erstellen")
+        btn_erstellen.setObjectName("btn_primary")
+
+        def erstellen():
+            n = name_edit.text().strip()
+            if not n:
+                err_lbl.setText("Name darf nicht leer sein.")
                 return
+            if n in self.template_engine.settings and \
+                    self.template_engine.settings[n].get("typ") == "passiv_gruppe":
+                err_lbl.setText(f"'{n}' existiert bereits.")
+                return
+            uebergeordnet = "" if ist_master else (combo.currentText().strip() if combo else "")
+            self.template_engine.gruppe_config_speichern(
+                n, [], uebergeordnete_gruppe=uebergeordnet, kategorie=kategorie)
+            dlg.accept()
+            self._panels_aktualisieren()
 
-            # Laufzeit-State umbenennen
+        name_edit.returnPressed.connect(erstellen)
+        btn_erstellen.clicked.connect(erstellen)
+        root.addWidget(btn_erstellen)
+
+        btn_ab = QPushButton("Abbrechen")
+        btn_ab.clicked.connect(dlg.reject)
+        root.addWidget(btn_ab)
+        dlg.exec()
+
+    # ── Workflow-Aktionen ─────────────────────────────────────────────────────
+
+    def _master_neu(self):
+        name, ok = QInputDialog.getText(self, "Master Workflow", "Name des Master-Workflows:")
+        if not ok or not name:
+            return
+        self.workflow_engine.master_workflow_erstellen(name)
+        self.workflow_panel.aktualisieren()
+        self._log(f"Master-Workflow erstellt: {name}")
+
+    def _master_bearbeiten(self, name: str):
+        graph = self.workflow_engine.master_workflows.get(name, {})
+        dlg = WorkflowEditorDialogQt(parent=self, bot=self, name=name, graph=graph)
+
+        def on_gespeichert(neuer_name, neuer_graph):
+            self.workflow_engine.master_workflow_speichern(neuer_name, neuer_graph, alter_name=name)
+            self.workflow_panel.aktualisieren()
+            self._log(f"Master-Workflow gespeichert: {neuer_name}")
+
+        dlg.gespeichert.connect(on_gespeichert)
+        dlg.show()
+
+    def _master_loeschen(self, name: str):
+        antwort = QMessageBox.question(
+            self, "Master löschen", f"Master-Workflow \"{name}\" löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if antwort == QMessageBox.StandardButton.Yes:
+            self.workflow_engine.master_workflow_loeschen(name)
+            self.workflow_panel.aktualisieren()
+            self._log(f"Master-Workflow gelöscht: {name}")
+
+    def _master_aktiv_setzen(self, name: str):
+        self.workflow_engine.aktiver_master = name
+        self.workflow_panel.aktualisieren()
+        self._log(f"Aktiver Master-Workflow: {name}")
+
+    def _workflow_neu(self):
+        name, ok = QInputDialog.getText(self, "Neuer Workflow", "Workflow-Name:")
+        if not ok or not name:
+            return
+        self.workflow_engine.workflow_speichern(name, {"nodes": [], "connections": []})
+        self.workflow_panel.aktualisieren()
+
+    def _workflow_bearbeiten(self, name: str):
+        graph = self.workflow_engine.workflows.get(name, {"nodes": [], "connections": []})
+        dlg = WorkflowEditorDialogQt(parent=self, bot=self, name=name, graph=graph)
+
+        def on_gespeichert(neuer_name, neuer_graph):
+            self.workflow_engine.workflow_speichern(neuer_name, neuer_graph, alter_name=name)
+            self.workflow_panel.aktualisieren()
+            self._log(f"Workflow gespeichert: {neuer_name}")
+
+        dlg.gespeichert.connect(on_gespeichert)
+        dlg.show()
+
+    def _workflow_loeschen(self, name: str):
+        antwort = QMessageBox.question(
+            self, "Workflow löschen", f"Workflow \"{name}\" löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if antwort == QMessageBox.StandardButton.Yes:
+            self.workflow_engine.workflow_loeschen(name)
+            self.workflow_panel.aktualisieren()
+            self._log(f"Workflow gelöscht: {name}")
+
+    # ── State-Aktionen ────────────────────────────────────────────────────────
+
+    def _state_hinzufuegen(self):
+        result = StateHinzufuegenDialog.ausfuehren(self)
+        if result:
+            name, wert = result
+            self.app.state.set_game_state(name, wert)
+            self.state_panel.aktualisieren()
+            self._log(f"State-Variable hinzugefügt: {name} = {wert}")
+
+    def _state_umbenennen(self, alter_name: str):
+        result = StateUmbenennenDialog.ausfuehren(alter_name, self)
+        if result:
+            _, neuer_name = result
             alter_wert = self.app.state.game_states.pop(alter_name, False)
             self.app.state.game_states[neuer_name] = alter_wert
-
-            # In allen Template-Settings condition_states und set_states aktualisieren
+            # Template-Settings aktualisieren
             for t_settings in self.template_engine.settings.values():
-                if not isinstance(t_settings, dict): continue
-                # condition_states: Liste von Dicts (OR-Gruppen mit AND-Bedingungen)
-                conds = t_settings.get("condition_states", [])
-                if isinstance(conds, list):
-                    for gruppe in conds:
-                        if isinstance(gruppe, dict) and alter_name in gruppe:
-                            gruppe[neuer_name] = gruppe.pop(alter_name)
-                elif isinstance(conds, dict) and alter_name in conds:
-                    conds[neuer_name] = conds.pop(alter_name)
-
-                # set_states: einfaches Dict {state_name: bool}
+                if not isinstance(t_settings, dict):
+                    continue
+                for cond in t_settings.get("condition_states", []):
+                    if isinstance(cond, dict) and "states" in cond:
+                        if alter_name in cond["states"]:
+                            cond["states"][neuer_name] = cond["states"].pop(alter_name)
                 ss = t_settings.get("set_states", {})
                 if isinstance(ss, dict) and alter_name in ss:
                     ss[neuer_name] = ss.pop(alter_name)
-
-            # Settings auf Disk speichern
-            import json
-            with open("template_settings.json", "w", encoding="utf-8") as f:
+            with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
                 json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self.state_panel.aktualisieren()
+            self._log(f"State umbenannt: {alter_name} → {neuer_name}")
 
-            # State-Panel im State-Panel die Auswahl auf den neuen Namen setzen
-            if hasattr(self, "state_panel"):
-                self.state_panel.ausgewaehlt = neuer_name
-
-            self._state_panel_aktualisieren()
-            self._log(f"State-Variable umbenannt: {alter_name} → {neuer_name}")
-            d.destroy()
-
-        tk.Button(d, text="Umbenennen", bg="#2ea043", fg="white", relief=tk.FLAT,
-                  padx=15, pady=5, font=("Segoe UI", 9, "bold"), command=umbenennen).pack(pady=10)
-
-    def _state_variable_loeschen(self, name):
-        """Löscht eine State-Variable und entfernt alle Referenzen aus Template-Settings."""
-        import json
-
-        # Aus Laufzeit-State entfernen
+    def _state_loeschen(self, name: str):
         self.app.state.game_states.pop(name, None)
-
-        # Aus allen Template-Settings entfernen
         for t_settings in self.template_engine.settings.values():
-            if not isinstance(t_settings, dict): continue
-            # condition_states
-            conds = t_settings.get("condition_states", [])
-            if isinstance(conds, list):
-                for gruppe in conds:
-                    if isinstance(gruppe, dict):
-                        gruppe.pop(name, None)
-            elif isinstance(conds, dict):
-                conds.pop(name, None)
-
-            # set_states
-            ss = t_settings.get("set_states", {})
-            if isinstance(ss, dict):
-                ss.pop(name, None)
-
-        # Settings auf Disk speichern
-        with open("template_settings.json", "w", encoding="utf-8") as f:
+            if not isinstance(t_settings, dict):
+                continue
+            for cond in t_settings.get("condition_states", []):
+                if isinstance(cond, dict) and "states" in cond:
+                    cond["states"].pop(name, None)
+            t_settings.get("set_states", {}).pop(name, None)
+        with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
-
-        self._state_panel_aktualisieren()
+        self.state_panel.aktualisieren()
         self._log(f"State-Variable gelöscht: {name}")
 
+    # ── Variablen / OCR Aktionen ──────────────────────────────────────────────
+
+    def _nur_aktive_toggle(self, aktiv: bool):
+        self._nur_aktive_variablen = aktiv
+        self._btn_nur_aktive.setStyleSheet(
+            "background:#2ea043;color:#ffffff;" if aktiv
+            else "background:#1a1a1a;color:#555555;"
+        )
+        self.ocr_panel.set_nur_aktive(aktiv)
+
+    # ── Dialoge ───────────────────────────────────────────────────────────────
+
+    def _einstellungen_dialog(self):
+        result = SettingsDialog.ausfuehren(self.einstellungen, self)
+        if result:
+            self.einstellungen.update(result)
+            self.template_engine.matching_skalierung = result.get(
+                "matching_skalierung", self.template_engine.matching_skalierung)
+            self.app.save_settings()
+            # FPS des Display-Timers anpassen
+            if hasattr(self, "_display_timer"):
+                fps = self.einstellungen.get("display_fps", DISPLAY_FPS_DEFAULT)
+                self._display_timer.setInterval(1000 // fps)
+
+    def _legende_zeigen(self):
+        dlg = LegendDialog(self)
+        dlg.exec()
+
+    def _liste_bearbeiten_dialog(self, listen_dict: dict):
+        dlg = DatenListeEditorQt(listen_dict, parent=self)
+        dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)
+        dlg.show()
+
+    def _einheiten_dialog(self):
+        dlg = EinheitenDialogQt(parent=self)
+        dlg.exec()
+
+    # ── Panel-Delegatoren ─────────────────────────────────────────────────────
+
+    def _template_panel_daten(self):
+        """Liefert alle Daten die TemplatePanelQt.aktualisieren() braucht."""
+        return (
+            dict(self.template_engine.templates),
+            dict(self.template_engine.settings),
+            dict(self.ocr_engine.template_ocr_konfigurationen()),
+            dict(self.action_engine.klickzonen_laden()),
+            _template_farbe,
+            lambda name: self.template_engine.settings.get(name, {}).get("condition_states", []),
+        )
+
+    def _log(self, message: str):
+        if hasattr(self, "log_panel"):
+            QMetaObject.invokeMethod(
+                self.log_panel, "log",
+                Qt.ConnectionType.QueuedConnection,
+                Q_ARG(str, message),
+            )
+        else:
+            print(f"LOG: {message}")
+
+    def _status_setzen(self, text: str, farbe: str):
+        if hasattr(self, "status_label"):
+            self.status_label.setText(text)
+            self.status_label.setStyleSheet(f"color:{farbe};")
+
+    def _panels_aktualisieren(self):
+        """Aktualisiert alle Panels nach Template/OCR/Workflow-Änderungen."""
+        daten = self._template_panel_daten()
+        if hasattr(self, "template_panel"):
+            self.template_panel.aktualisieren(*daten)
+        if hasattr(self, "state_template_panel"):
+            self.state_template_panel.aktualisieren(*daten)
+        if hasattr(self, "ocr_panel"):
+            self.ocr_panel.aktualisieren(
+                dict(self.ocr_engine.regionen),
+                dict(self.ocr_engine.template_ocr_konfigurationen()),
+                _template_farbe,
+            )
+        if hasattr(self, "workflow_panel"):
+            self.workflow_panel.aktualisieren(
+                dict(self.workflow_engine.master_workflows),
+                getattr(self.workflow_engine, "aktiver_master", ""),
+                dict(self.workflow_engine.workflows),
+            )
+        if hasattr(self, "state_panel"):
+            self.state_panel.aktualisieren(dict(self.app.state.game_states))
+
+    # ── Fenstergröße ─────────────────────────────────────────────────────────
+
     def _fenster_groesse_initialisieren(self):
-        """Stellt die Fenstergröße beim Start ein: gespeicherte Geometrie oder Max-Höhe."""
-        self.root.update_idletasks()
         try:
-            with open(APP_CONFIG_DATEI, "r", encoding="utf-8") as f:
+            with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
                 config = json.load(f)
             geo = config.get("fenster_geometrie")
             if geo:
-                self.root.geometry(geo)
-                self._fenster_automatisch_skaliert = True  # gespeicherte Geometrie → nicht nochmal anpassen
+                self.restoreGeometry(bytes.fromhex(geo))
                 return
         except Exception:
             pass
-        # Kein gespeicherter Zustand: Fenster auf Max-Bildschirmhöhe setzen
-        screen_h = self.root.winfo_screenheight()
-        self.root.geometry(f"1150x{screen_h}")
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.resize(1150, screen.height() - 60)
 
     def _fenster_geometrie_speichern(self):
-        """Speichert Fenstergröße und -position in app_config.json."""
         try:
             config = {}
             if os.path.exists(APP_CONFIG_DATEI):
-                with open(APP_CONFIG_DATEI, "r", encoding="utf-8") as f:
+                with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
                     config = json.load(f)
-            config["fenster_geometrie"] = self.root.geometry()
+            config["fenster_geometrie"] = self.saveGeometry().toHex().data().decode()
             with open(APP_CONFIG_DATEI, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
         except Exception:
             pass
 
-    def beenden(self):
+    def closeEvent(self, event: QCloseEvent):
         self._fenster_geometrie_speichern()
         self.app.shutdown()
-        self.root.destroy()
-        os._exit(0)  # Daemon-Threads in C-Extensions (mss/PyTorch/EasyOCR) sauber beenden
+        QApplication.quit()
+        event.accept()
+
+
+# ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = TilesBot(root)
-    root.protocol("WM_DELETE_WINDOW", app.beenden)
-    root.mainloop()
+    import sys
+    from lang import lang
+    lang.load("de")
+    app = QApplication(sys.argv)
+    app.setStyleSheet(style.load())
+    win = TilesBotWindow()
+    win.show()
+    sys.exit(app.exec())

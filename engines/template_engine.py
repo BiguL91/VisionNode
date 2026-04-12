@@ -10,7 +10,8 @@ from PIL import Image
 from collections import defaultdict
 
 TEMPLATES_ORDNER = "templates"
-SETTINGS_DATEI = "template_settings.json"
+SETTINGS_ORDNER = os.path.join(TEMPLATES_ORDNER, "settings")
+SETTINGS_DATEI = os.path.join(SETTINGS_ORDNER, "template_settings.json")
 DELETED_ORDNER = os.path.join(TEMPLATES_ORDNER, "_deleted")
 
 class TemplateEngine:
@@ -27,6 +28,7 @@ class TemplateEngine:
         self._gpu_cache = {}
         
         os.makedirs(TEMPLATES_ORDNER, exist_ok=True)
+        os.makedirs(SETTINGS_ORDNER, exist_ok=True)
         os.makedirs(DELETED_ORDNER, exist_ok=True)
         self.konfigurationen_bereinigen()
         self._settings_laden()
@@ -83,7 +85,11 @@ class TemplateEngine:
             for f in dateien:
                 if f.endswith(".png"): aktuelle_pngs.add(f[:-4])
 
-        json_dateien = ["template_settings.json", "template_farben.json", "template_klicks.json"]
+        json_dateien = [
+            os.path.join(SETTINGS_ORDNER, "template_settings.json"),
+            os.path.join(SETTINGS_ORDNER, "template_farben.json"),
+            os.path.join(SETTINGS_ORDNER, "template_klicks.json")
+        ]
         for datei in json_dateien:
             if os.path.exists(datei):
                 try:
@@ -105,12 +111,13 @@ class TemplateEngine:
                         with open(datei, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
                 except Exception: pass
         
-        if os.path.exists("template_ocr.json"):
+        ocr_path = os.path.join(SETTINGS_ORDNER, "template_ocr.json")
+        if os.path.exists(ocr_path):
             try:
-                with open("template_ocr.json", "r", encoding="utf-8") as f: data = json.load(f)
+                with open(ocr_path, "r", encoding="utf-8") as f: data = json.load(f)
                 neu = {k: v for k, v in data.items() if v.get("template") in aktuelle_pngs}
                 if len(neu) != len(data):
-                    with open("template_ocr.json", "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
+                    with open(ocr_path, "w", encoding="utf-8") as f: json.dump(neu, f, indent=2, ensure_ascii=False)
             except Exception: pass
 
     def _settings_laden(self):

@@ -1,4 +1,4 @@
-import lang
+from lang import lang
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QScrollArea, QFrame, QInputDialog, QMessageBox

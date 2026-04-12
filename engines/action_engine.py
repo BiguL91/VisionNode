@@ -6,7 +6,7 @@ import os
 # ADB-Pfad und MEMUPlayer-Standardport
 ADB_PFAD = r"C:\platform-tools\adb.exe"
 ADB_GERAET = "127.0.0.1:21503"
-KLICKZONEN_DATEI = "template_klicks.json"
+KLICKZONEN_DATEI = os.path.join("templates", "settings", "template_klicks.json")
 
 
 class ActionEngine:

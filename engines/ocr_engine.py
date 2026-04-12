@@ -10,8 +10,8 @@ from PIL import Image
 # Unterdrücke PyTorch RNN-Warnung (bekanntes EasyOCR/GPU Problem)
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
 
-OCR_REGIONEN_DATEI = "ocr_regionen.json"
-TEMPLATE_OCR_DATEI = "template_ocr.json"
+OCR_REGIONEN_DATEI = os.path.join("templates", "settings", "ocr_regionen.json")
+TEMPLATE_OCR_DATEI = os.path.join("templates", "settings", "template_ocr.json")
 
 
 class OCREngine:

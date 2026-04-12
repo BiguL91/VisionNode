@@ -7,45 +7,19 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Kern-Features
 
-- **Screen Capture (Windows Graphics Capture)**
-  - Identische Technologie wie Xbox Game Bar und TeamSpeak Screen Sharing.
-  - **Minimale CPU-Last (~5-10%)**: Dank Multi-Threading und GPU-Offloading bleibt das System extrem effizient.
-  - Hochperformant: **60fps** stabil, auch bei komplexen Workflows.
-  - Funktioniert mit DirectX, OpenGL, Vulkan und HDR-Monitoren.
-- **Vision Engine (High Precision & GPU Powered)**
-  - **Hierarchisches Matching (Master/Kind)**: Revolutionäres Zwei-Phasen-System. Sucht erst nach Rahmen (Master) und klassifiziert dann den Inhalt (Kind).
-  - **Multi-Varianten-Support**: Beliebig viele Bild-Varianten pro Template (`name`, `name__2`, `name__3`) für robuste Erkennung.
+- **Modernes UI (PyQt6)**
+  - Hardwarebeschleunigtes Rendering via Qt 6.11.0.
+  - Flackerfreie surgical Updates für Echtzeitdaten.
+- **Vision Engine (GPU Powered)**
+  - **Hierarchisches Matching**: Revolutionäres Zwei-Phasen-System.
   - **PyTorch Template Matching**: Blitzschnelle MNCC-Erkennung direkt auf der GPU.
-  - **Auto-Bbox Korrektur**: Präzise Klickpunkte durch automatische Inhalts-Erkennung.
-  - **EasyOCR (GPU)**: Texterkennung in Echtzeit mit Farbfilter, Pipette und **Umlaute-Support (DE)**.
-  - **Maskiertes Matching**: Voller Alpha-Kanal Support für präzise Icons.
-- **Hierarchische ROI-Vererbung (Scan-Bereiche)**
-  - **🎯 Fadenkreuz-System**: Templates erben automatisch die Scan-Bereiche ihrer Eltern-Gruppen.
-  - Maximale Performance: Nur relevante Bildschirmbereiche werden gescannt, ohne jedes Template einzeln konfigurieren zu müssen.
-- **Game-State-Management**
-  - Templates können Spielzustände setzen (`set_states`) und nur bei bestimmten Zuständen aktiv sein (`condition_states`).
-  - Logische Verknüpfung: AND (müssen alle zutreffen) und OR (einer reicht) kombinierbar.
-- **Action Engine (ADB)**
-  - Hintergrund-Interaktion via Android Debug Bridge (ADB)
-  - Keine Mausbewegung erforderlich – der Bot arbeitet unsichtbar im Hintergrund
-  - Stabilisierte Koordinaten-Umrechnung für Portrait- und Landscape-Modus
+  - **EasyOCR (GPU)**: Texterkennung in Echtzeit mit Farbfilter und Umlaute-Support.
+- **Screen Capture (WGC)**
+  - Minimale CPU-Last (~5-10%) dank Windows Graphics Capture API.
+  - HDR-ready und stabil bei 60fps.
 - **Workflow & Automation**
-  - **Blueprint Workflow Editor 2.0**: Visueller Canvas-Editor (Node-RED / Unreal Stil) mit Bézier-Kurven für komplexe Logik-Graphen.
-  - **Live-Simulation & Interaktiver Debugger**: Teste Workflows mit echten Bot-Daten und entscheide bei jeder Aktion, ob sie nur simuliert oder wirklich via ADB ausgeführt werden soll.
-  - **Echtzeit-Timer**: Live-Countdown (⏳) direkt auf den Workflow-Kacheln während der Ausführung.
-  - **Scheduler**: Geordnete Queue-Abarbeitung für endlose Automatisierung
-- **UI & Performance (Surgical Updates)**
-  - **Flackerfreie Listen**: Nur geänderte Werte werden aktualisiert, kein kompletter Widget-Rebuild pro Intervall.
-  - **Daten-Panel**: Live-Update berechneter Werte (Transformationen, Formeln, Timer-Ablauf).
-- **Template Editor (All-in-One)**
-  - **Tab-Leiste**: Ignorieren, Klick-Zone, Scannbereiche, OCR und Zustände – alles direkt im Editor.
-  - **Varianten-Navigation**: Master/Version-Anzeige mit `◀ ▶` Pfeilen, Löschen von Varianten (Master geschützt).
-  - **Non-Stop Workflow**: Speichern schließt den Editor nicht – schnelles Bearbeiten mehrerer Varianten hintereinander.
-- **Entwickler-Tools**
-  - **ROI-Editor (Scannbereiche)**: Begrenze die Suche auf spezifische Bildschirmbereiche für maximale Performance.
-  - **🚀 Interaktiver Test**: Sofortige Überprüfung der Erkennungsrate (Score) gegen Snapshots.
-  - **Dual-Preview Einlern-Modus**: Live-Vorschau und GPU-Mathematik (Zero-Mean) synchron in einem Fenster.
-  - **Debug-Modus**: Automatische Bildspeicherung im `/debug` Ordner für OCR-Analyse.
+  - **Blueprint Editor**: Visueller Graphen-Editor für komplexe Logik.
+  - **Live-Simulation**: Teste Workflows sicher ohne ADB-Eingriff.
 
 ---
 
@@ -53,27 +27,27 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 | Technologie          | Zweck                                   |
 |----------------------|-----------------------------------------|
-| `windows-capture`    | Screen Capture (WGC API, primär)        |
-| `PyTorch` (GPU)       | Core Matching Engine (MNCC)             |
-| `EasyOCR` (GPU)       | Texterkennung (OCR)                     |
-| `OpenCV`             | Bildverarbeitung, I/O                   |
+| `PyQt6`              | Modernes hardwarebeschleunigtes UI      |
+| `PyTorch` (CUDA)     | Core Matching Engine (MNCC)             |
+| `EasyOCR`            | Texterkennung (GPU)                     |
+| `windows-capture`    | High-Speed Screen Capture (WGC)         |
 | `ADB`                | Hintergrund-Steuerung                   |
-| `Tkinter`            | Modernes Dunkles UI                     |
-| `NumPy`              | Matrix-Operationen                      |
 
 ---
 
 ## Installation & Start
 
-1. **Voraussetzungen**: Python 3.10+, CUDA Toolkit (für GPU-OCR), MEMUPlayer
-2. **Dependencies**: `pip install -r requirements.txt`
+1. **Voraussetzungen**: Python 3.10+, NVIDIA GPU (für CUDA-Support empfohlen), MEMUPlayer.
+2. **Dependencies**:
+   - **NVIDIA GPU**: `pip install -r requirements-cuda.txt`
+   - **Standard (CPU)**: `pip install -r requirements.txt`
 3. **Start**: `python main.py`
-4. **Hinweis**: ADB (Android Debug Bridge) Der SDK Platform Tools ist Downloadbar unter https://developer.android.com/tools/releases/platform-tools?hl=de
+4. **Hinweis**: Für die ADB-Interaktion wird das Android SDK (Platform Tools) benötigt.
 
 ---
 
 ## Status
 
-v0.6.0 – **Workflow-Power & Live-Simulation**.
+v1.0.0 – **The PyQt6 Revolution**.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

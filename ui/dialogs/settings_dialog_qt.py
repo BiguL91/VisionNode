@@ -4,7 +4,7 @@ Einstellungen-Dialog (Qt). Ersetzt _einstellungen_dialog() aus ui_dialoge.py.
 Signals:
     gespeichert(settings: dict)  — alle geänderten Einstellungen als Dict
 """
-import lang
+from lang import lang
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QCheckBox, QPushButton, QFrame, QButtonGroup, QRadioButton

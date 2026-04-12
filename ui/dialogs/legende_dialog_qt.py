@@ -1,7 +1,7 @@
 """
 Legende-Dialog (Qt). Ersetzt _legende_zeigen() aus main.py.
 """
-import lang
+from lang import lang
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton
 )

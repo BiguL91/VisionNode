@@ -2,6 +2,7 @@
 
 | Library              | Zweck                                        |
 |----------------------|----------------------------------------------|
+| **`PyQt6`**          | **Grafische Oberfläche (GUI)** — Qt 6.11.0 Standard |
 | **`windows-capture`**| Screen Capture via Windows Graphics Capture API (WGC) |
 | **`torch` (PyTorch)** | **Core Engine**: GPU-beschleunigtes Template Matching (NCC) |
 | **`easyocr`**        | OCR-Engine mit GPU-Support (CUDA)            |
@@ -9,7 +10,6 @@
 | **`pywin32`**        | Fenster-Handling                             |
 | **`Pillow`**         | Bildbearbeitung für UI & Vorschau            |
 | **`numpy`**          | Matrix-Berechnungen                          |
-| **`tkinter`**        | Grafische Oberfläche (GUI)                   |
 
 ---
 

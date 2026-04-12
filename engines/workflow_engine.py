@@ -2,9 +2,9 @@ import json
 import os
 import time
 
-WORKFLOWS_DATEI = "workflows.json"
-MASTER_DATEI     = "master_workflows.json"
-SCHEDULE_DATEI  = "schedule.json"
+WORKFLOWS_DATEI = os.path.join("templates", "settings", "workflows.json")
+MASTER_DATEI     = os.path.join("templates", "settings", "master_workflows.json")
+SCHEDULE_DATEI  = os.path.join("templates", "settings", "schedule.json")
 
 # Schutz gegen Endlosschleifen im Graphen
 MAX_SCHRITTE = 1000

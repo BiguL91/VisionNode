@@ -10,7 +10,7 @@ Verwendung:
 import json
 import os
 
-_LANG_DIR = os.path.join(os.path.dirname(__file__), "lang")
+_LANG_DIR = os.path.dirname(__file__)
 _strings: dict = {}
 _current: str = "de"
 

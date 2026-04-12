@@ -6,7 +6,7 @@ Klassen:
     StateHinzufuegenDialog  — neue State-Variable anlegen
     StateUmbenennenDialog   — bestehende State-Variable umbenennen
 """
-import lang
+from lang import lang
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QCheckBox, QPushButton

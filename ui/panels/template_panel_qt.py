@@ -1,5 +1,5 @@
 import re
-import lang
+from lang import lang
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -101,7 +101,7 @@ class TemplatePanel(QWidget):
             nach_gruppen[g].append(name)
 
         aktive_gruppen = set(nach_gruppen.keys()) - {""}
-        passive_gruppen = passive_gruppen_func(self.filter_modus)
+        passive_gruppen = set(passive_gruppen_func(self.filter_modus))
         alle_gruppen_set = aktive_gruppen | passive_gruppen
         alle_gruppen = sorted(
             alle_gruppen_set | {""} if "" in nach_gruppen else alle_gruppen_set,

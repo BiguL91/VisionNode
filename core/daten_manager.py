@@ -3,14 +3,15 @@ import os
 import time
 import json
 
-DB_PFAD = os.path.join(os.path.dirname(__file__), "..", "daten_listen.db")
-EINHEITEN_DATEI = os.path.join(os.path.dirname(__file__), "..", "einheiten.json")
+DB_PFAD = os.path.join("templates", "settings", "data", "daten_listen.db")
+EINHEITEN_DATEI = os.path.join("templates", "settings", "einheiten.json")
 
 _EINHEITEN_CACHE = None
 
 
 def _verbinden():
-    """Öffnet eine Verbindung zur SQLite-Datenbank."""
+    """Öffnet eine Verbindung zur SQLite-Datenbank und erstellt Ordner falls nötig."""
+    os.makedirs(os.path.dirname(os.path.abspath(DB_PFAD)), exist_ok=True)
     conn = sqlite3.connect(os.path.abspath(DB_PFAD))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -90,6 +91,12 @@ def datenbank_initialisieren():
                 UNIQUE(listen_id, var_name)
             )
         """)
+        # Index sicherstellen für UPSERT (falls UNIQUE bei Tabellen-Erstellung fehlte)
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_werte_cache_unique ON werte_cache(listen_id, var_name)")
+            conn.commit()
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS zuordnungen (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -377,14 +384,20 @@ def cache_schreiben(listen_id, var_name, wert):
     if str(wert) in ("", "—", "?") or wert is None:
         return
 
-    with _verbinden() as conn:
-        conn.execute("""
-            INSERT INTO werte_cache (listen_id, var_name, wert, gespeichert_am)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(listen_id, var_name)
-            DO UPDATE SET wert=excluded.wert, gespeichert_am=excluded.gespeichert_am
-        """, (listen_id, var_name, str(wert), time.time()))
-        conn.commit()
+    try:
+        with _verbinden() as conn:
+            conn.execute("""
+                INSERT INTO werte_cache (listen_id, var_name, wert, gespeichert_am)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(listen_id, var_name)
+                DO UPDATE SET wert=excluded.wert, gespeichert_am=excluded.gespeichert_am
+            """, (listen_id, var_name, str(wert), time.time()))
+            conn.commit()
+    except sqlite3.IntegrityError:
+        # Passiert meistens, wenn die Liste gerade gelöscht wurde (Foreign Key Fail)
+        pass
+    except Exception:
+        pass
 
 
 def cache_lesen(listen_id):

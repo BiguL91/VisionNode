@@ -10,12 +10,12 @@ from typing import Optional, Dict, Any, List
 from collections import defaultdict
 import multiprocessing as mp
 
-from template_engine import TemplateEngine
-from ocr_engine import OCREngine
-from action_engine import ActionEngine
-from workflow_engine import WorkflowEngine
+from engines.template_engine import TemplateEngine
+from engines.ocr_engine import OCREngine
+from engines.action_engine import ActionEngine
+from engines.workflow_engine import WorkflowEngine
 from core.bot_state import BotState
-from helpers import (
+from core.helpers import (
     memu_fenster_finden, fenster_screenshot_mss,
     fenster_screenshot_wgc, wgc_starten, wgc_stoppen,
     MEMU_FENSTERTITEL
@@ -25,7 +25,7 @@ def _matching_subprocess(frame_q, result_q, reload_event):
     """Läuft in einem eigenen OS-Prozess."""
     import torch
     torch.set_num_threads(1)
-    from template_engine import TemplateEngine
+    from engines.template_engine import TemplateEngine
     engine = TemplateEngine()
 
     while True:
@@ -57,7 +57,7 @@ class TilesBotApp:
         self.ui_update_callback = ui_update_callback
         
         # Einstellungen
-        self.settings_path = "settings.json"
+        self.settings_path = os.path.join("templates", "settings", "settings.json")
         self.settings = self._load_settings()
         
         # Engines

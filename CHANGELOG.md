@@ -2,6 +2,28 @@
 
 ---
 
+## v1.0.0 (The PyQt6 Revolution)
+
+### ✨ Highlights
+- **Komplette UI-Ablösung**: Radikaler Umstieg von tkinter auf **PyQt6 (Qt 6.11.0)** für eine moderne, flüssige und hardwarebeschleunigte Benutzeroberfläche.
+- **Architektur-Refactoring**:
+  - Sämtliche Engines in den `engines/` Unterordner modularisiert.
+  - Core-Logik, Helpers und State-Management in `core/` konsolidiert.
+  - Blitzsauberes Root-Verzeichnis: Nur noch `main.py` und Dokumentation.
+- **Zentralisiertes Daten-Management**:
+  - Alle Konfigurationen, Templates und Datenbanken werden jetzt strukturiert unter `templates/settings/` und `templates/settings/data/` verwaltet.
+  - Verwaiste Pfade und redundante JSON-Dateien im Root wurden eliminiert.
+- **Hardware-Fokus**:
+  - Getrennte Requirements für CPU (`requirements.txt`) und NVIDIA GPU (`requirements-cuda.txt`).
+  - Native Unterstützung für CUDA 12.4 für blitzschnelles Template-Matching und OCR.
+
+### 🆕 Neue Features & Dialoge
+- **Modernisiertes Hauptfenster**: Mit chirurgischen Panel-Updates, die Flackern verhindern.
+- **Qt-basierter Einheiten-Editor**: Globales Wörterbuch für OCR-Skalierungsfaktoren.
+- **Optimierte Performance**: Reduzierte CPU-Last durch effizientes Qt-Rendering und saubere Thread-Trennung.
+
+---
+
 ## v0.6.0 (Workflow-Power & Live-Simulation)
 
 ### ✨ Features & Highlights
