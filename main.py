@@ -110,8 +110,29 @@ class VorschauLabel(QLabel):
         self._ocr_konf:      dict  = {}   # template_ocr configurations
 
         self._aktiv:    bool            = False   # Einlern/OCR-Modus aktiv
+        self._form:     str             = "box"   # "box" | "kreis"
         self._start:    QPoint | None   = None
         self._current:  QPoint | None   = None
+
+    region_ausgewaehlt = pyqtSignal(int, int, int, int, str)  # orig x0,y0,x1,y1, form
+
+    def contextMenuEvent(self, event):
+        if not self._aktiv:
+            return
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        a_box = menu.addAction("■ Rechteck-Ausschnitt")
+        a_kreis = menu.addAction("● Kreis-Ausschnitt")
+        
+        a_box.setCheckable(True)
+        a_kreis.setCheckable(True)
+        a_box.setChecked(self._form == "box")
+        a_kreis.setChecked(self._form == "kreis")
+        
+        action = menu.exec(event.globalPos())
+        if action == a_box: self._form = "box"
+        elif action == a_kreis: self._form = "kreis"
+        self.update()
 
     # ── Daten-Update ──────────────────────────────────────────────────────────
 
@@ -170,6 +191,7 @@ class VorschauLabel(QLabel):
             return
         x0, y0 = self._screen_to_orig(self._start)
         x1, y1 = self._screen_to_orig(e.pos())
+        form = self._form
         self._start   = None
         self._current = None
         self.update()
@@ -177,12 +199,14 @@ class VorschauLabel(QLabel):
             self.region_ausgewaehlt.emit(
                 min(x0, x1), min(y0, y1),
                 max(x0, x1), max(y0, y1),
+                form
             )
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
         p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Hintergrund wird durch QSS gezeichnet (oder falls nötig hier via Palette)
         
         if self._pixmap:
@@ -192,16 +216,23 @@ class VorschauLabel(QLabel):
             p.setPen(QColor("#555555"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._status)
 
-        # Auswahl-Rechteck im Einlern-Modus
+        # Auswahl im Einlern-Modus
         if self._aktiv and self._start and self._current:
-            pen = QPen(QColor("#1e88e5"), 2, Qt.PenStyle.DashLine)
+            is_kreis = (self._form == "kreis")
+            color = QColor("#ffca28") if is_kreis else QColor("#1e88e5")
+            pen = QPen(color, 2, Qt.PenStyle.DashLine)
             p.setPen(pen)
             p.setBrush(Qt.BrushStyle.NoBrush)
+            
             x0 = min(self._start.x(), self._current.x())
             y0 = min(self._start.y(), self._current.y())
             x1 = max(self._start.x(), self._current.x())
             y1 = max(self._start.y(), self._current.y())
-            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+            
+            if is_kreis:
+                p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
+            else:
+                p.drawRect(x0, y0, x1 - x0, y1 - y0)
 
         p.end()
 
@@ -701,7 +732,7 @@ class TilesBotWindow(QMainWindow):
             self.status_label.setProperty("class", "")
         self.status_label.setStyle(self.status_label.style())
 
-    def _region_ausgewaehlt(self, x0: int, y0: int, x1: int, y1: int):
+    def _region_ausgewaehlt(self, x0: int, y0: int, x1: int, y1: int, form: str = "box"):
         screenshot = self.app.current_screenshot_pil
         if screenshot is None:
             self._log("Kein Screenshot verfügbar.")
@@ -713,7 +744,17 @@ class TilesBotWindow(QMainWindow):
 
         if self.einlern_modus and _PILImage:
             ausschnitt = screenshot.crop((x0, y0, x1, y1))
-            self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0)
+            
+            # Falls Kreis, Alpha-Maske anwenden
+            if form == "kreis":
+                from PIL import ImageDraw
+                ausschnitt = ausschnitt.convert("RGBA")
+                mask = _PILImage.new("L", ausschnitt.size, 0)
+                draw = ImageDraw.Draw(mask)
+                draw.ellipse((0, 0, ausschnitt.size[0], ausschnitt.size[1]), fill=255)
+                ausschnitt.putalpha(mask)
+
+            self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0, form)
             # Öffne/update Template-Editor
             try:
                 editor_offen = (hasattr(self, "_einlern_editor") and

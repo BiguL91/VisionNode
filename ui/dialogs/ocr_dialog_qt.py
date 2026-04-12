@@ -46,17 +46,32 @@ class OCRCanvas(QLabel):
     """Zeigt Template-Vorschau + eingetragene Zonen-Rechtecke.
     Maus-Drag erzeugt neue Auswahl.
     """
-    auswahl_geaendert = pyqtSignal(tuple)  # (x0,y0,x1,y1) in canvas-koordinaten
+    auswahl_geaendert = pyqtSignal(tuple)  # (x0,y0,x1,y1, form) in canvas-koordinaten
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ocr_canvas")
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._pixmap: QPixmap = QPixmap()
-        self._eintraege: list = []        # [(name,modus,co,cu,cl,cr,...), ...]
+        self._eintraege: list = []        # [(name,modus,co,cu,cl,cr, form), ...]
         self._auswahl: tuple | None = None
         self._drag_start = None
         self._drag_cur   = None
+        self._form: str = "box"
+
+    def contextMenuEvent(self, event):
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        a_box = menu.addAction("■ Rechteck-Zone")
+        a_kreis = menu.addAction("● Kreis-Zone")
+        a_box.setCheckable(True)
+        a_kreis.setCheckable(True)
+        a_box.setChecked(self._form == "box")
+        a_kreis.setChecked(self._form == "kreis")
+        action = menu.exec(event.globalPos())
+        if action == a_box: self._form = "box"
+        elif action == a_kreis: self._form = "kreis"
+        self.update()
 
     def set_pixmap(self, pm: QPixmap):
         self._pixmap = pm
@@ -73,45 +88,66 @@ class OCRCanvas(QLabel):
         self._auswahl = auswahl
         self.update()
 
+    def _draw_checkerboard(self, painter, w, h):
+        size = 8
+        c1 = QColor("#1a1a1a")
+        c2 = QColor("#242424")
+        for y in range(0, h, size):
+            for x in range(0, w, size):
+                painter.fillRect(x, y, size, size, c1 if (x // size + y // size) % 2 == 0 else c2)
+
     def paintEvent(self, event):
         p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        
+        # 1. Schachbrett
+        self._draw_checkerboard(p, w, h)
+
+        # 2. Bild
         if not self._pixmap.isNull():
             p.drawPixmap(0, 0, self._pixmap)
-        w, h = self.width(), self.height()
 
-        # Eingetragene Zonen
+        # 3. Eingetragene Zonen
         for i, e in enumerate(self._eintraege):
-            if len(e) < 6:
-                continue
+            if len(e) < 6: continue
             farbe = QColor(ZONE_FARBEN[i % len(ZONE_FARBEN)])
             cl, co, cr, cu = e[4], e[2], e[5], e[3]
+            f = e[6] if len(e) > 6 else "box"
             x0 = int(cl / 100 * w)
             y0 = int(co / 100 * h)
             x1 = int((1 - cr / 100) * w)
             y1 = int((1 - cu / 100) * h)
             p.setPen(QPen(farbe, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+            if f == "kreis":
+                p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
+            else:
+                p.drawRect(x0, y0, x1 - x0, y1 - y0)
             p.setPen(farbe)
             p.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
             p.drawText(x0 + 2, y0 + 12, e[0])
 
-        # Aktuelle Auswahl
+        # 4. Aktuelle Auswahl
         if self._auswahl:
-            ax0, ay0, ax1, ay1 = self._auswahl
+            ax0, ay0, ax1, ay1, af = self._auswahl
             p.setPen(QPen(QColor("#ffffff"), 1, Qt.PenStyle.DashLine))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(ax0, ay0, ax1 - ax0, ay1 - ay0)
+            if af == "kreis":
+                p.drawEllipse(ax0, ay0, ax1 - ax0, ay1 - ay0)
+            else:
+                p.drawRect(ax0, ay0, ax1 - ax0, ay1 - ay0)
 
-        # Live Drag
+        # 5. Live Drag
         if self._drag_start and self._drag_cur:
             x0 = min(self._drag_start[0], self._drag_cur[0])
             y0 = min(self._drag_start[1], self._drag_cur[1])
             x1 = max(self._drag_start[0], self._drag_cur[0])
             y1 = max(self._drag_start[1], self._drag_cur[1])
             p.setPen(QPen(QColor("#1e88e5"), 2, Qt.PenStyle.DashLine))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+            if self._form == "kreis":
+                p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
+            else:
+                p.drawRect(x0, y0, x1 - x0, y1 - y0)
 
         p.end()
 
@@ -132,10 +168,11 @@ class OCRCanvas(QLabel):
         y0 = min(self._drag_start[1], e.pos().y())
         x1 = max(self._drag_start[0], e.pos().x())
         y1 = max(self._drag_start[1], e.pos().y())
+        form = self._form
         self._drag_start = None
         self._drag_cur = None
         if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
-            self._auswahl = (x0, y0, x1, y1)
+            self._auswahl = (x0, y0, x1, y1, form)
             self.auswahl_geaendert.emit(self._auswahl)
         self.update()
 
@@ -363,6 +400,7 @@ class OCRKonfigDialog(QDialog):
                 v.get("color_filter", False),
                 v.get("target_color", [255, 255, 255]),
                 v.get("color_tolerance", 30),
+                v.get("ausschnitt_form", "box")
             ])
         self._tabelle_aktualisieren()
 
@@ -414,11 +452,12 @@ class OCRKonfigDialog(QDialog):
         tw_disp = self._canvas.width()
         th_disp = self._canvas.height()
         cl, co, cr, cu = e[4], e[2], e[5], e[3]
+        f = e[13] if len(e) > 13 else "box"
         x0 = int(cl / 100 * tw_disp)
         y0 = int(co / 100 * th_disp)
         x1 = int((1 - cr / 100) * tw_disp)
         y1 = int((1 - cu / 100) * th_disp)
-        self._auswahl = (x0, y0, x1, y1)
+        self._auswahl = (x0, y0, x1, y1, f)
         self._canvas.set_auswahl(self._auswahl)
         self._ocr_vorschau_starten()
 
@@ -440,7 +479,7 @@ class OCRKonfigDialog(QDialog):
         """Liefert (crop_links, crop_oben, crop_rechts, crop_unten) in % aus Auswahl."""
         if not self._auswahl:
             return 0.0, 0.0, 0.0, 0.0
-        x0, y0, x1, y1 = self._auswahl
+        x0, y0, x1, y1 = self._auswahl[:4]
         tw = self._canvas.width()
         th = self._canvas.height()
         cl = round(x0 / tw * 100, 1)
@@ -454,6 +493,7 @@ class OCRKonfigDialog(QDialog):
         if not n or not self._auswahl:
             return
         cl, co, cr, cu = self._crop_prozent()
+        af = self._auswahl[4] if len(self._auswahl) > 4 else "box"
         neu = [
             n,
             self._get_modus(),
@@ -465,6 +505,7 @@ class OCRKonfigDialog(QDialog):
             self._cb_farbe.isChecked(),
             list(self._target_color),
             self._sb_toleranz.value(),
+            af
         ]
         for i, e in enumerate(self._eintraege):
             if e[0] == n:
@@ -486,8 +527,8 @@ class OCRKonfigDialog(QDialog):
         if not self._auswahl or self._template_pil is None:
             return
         # Fire OCR in background thread
-        auswahl = self._auswahl
         cl, co, cr, cu = self._crop_prozent()
+        af = self._auswahl[4] if len(self._auswahl) > 4 else "box"
         region = {
             "name": f"Vorschau_{self._name}",
             "x": 0, "y": 0,
@@ -502,12 +543,13 @@ class OCRKonfigDialog(QDialog):
             "color_filter": self._cb_farbe.isChecked(),
             "target_color": list(self._target_color),
             "color_tolerance": self._sb_toleranz.value(),
+            "ausschnitt_form": af
         }
         pil_basis = self._template_pil
 
         def run():
             try:
-                res, _ = self._bot.ocr_engine.region_scannen(pil_basis, region)
+                res, _ = self._bot.ocr_engine.region_scannen(pil_basis, region, debug=True)
                 QTimer.singleShot(0, lambda: self._ocr_label.setText(
                     res if res else "—"
                 ))
@@ -527,12 +569,14 @@ class OCRKonfigDialog(QDialog):
         # Neue Einträge registrieren
         for e in self._eintraege:
             n, m, co, cu, cl, cr, con, br, sh, up, cf, tc, ct = e[:13]
+            af = e[13] if len(e) > 13 else "box"
             key = n if n.startswith(prefix) else f"{prefix}{n}"
             ocr.template_ocr_aktivieren(
                 key, self._name, m,
                 crop_oben=co, crop_unten=cu, crop_links=cl, crop_rechts=cr,
                 contrast=con, brightness=br, sharpness=sh, upscale=up,
                 color_filter=cf, target_color=tc, color_tolerance=ct,
+                ausschnitt_form=af
             )
         self.gespeichert.emit()
         self.close()

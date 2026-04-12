@@ -344,7 +344,7 @@ class TemplateEngine:
         x0, x1 = np.where(spalten)[0][[0, -1]]
         return (int(x0), int(y0), int(x1 - x0 + 1), int(y1 - y0 + 1))
 
-    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None, alter_name=None):
+    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None, alter_name=None, ausschnitt_form="box"):
         bild_np = np.array(bild_pil.convert("RGB"))
 
         basis_name = name.split("__")[0]
@@ -396,8 +396,15 @@ class TemplateEngine:
         if hintergrund_entfernen:
             maske = self._hintergrund_maske_erstellen(bild_np, toleranz=hintergrund_toleranz)
             if ignore_regionen:
-                for (ix0, iy0, ix1, iy1) in ignore_regionen:
-                    maske[max(0,int(iy0)):int(iy1), max(0,int(ix0)):int(ix1)] = 0
+                for r in ignore_regionen:
+                    ix0, iy0, ix1, iy1 = [int(v) for v in r[:4]]
+                    f = r[4] if len(r) > 4 else "box"
+                    if f == "kreis":
+                        cx, cy = (ix0 + ix1) // 2, (iy0 + iy1) // 2
+                        rx, ry = abs(ix1 - ix0) // 2, abs(iy1 - iy0) // 2
+                        cv2.ellipse(maske, (cx, cy), (rx, ry), 0, 0, 360, 0, -1)
+                    else:
+                        maske[max(0,iy0):iy1, max(0,ix0):ix1] = 0
             bild_rgba = np.dstack([bild_np, maske])
             bild_speichern = Image.fromarray(bild_rgba, "RGBA")
         else:
@@ -405,8 +412,17 @@ class TemplateEngine:
             if ignore_regionen:
                 arr = np.array(bild_speichern)
                 h, w = arr.shape[:2]
-                for (x0, y0, x1, y1) in ignore_regionen:
-                    arr[max(0,int(y0)):min(h,int(y1)), max(0,int(x0)):min(w,int(x1)), 3] = 0
+                mask_alpha = arr[:, :, 3]
+                for r in ignore_regionen:
+                    ix0, iy0, ix1, iy1 = [int(v) for v in r[:4]]
+                    f = r[4] if len(r) > 4 else "box"
+                    if f == "kreis":
+                        cx, cy = (ix0 + ix1) // 2, (iy0 + iy1) // 2
+                        rx, ry = abs(ix1 - ix0) // 2, abs(iy1 - iy0) // 2
+                        cv2.ellipse(mask_alpha, (cx, cy), (rx, ry), 0, 0, 360, 0, -1)
+                    else:
+                        mask_alpha[max(0,iy0):min(h,iy1), max(0,ix0):min(w,ix1)] = 0
+                arr[:, :, 3] = mask_alpha
                 bild_speichern = Image.fromarray(arr, "RGBA")
 
         bild_speichern.save(pfad)
@@ -428,6 +444,7 @@ class TemplateEngine:
             "set_states": set_states or {},
             "typ": typ,
             "kategorie": kategorie,
+            "ausschnitt_form": ausschnitt_form,
         }
         with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.settings, f, indent=2, ensure_ascii=False)

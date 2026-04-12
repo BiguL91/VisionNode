@@ -37,7 +37,7 @@ class TemplateCanvas(QLabel):
     Zeichenfläche für Bild + Overlays (Ignore-Regionen + Klick-Zone).
     Unterstützt Drag-to-draw für Ignorier-Regionen und Einzel-Klick-Setzen.
     """
-    region_drawn = pyqtSignal(tuple)     # (x0, y0, x1, y1) in Original-Koordinaten
+    region_drawn = pyqtSignal(tuple)     # (x0, y0, x1, y1, form) in Original-Koordinaten
     klick_gesetzt = pyqtSignal(float, float)  # rel_x%, rel_y%
 
     def __init__(self, placeholder_text="", parent=None):
@@ -60,6 +60,23 @@ class TemplateCanvas(QLabel):
         self._drag_start: QPoint | None = None
         self._drag_end: QPoint | None = None
         self._modus: str = "ignore"             # "ignore" | "klick"
+        self._form:  str = "box"                # "box" | "kreis"
+
+    def contextMenuEvent(self, event):
+        if self._modus != "ignore":
+            return
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        a_box = menu.addAction("■ Rechteck-Region")
+        a_kreis = menu.addAction("● Kreis-Region")
+        a_box.setCheckable(True)
+        a_kreis.setCheckable(True)
+        a_box.setChecked(self._form == "box")
+        a_kreis.setChecked(self._form == "kreis")
+        action = menu.exec(event.globalPos())
+        if action == a_box: self._form = "box"
+        elif action == a_kreis: self._form = "kreis"
+        self.update()
 
     def set_bild(self, pil_img: Image.Image, max_b: int = 1100, max_h: int = 320):
         sw, sh = pil_img.size
@@ -69,7 +86,14 @@ class TemplateCanvas(QLabel):
         rw, rh = int(sw * s), int(sh * s)
         self._scaling = s
         disp = pil_img.resize((rw, rh), Image.NEAREST)
-        self._base_pixmap = _pil_to_qpixmap(disp)
+        
+        if disp.mode == "RGBA":
+            data = disp.tobytes("raw", "RGBA")
+            qi = QImage(data, rw, rh, rw * 4, QImage.Format.Format_RGBA8888)
+            self._base_pixmap = QPixmap.fromImage(qi)
+        else:
+            self._base_pixmap = _pil_to_qpixmap(disp)
+            
         self.setFixedSize(rw, rh)
         self.update()
         return s, rw, rh
@@ -77,7 +101,12 @@ class TemplateCanvas(QLabel):
     def set_bild_skaliert(self, pil_img: Image.Image, target_w: int, target_h: int):
         """Setzt Bild auf exakt (target_w × target_h) — für HG-Canvas."""
         resized = pil_img.resize((target_w, target_h), Image.LANCZOS)
-        self._base_pixmap = _pil_to_qpixmap(resized)
+        if resized.mode == "RGBA":
+            data = resized.tobytes("raw", "RGBA")
+            qi = QImage(data, target_w, target_h, target_w * 4, QImage.Format.Format_RGBA8888)
+            self._base_pixmap = QPixmap.fromImage(qi)
+        else:
+            self._base_pixmap = _pil_to_qpixmap(resized)
         self.setFixedSize(target_w, target_h)
         self.update()
 
@@ -104,41 +133,68 @@ class TemplateCanvas(QLabel):
             self._klick_zone = (rel_x, rel_y)
         self.update()
 
+    def _draw_checkerboard(self, painter, w, h):
+        size = 8
+        c1 = QColor("#1a1a1a")
+        c2 = QColor("#242424")
+        for y in range(0, h, size):
+            for x in range(0, w, size):
+                painter.fillRect(x, y, size, size, c1 if (x // size + y // size) % 2 == 0 else c2)
+
     def paintEvent(self, event):
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
 
+        # 1. Schachbrett für Transparenz
+        self._draw_checkerboard(painter, w, h)
+
+        # 2. Bild zeichnen
         if self._base_pixmap:
             painter.drawPixmap(0, 0, self._base_pixmap)
         else:
-            painter.fillRect(0, 0, w, h, QColor("#1a1a1a"))
             painter.setPen(QColor("#555555"))
             painter.setFont(QFont("Segoe UI", 10))
             painter.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, self._placeholder_text)
 
+        # 3. Ignorier-Regionen
         s = self._scaling
         fill_ign = QColor(255, 68, 68, 80)
         pen_ign = QPen(QColor("#ff4444"), 2)
 
         rects = []
         if self._ignore_pixel is not None:
+            # Format in Pixel-Canvas: (x0, y0, x1, y1, [form])
             rects = self._ignore_pixel
         else:
-            for (ix0, iy0, ix1, iy1) in self._ignore_regionen:
-                rects.append((int(ix0 * s), int(iy0 * s), int(ix1 * s), int(iy1 * s)))
+            # Format in _ignore_regionen: (x0, y0, x1, y1, [form])
+            for r in self._ignore_regionen:
+                ix0, iy0, ix1, iy1 = r[:4]
+                f = r[4] if len(r) > 4 else "box"
+                rects.append((int(ix0 * s), int(iy0 * s), int(ix1 * s), int(iy1 * s), f))
 
-        for (rx0, ry0, rx1, ry1) in rects:
-            painter.fillRect(rx0, ry0, rx1 - rx0, ry1 - ry0, fill_ign)
-            painter.setPen(pen_ign)
-            painter.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
+        painter.setPen(pen_ign)
+        painter.setBrush(fill_ign)
+        for r in rects:
+            rx0, ry0, rx1, ry1 = r[:4]
+            f = r[4] if len(r) > 4 else "box"
+            if f == "kreis":
+                painter.drawEllipse(rx0, ry0, rx1 - rx0, ry1 - ry0)
+            else:
+                painter.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
 
+        # 4. Aktueller Drag
         if self._drag_start and self._drag_end:
-            x0, y0 = self._drag_start.x(), self._drag_start.y()
-            x1, y1 = self._drag_end.x(), self._drag_end.y()
-            painter.fillRect(min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0), fill_ign)
-            painter.setPen(pen_ign)
-            painter.drawRect(min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0))
+            x0 = min(self._drag_start.x(), self._drag_end.x())
+            y0 = min(self._drag_start.y(), self._drag_end.y())
+            x1 = max(self._drag_start.x(), self._drag_end.x())
+            y1 = max(self._drag_start.y(), self._drag_end.y())
+            if self._form == "kreis":
+                painter.drawEllipse(x0, y0, x1 - x0, y1 - y0)
+            else:
+                painter.drawRect(x0, y0, x1 - x0, y1 - y0)
 
+        # 5. Klick-Zone
         if self._klick_zone:
             px = int(self._klick_zone[0] / 100 * w)
             py = int(self._klick_zone[1] / 100 * h)
@@ -179,6 +235,7 @@ class TemplateCanvas(QLabel):
                     int(max(0, min(y0, y1)) / ss),
                     int(min(sw, max(x0, x1)) / ss),
                     int(min(sh, max(y0, y1)) / ss),
+                    self._form
                 )
                 self.region_drawn.emit(reg)
             self.update()
@@ -207,11 +264,13 @@ class TemplateEditorQt(QDialog):
         self.template_engine = bot.template_engine
         self.action_engine = bot.action_engine
         self.bearbeiten_name = bearbeiten_name
+        self.ausschnitt_form = "box"
 
         if bearbeiten_name:
             s = bot.template_engine.settings.get(bearbeiten_name, {})
             self.typ = s.get("typ") or typ or "template"
             self.kategorie = s.get("kategorie") or kategorie or "workflow"
+            self.ausschnitt_form = s.get("ausschnitt_form", "box")
         else:
             self.typ = typ or "template"
             self.kategorie = kategorie or "workflow"
@@ -219,11 +278,14 @@ class TemplateEditorQt(QDialog):
         self.orig_bild_ref = None
         if aktueller_ausschnitt:
             self.orig_bild_ref = aktueller_ausschnitt[0]
+            if len(aktueller_ausschnitt) > 3:
+                self.ausschnitt_form = aktueller_ausschnitt[3]
+
         self.einlern_modus_callback = einlern_modus_callback
 
         # Dynamischen Fenstertitel setzen
         prefix = "Template" if bearbeiten_name else "Neues Template"
-        self.setWindowTitle(f"{prefix}: {bearbeiten_name or initial_name or '??'}")
+        self.setWindowTitle(f"{prefix}: {bearbeiten_name or '??'}")
         
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self.setModal(False)
@@ -1179,8 +1241,15 @@ class TemplateEditorQt(QDialog):
             if self.hg_checkbox.isChecked():
                 maske_raw = self.template_engine._hintergrund_maske_erstellen(
                     bild_np, toleranz=self._hg_tol_slider.value())
-                for (ix0, iy0, ix1, iy1) in self.ignore_regionen:
-                    maske_raw[max(0, int(iy0)):int(iy1), max(0, int(ix0)):int(ix1)] = 0
+                for r in self.ignore_regionen:
+                    ix0, iy0, ix1, iy1 = [int(v) for v in r[:4]]
+                    f = r[4] if len(r) > 4 else "box"
+                    if f == "kreis":
+                        cx, cy = (ix0 + ix1) // 2, (iy0 + iy1) // 2
+                        rx, ry = abs(ix1 - ix0) // 2, abs(iy1 - iy0) // 2
+                        cv2.ellipse(maske_raw, (cx, cy), (rx, ry), 0, 0, 360, 0, -1)
+                    else:
+                        maske_raw[max(0, iy0):iy1, max(0, ix0):ix1] = 0
                 maske_np = np.where(maske_raw > 10, 1.0, 0.0).astype(np.float32)
                 bbox = self.template_engine._maske_bbox((maske_np > 0.5).astype(np.uint8))
                 if bbox:
@@ -1316,18 +1385,24 @@ class TemplateEditorQt(QDialog):
                 self.canvas_hg.set_bild_skaliert(preview, ab, ah)
 
                 pixel_rects = []
-                for (ix0, iy0, ix1, iy1) in self.ignore_regionen:
+                for r in self.ignore_regionen:
+                    ix0, iy0, ix1, iy1 = r[:4]
+                    f = r[4] if len(r) > 4 else "box"
                     if bbox:
                         bx, by, bw, bh = bbox
                         sx, sy = ab / bw, ah / bh
                         pixel_rects.append((
                             int((ix0 - bx) * sx), int((iy0 - by) * sy),
                             int((ix1 - bx) * sx), int((iy1 - by) * sy),
+                            f
                         ))
                     else:
                         s = self.aktuell_skala
                         pixel_rects.append((
-                            int(ix0 * s), int(iy0 * s), int(ix1 * s), int(iy1 * s)))
+                            int(ix0 * s), int(iy0 * s),
+                            int(ix1 * s), int(iy1 * s),
+                            f
+                        ))
                 self.canvas_hg.set_ignore_pixel(pixel_rects)
         except Exception as e:
             self.bot._log(f"Vorschau-Fehler: {e}")
@@ -1448,13 +1523,13 @@ class TemplateEditorQt(QDialog):
                 set_states=dict(self.set_states),
                 typ=self.typ,
                 kategorie=self.kategorie,
+                ausschnitt_form=self.ausschnitt_form,
             )
 
             if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):
                 self.template_engine.gruppe_umbenennen(
                     alter_name, n, neue_uebergeordnete_gruppe=uebergeordnet)
                 orig_alter_name = alter_name
-                alter_name = n
                 self.bearbeiten_name = n
                 self.template_engine.template_speichern(
                     n, img_to_save, entferne_hg, list(self.ignore_regionen),
@@ -1462,7 +1537,6 @@ class TemplateEditorQt(QDialog):
             elif umbenennen:
                 self.template_engine.template_umbenennen(alter_name, n, gruppe_name)
                 orig_alter_name = alter_name
-                alter_name = n
                 self.bearbeiten_name = n
                 self.template_engine.template_speichern(
                     n, img_to_save, entferne_hg, list(self.ignore_regionen),

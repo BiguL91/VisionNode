@@ -136,7 +136,19 @@ class OCREngine:
 
         # Upscaling
         roi_resized = cv2.resize(ausschnitt_cv, (0, 0), fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC)
-        
+        rh, rw = roi_resized.shape[:2]
+
+        # Kreis-Maskierung falls gewünscht
+        if region.get("ausschnitt_form") == "kreis":
+            mask_kreis = np.zeros((rh, rw), dtype=np.uint8)
+            cv2.ellipse(mask_kreis, (rw // 2, rh // 2), (rw // 2, rh // 2), 0, 0, 360, 255, -1)
+            # Alles außerhalb des Kreises weiß machen (für OCR Hintergrund)
+            bg = np.full_like(roi_resized, 255)
+            roi_resized = cv2.bitwise_and(roi_resized, roi_resized, mask=mask_kreis)
+            inv_mask = cv2.bitwise_not(mask_kreis)
+            roi_white_bg = cv2.bitwise_and(bg, bg, mask=inv_mask)
+            roi_resized = cv2.add(roi_resized, roi_white_bg)
+
         # Kontrast und Helligkeit IMMER anwenden (bevor gefiltert wird)
         roi_resized = cv2.convertScaleAbs(roi_resized, alpha=contrast, beta=brightness)
 
@@ -283,7 +295,7 @@ class OCREngine:
                                 crop_oben=0, crop_unten=0, crop_links=0, crop_rechts=0,
                                 contrast=1.0, brightness=0, sharpness=1.0, upscale=5.0,
                                 color_filter=False, target_color=[255, 255, 255], color_tolerance=30,
-                                dialog_rand=0):
+                                dialog_rand=0, ausschnitt_form="box"):
         """Fügt einen benannten OCR-Eintrag für ein Template hinzu."""
         konfig = self._template_ocr_laden()
         konfig[eintrag_name] = {
@@ -300,7 +312,8 @@ class OCREngine:
             "color_filter": color_filter,
             "target_color": target_color,
             "color_tolerance": color_tolerance,
-            "dialog_rand": dialog_rand
+            "dialog_rand": dialog_rand,
+            "ausschnitt_form": ausschnitt_form
         }
         self._template_ocr_speichern(konfig)
 
