@@ -336,9 +336,10 @@ class DatenPanel(QWidget):
     # ── Intern ────────────────────────────────────────────────────────────────
 
     def _alles_aufbauen(self):
-        for b in self._bloecke.values():
-            self.container_layout.removeWidget(b)
-            b.deleteLater()
+        while self.container_layout.count() > 1:  # Stretch bleibt
+            item = self.container_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
         self._bloecke.clear()
 
         self._listen_cache = alle_listen()

@@ -799,13 +799,13 @@ class TemplateEditorQt(QDialog):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _ocr_konfigurieren(self):
+        from ui.dialogs.ocr_dialog_qt import OCRKonfigDialog
         name = self.bearbeiten_name or self.name_entry.text().strip()
         if not name:
             return
-        eintraege = self.bot._modus_dialog(name)
-        if eintraege is None:
-            return
-        self.bot._ocr_konfiguration_speichern(name, eintraege)
+        dlg = OCRKonfigDialog(name, bot=self.bot, parent=self)
+        dlg.gespeichert.connect(self.bot._panels_aktualisieren)
+        dlg.show()
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Zustände-Dialog

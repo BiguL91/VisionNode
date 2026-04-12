@@ -366,14 +366,21 @@ class TilesBotWindow(QMainWindow):
         # Workflow-Templates
         wt_panel = CollapsiblePanel("WORKFLOW TEMPLATES", expanded=True, stretch=True)
         self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=False)
+        self.template_panel.liste.itemClicked.connect(
+            lambda: setattr(self, "_aktiver_template_panel", self.template_panel))
         wt_panel.content_layout.addWidget(self.template_panel)
         l.addWidget(wt_panel, stretch=2)
 
         # State-Templates
         st_panel = CollapsiblePanel("STATE TEMPLATES", expanded=True)
-        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=True)
+        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=False)
+        self.state_template_panel.liste.itemClicked.connect(
+            lambda: setattr(self, "_aktiver_template_panel", self.state_template_panel))
         st_panel.content_layout.addWidget(self.state_template_panel)
         l.addWidget(st_panel)
+
+        # Geteilte Template-Buttons (für beide Listen)
+        self._setup_shared_template_buttons(l)
 
         # OCR-Variablen
         ocr_panel_coll = CollapsiblePanel("OCR VARIABLEN", expanded=True, stretch=True)
@@ -409,6 +416,56 @@ class TilesBotWindow(QMainWindow):
         l.addStretch()
         scroll.setWidget(container)
         return scroll
+
+    def _setup_shared_template_buttons(self, parent_layout: QVBoxLayout):
+        """Gemeinsame Button-Leiste für Workflow- und State-Template-Panel."""
+        bar = QWidget()
+        bar_lay = QVBoxLayout(bar)
+        bar_lay.setContentsMargins(0, 2, 0, 4)
+        bar_lay.setSpacing(4)
+
+        def _name():
+            p = getattr(self, "_aktiver_template_panel", None) or self.template_panel
+            return p.get_auswahl_name()
+
+        def _gruppe():
+            p = getattr(self, "_aktiver_template_panel", None) or self.template_panel
+            return p._last_gruppe
+
+        zeile1 = QHBoxLayout()
+        zeile1.setSpacing(4)
+        btn_neu      = QPushButton("+ Neu")
+        btn_neu.setObjectName("btn_new_sm")
+        btn_bearb    = QPushButton("✎ Bearbeiten")
+        btn_bearb.setObjectName("btn_sm")
+        btn_del      = QPushButton("✕ Löschen")
+        btn_del.setObjectName("btn_del_sm")
+        for btn in [btn_neu, btn_bearb, btn_del]:
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            zeile1.addWidget(btn)
+
+        zeile2 = QHBoxLayout()
+        zeile2.setSpacing(4)
+        btn_ocr      = QPushButton("🔤 OCR")
+        btn_ocr.setObjectName("btn_sm")
+        btn_klick    = QPushButton("🖱 Klick")
+        btn_klick.setObjectName("btn_sm")
+        btn_gruppe   = QPushButton("📦 Gruppe")
+        btn_gruppe.setObjectName("btn_sm")
+        for btn in [btn_ocr, btn_klick, btn_gruppe]:
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            zeile2.addWidget(btn)
+
+        bar_lay.addLayout(zeile1)
+        bar_lay.addLayout(zeile2)
+        parent_layout.addWidget(bar)
+
+        btn_neu.clicked.connect(self._template_neu_erstellen)
+        btn_bearb.clicked.connect(lambda: _name() and self._template_bearbeiten(_name()))
+        btn_del.clicked.connect(lambda: _name() and self._template_loeschen(_name()))
+        btn_ocr.clicked.connect(lambda: _name() and self._ocr_konfigurieren(_name()))
+        btn_klick.clicked.connect(lambda: _name() and self._klick_konfigurieren(_name()))
+        btn_gruppe.clicked.connect(lambda: _gruppe() and self._gruppe_konfigurieren(_gruppe()))
 
     def _setup_rechte_spalte2(self) -> QWidget:
         w = QWidget()
@@ -492,7 +549,7 @@ class TilesBotWindow(QMainWindow):
         self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
 
         # Template-Panels
-        self.template_panel.neu_laden_requested.connect(self._template_neu_laden)
+        self.template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
         self.state_template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
         for panel in [self.template_panel, self.state_template_panel]:
             panel.bearbeiten_requested.connect(self._template_bearbeiten)
@@ -658,8 +715,14 @@ class TilesBotWindow(QMainWindow):
             ausschnitt = screenshot.crop((x0, y0, x1, y1))
             self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0)
             # Öffne/update Template-Editor
-            if hasattr(self, "_einlern_editor") and self._einlern_editor and \
-                    self._einlern_editor.isVisible():
+            try:
+                editor_offen = (hasattr(self, "_einlern_editor") and
+                                self._einlern_editor is not None and
+                                self._einlern_editor.isVisible())
+            except RuntimeError:
+                editor_offen = False
+                self._einlern_editor = None
+            if editor_offen:
                 self._einlern_editor._vorschau_setzen(ausschnitt, x1 - x0, y1 - y0)
             else:
                 self._einlern_dialog_oeffnen()
@@ -689,6 +752,7 @@ class TilesBotWindow(QMainWindow):
         self._einlern_editor = editor
 
         def on_close():
+            self._einlern_editor = None
             if self.einlern_modus:
                 self._einlern_modus_umschalten()
 
@@ -723,15 +787,20 @@ class TilesBotWindow(QMainWindow):
 
     def _template_loeschen(self, name: str):
         antwort = QMessageBox.question(
-            self, "Template löschen",
-            f"Template \"{name}\" wirklich löschen?",
+            self, "Löschen",
+            f"\"{name}\" wirklich löschen?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if antwort == QMessageBox.StandardButton.Yes:
+        if antwort != QMessageBox.StandardButton.Yes:
+            return
+        typ = self.template_engine.settings.get(name, {}).get("typ", "template")
+        if typ in ("passiv_gruppe", "aktiv_gruppe"):
+            self.template_engine.gruppe_config_loeschen(name, mit_inhalt=False)
+        else:
             self.template_engine.template_loeschen(name)
-            self.app.reload_templates()
-            self._panels_aktualisieren()
-            self._log(f"Template gelöscht: {name}")
+        self.app.reload_templates()
+        self._panels_aktualisieren()
+        self._log(f"Gelöscht: {name}")
 
     def _template_neu_laden(self):
         self.app.reload_templates()
@@ -1079,13 +1148,20 @@ class TilesBotWindow(QMainWindow):
 
     def _template_panel_daten(self):
         """Liefert alle Daten die TemplatePanelQt.aktualisieren() braucht."""
+        def passive_gruppen_func(filter_modus: str) -> list[str]:
+            return [
+                n for n, s in self.template_engine.settings.items()
+                if isinstance(s, dict) and s.get("typ") == "passiv_gruppe"
+                and (filter_modus == "all" or s.get("kategorie", "workflow") == filter_modus)
+            ]
+
         return (
             dict(self.template_engine.templates),
             dict(self.template_engine.settings),
             dict(self.ocr_engine.template_ocr_konfigurationen()),
             dict(self.action_engine.klickzonen_laden()),
             _template_farbe,
-            lambda name: self.template_engine.settings.get(name, {}).get("condition_states", []),
+            passive_gruppen_func,
         )
 
     def _log(self, message: str):
@@ -1106,6 +1182,10 @@ class TilesBotWindow(QMainWindow):
             else:
                 self.status_label.setProperty("class", "lbl_dim")
             self.status_label.setStyle(self.status_label.style())
+
+    def _timer_panel_aktualisieren(self):
+        """Stub — wird vom TemplateEditor aufgerufen; hier kein separates Timer-Panel."""
+        pass
 
     def _panels_aktualisieren(self):
         """Aktualisiert alle Panels nach Template/OCR/Workflow-Änderungen."""

@@ -158,10 +158,11 @@ class VariablePanel(QWidget):
 
     def aktualisieren(self, regionen: dict, ocr_konfig: dict, template_farbe_func):
         """Vollständiger Rebuild — nur bei strukturellen Änderungen."""
-        # Alte Gruppen entfernen
-        for g in self._gruppen.values():
-            self.list_layout.removeWidget(g)
-            g.deleteLater()
+        # Alle Widgets (Gruppen + leere Labels) aus dem Layout entfernen
+        while self.list_layout.count() > 1:  # letztes Item = Stretch bleibt
+            item = self.list_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
         self._gruppen.clear()
         self._reihenfolge.clear()
         self._letzte_ocr_konfig_keys = set(ocr_konfig.keys())

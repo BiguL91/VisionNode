@@ -122,10 +122,11 @@ class StatePanel(QWidget):
                       if not self.nur_aktive or v)
         self._last_keys = set(keys)
 
-        # Alte Zeilen entfernen
-        for row in self.rows.values():
-            self.list_layout.removeWidget(row)
-            row.deleteLater()
+        # Alle Widgets (Zeilen + leere Labels) entfernen
+        while self.list_layout.count() > 1:  # Stretch bleibt
+            item = self.list_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
         self.rows.clear()
 
         if not keys:
