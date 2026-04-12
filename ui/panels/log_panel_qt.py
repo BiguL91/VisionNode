@@ -15,10 +15,7 @@ class LogPanel(QWidget):
 
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 8))
-        self.log_text.setStyleSheet(
-            "QPlainTextEdit { background-color: #1a1a1a; color: #888888; border: none; }"
-        )
+        self.log_text.setObjectName("log_text")
         self.log_text.setMaximumBlockCount(500)  # Max 500 Zeilen, älteste fliegen raus
         layout.addWidget(self.log_text)
 

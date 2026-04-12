@@ -10,16 +10,18 @@ QFrame#sidebar {
 QFrame#collapsible_panel {
     background-color: #242424;
     border-radius: 4px;
-    border: 1px solid #2e2e2e;
+    border: 1px solid #333333;
+    margin-bottom: 2px;
 }
 
 QFrame#collapsible_header {
-    background-color: #1e1e1e;
-    border-radius: 4px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2a2a2a, stop:1 #1e1e1e);
+    border-bottom: 1px solid #333333;
+    border-radius: 4px 4px 0 0;
 }
 
 QFrame#collapsible_header:hover {
-    background-color: #222222;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #333333, stop:1 #222222);
 }
 
 QLabel#collapse_arrow {
@@ -51,10 +53,105 @@ QLabel#status_label {
     font-size: 12px;
 }
 
-/* Scrollbereiche */
-QScrollArea {
-    border: none;
+/* Template-Panel Listen */
+QListWidget#template_liste {
+    font-weight: bold;
+}
+
+QListWidget#template_liste::item:selected {
+    background-color: #1565c0;
+    color: #ffffff;
+}
+
+/* Workflow-Panel Listen */
+QListWidget#master_liste {
+    font-weight: bold;
+}
+
+QListWidget#master_liste::item:selected,
+QListWidget#workflow_liste::item:selected {
+    background-color: #1565c0;
+    color: #ffffff;
+}
+
+QPushButton#btn_master_aktiv {
+    color: #ffca28;
+}
+
+QPushButton#btn_master_aktiv:hover {
+    background-color: #3a3a1a;
+    color: #ffd54f;
+}
+
+/* Variable-Panel */
+QFrame#variable_gruppe {
+    background-color: #1a1a1a;
+    border-radius: 4px;
+}
+
+QLabel#gruppe_titel {
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QLabel#lbl_modus_timer { color: #42a5f5; font-size: 9px; }
+QLabel#lbl_modus_zahl  { color: #ffca28; font-size: 9px; }
+QLabel#lbl_modus_text  { color: #aaaaaa; font-size: 9px; }
+
+QLabel#variable_wert {
+    color: #555555;
+}
+
+QLabel#variable_wert[active="true"] {
+    color: #ffffff;
+}
+
+/* State-Panel */
+StateRow {
     background-color: transparent;
+    border-radius: 4px;
+}
+
+StateRow[selected="true"] {
+    background-color: #0d47a1;
+}
+
+QLabel#state_name {
+    color: #cccccc;
+    font-size: 13px;
+}
+
+/* Daten-Panel Tabelle */
+QLabel#daten_tab_header {
+    color: #555555;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 6px;
+    background-color: #1e1e1e;
+}
+
+QLabel#daten_tab_cell {
+    color: #cccccc;
+    font-size: 10px;
+    padding: 2px 6px;
+    background-color: #1a1a1a;
+}
+
+QLabel#daten_tab_cell[alt="true"] {
+    background-color: #212121;
+}
+
+QLabel#daten_tab_cell[highlight="true"] {
+    color: #4fc3f7;
+}
+
+/* Log-Panel */
+QPlainTextEdit#log_text {
+    background-color: #1a1a1a;
+    color: #888888;
+    border: none;
+    font-family: "Consolas";
+    font-size: 11px;
 }
 
 QScrollArea > QWidget > QWidget {

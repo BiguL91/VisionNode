@@ -277,69 +277,70 @@ class TilesBotApp:
                 if t_start and self.settings.get("log_matching", False):
                     ms = (time.time() - t_start) * 1000
                     self._log(f"[Matching] {len(aktive_matches)} Treffer in {ms:.1f}ms")
-            except Exception: pass
+            except Exception as e:
+                if self.settings.get("log_matching", False):
+                    self._log(f"Matching-Loop Fehler: {e}")
             time.sleep(0.05)
 
     def _ocr_loop(self):
         while self.state.capture_active:
-            intervall = self.settings.get("ocr_intervall", 0.5)
-            if self.current_screenshot_np is not None:
-                # Konvertierung für OCR (PIL benötigt)
-                frame_rgb = cv2.cvtColor(self.current_screenshot_np, cv2.COLOR_BGR2RGB)
-                self.current_screenshot_pil = Image.fromarray(frame_rgb)
-                
-                # Feste Regionen
-                if self.ocr_engine.regionen:
-                    self.state.ocr_values = self.ocr_engine.alle_scannen(self.current_screenshot_pil)
-                
-                # Template OCR (mit Varianten-Support)
-                ocr_konfig = self.ocr_engine.template_ocr_konfigurationen()
-                
-                # Wir fangen frisch an, damit Werte von verschwundenen Templates "wegfallen"
-                neue_t_ocr = {}
-                
-                # Alle aktuell gefundenen Basis-Namen
-                gefundene_basis_namen = {m[0] for m in self.state.active_matches}
-                
-                # 1. Gruppen-Konfigurationen vorbereiten
-                konf_nach_template = defaultdict(list)
-                for entry_name, k in ocr_konfig.items():
-                    konf_nach_template[k.get("template")].append((entry_name, k))
-
-                # Track entries we've already processed so lower-scoring matches don't overwrite the best match
-                processed_entries = set()
-
-                # 2. Nur die aktuell gefundenen Templates scannen
-                for match in self.state.active_matches:
-                    d_name, p_name = match[0], match[6] if len(match) > 6 else match[0]
+            try:
+                intervall = self.settings.get("ocr_intervall", 0.5)
+                if self.current_screenshot_np is not None:
+                    # Konvertierung für OCR (PIL benötigt)
+                    frame_rgb = cv2.cvtColor(self.current_screenshot_np, cv2.COLOR_BGR2RGB)
+                    self.current_screenshot_pil = Image.fromarray(frame_rgb)
                     
-                    passende = konf_nach_template.get(p_name, [])
-                    if not passende and p_name != d_name:
-                        passende = konf_nach_template.get(d_name, [])
+                    # Feste Regionen
+                    if self.ocr_engine.regionen:
+                        self.state.ocr_values = self.ocr_engine.alle_scannen(self.current_screenshot_pil)
                     
-                    for entry_name, k in passende:
-                        if entry_name in processed_entries:
-                            continue
-                            
-                        wert = self.ocr_engine.template_match_scannen(
-                            self.current_screenshot_pil, entry_name, match
-                        )
-                        neue_t_ocr[entry_name] = wert
-                        processed_entries.add(entry_name)
-                
-                # 3. Optional: Werte von Templates entfernen, die gar nicht mehr da sind
-                # Wir machen das hier NICHT hart, damit Werte im Log/Workflow stabil bleiben.
-                # Falls gewünscht, könnte man hier ein 'Cleanup' für nicht gefundene Templates machen.
-                
-                self.state.template_ocr_values = neue_t_ocr
+                    # Template OCR (mit Varianten-Support)
+                    ocr_konfig = self.ocr_engine.template_ocr_konfigurationen()
+                    
+                    # Wir fangen frisch an, damit Werte von verschwundenen Templates "wegfallen"
+                    neue_t_ocr = {}
+                    
+                    # Alle aktuell gefundenen Basis-Namen
+                    gefundene_basis_namen = {m[0] for m in self.state.active_matches}
+                    
+                    # 1. Gruppen-Konfigurationen vorbereiten
+                    konf_nach_template = defaultdict(list)
+                    for entry_name, k in ocr_konfig.items():
+                        konf_nach_template[k.get("template")].append((entry_name, k))
 
-                # Logging bei Wertänderungen
-                if self.settings.get("log_variablen", True):
-                    alle_aktuell = self.state.get_all_ocr()
-                    for name, wert in alle_aktuell.items():
-                        if wert and wert != self.state.last_logged_ocr.get(name):
-                            self._log(f"[OCR] {name}: {wert}")
-                            self.state.last_logged_ocr[name] = wert
+                    # Track entries we've already processed so lower-scoring matches don't overwrite the best match
+                    processed_entries = set()
+
+                    # 2. Nur die aktuell gefundenen Templates scannen
+                    for match in self.state.active_matches:
+                        d_name, p_name = match[0], match[6] if len(match) > 6 else match[0]
+                        
+                        passende = konf_nach_template.get(p_name, [])
+                        if not passende and p_name != d_name:
+                            passende = konf_nach_template.get(d_name, [])
+                        
+                        for entry_name, k in passende:
+                            if entry_name in processed_entries:
+                                continue
+                                
+                            wert = self.ocr_engine.template_match_scannen(
+                                self.current_screenshot_pil, entry_name, match
+                            )
+                            neue_t_ocr[entry_name] = wert
+                            processed_entries.add(entry_name)
+                    
+                    self.state.template_ocr_values = neue_t_ocr
+
+                    # Logging bei Wertänderungen
+                    if self.settings.get("log_variablen", True):
+                        alle_aktuell = self.state.get_all_ocr()
+                        for name, wert in alle_aktuell.items():
+                            if wert and wert != self.state.last_logged_ocr.get(name):
+                                self._log(f"[OCR] {name}: {wert}")
+                                self.state.last_logged_ocr[name] = wert
+            except Exception as e:
+                self._log(f"OCR-Loop Fehler: {e}")
             
             time.sleep(intervall)
 
@@ -349,33 +350,35 @@ class TilesBotApp:
                 self._log(msg)
 
         while self.state.capture_active:
-            if not self.state.running:
-                time.sleep(0.5)
-                continue
-            
-            master_name = self.workflow_engine.aktiver_master
-            if not master_name:
-                log_wrapper("[Bot] Kein aktiver Master-Flow (Schrittkette) gewählt.")
-                self.state.running = False
-                continue
+            try:
+                if not self.state.running:
+                    time.sleep(0.5)
+                    continue
+                
+                master_name = self.workflow_engine.aktiver_master
+                if not master_name:
+                    log_wrapper("[Bot] Kein aktiver Master-Flow (Schrittkette) gewählt.")
+                    self.state.running = False
+                    continue
 
-            log_wrapper(f"[Bot] Starte Schrittkette: {master_name}")
-            
-            # Die Engine führt nun den Master-Flow aus.
-            # Da dieser oft selbst ein Loop ist, läuft er bis zum Ende oder bis Stop gedrückt wird.
-            self.workflow_engine.workflow_ausfuehren(
-                master_name, self.action_engine,
-                lambda: self.state.active_matches,
-                log_func=log_wrapper,
-                laeuft_func=lambda: self.state.running,
-                ocr_func=lambda: {
-                    **self.state.get_all_ocr(),
-                    **{f"__state__{k}": ("true" if v else "false")
-                       for k, v in self.state.game_states.items()},
-                },
-                ist_master=True # Neuer Parameter um Master-spezifische Dinge zu triggern
-            )
-            
-            if self.state.running:
-                log_wrapper(f"[Bot] Schrittkette '{master_name}' beendet. Neustart in 1s...")
+                log_wrapper(f"[Bot] Starte Schrittkette: {master_name}")
+                
+                self.workflow_engine.workflow_ausfuehren(
+                    master_name, self.action_engine,
+                    lambda: self.state.active_matches,
+                    log_func=log_wrapper,
+                    laeuft_func=lambda: self.state.running,
+                    ocr_func=lambda: {
+                        **self.state.get_all_ocr(),
+                        **{f"__state__{k}": ("true" if v else "false")
+                           for k, v in self.state.game_states.items()},
+                    },
+                    ist_master=True
+                )
+                
+                if self.state.running:
+                    log_wrapper(f"[Bot] Schrittkette '{master_name}' beendet. Neustart in 1s...")
+                    time.sleep(1.0)
+            except Exception as e:
+                self._log(f"Scheduler-Loop Fehler: {e}")
                 time.sleep(1.0)

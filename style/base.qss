@@ -11,6 +11,54 @@ QMainWindow {
     background-color: #161616;
 }
 
+QLabel {
+    background-color: transparent;
+}
+
+QRadioButton {
+    background-color: transparent;
+    spacing: 6px;
+}
+
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    border: 2px solid #555555;
+    background-color: #1a1a1a;
+}
+
+QRadioButton::indicator:hover {
+    border-color: #888888;
+}
+
+QRadioButton::indicator:checked {
+    border-color: #4fc3f7;
+    background-color: #4fc3f7;
+}
+
+QCheckBox {
+    background-color: transparent;
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 2px solid #555555;
+    background-color: #1a1a1a;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #888888;
+}
+
+QCheckBox::indicator:checked {
+    border-color: #4fc3f7;
+    background-color: #4fc3f7;
+}
+
 /* Panel-Rahmen */
 QFrame#panel {
     background-color: #242424;
@@ -29,10 +77,89 @@ QLabel#panel_title {
     font-weight: bold;
 }
 
-/* Trennlinien */
-QFrame[frameShape="4"],
-QFrame[frameShape="5"] {
-    color: #2e2e2e;
+/* Haupt-Toolbar */
+QFrame#toolbar_frame {
+    background-color: #252525;
+}
+
+QLabel#status_label {
+    color: #888888;
+}
+
+QPushButton#btn_debug_toggle {
+    color: #666666;
+    font-weight: bold;
+}
+
+QPushButton#btn_debug_toggle[active="true"] {
+    background-color: #1a3a1a;
+    color: #2ea043;
+}
+
+/* ── Hilfsklassen für Labels ────────────────────────────────────────────────── */
+
+.lbl_info {
+    color: #888888;
+    font-size: 11px;
+}
+
+.lbl_dim {
+    color: #555555;
+    font-size: 11px;
+}
+
+.lbl_empty_hint {
+    color: #555555;
+    padding: 10px;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.lbl_warning {
+    color: #ffca28;
+}
+
+.lbl_error {
+    color: #f44336;
+}
+
+.lbl_success {
+    color: #55ff88;
+}
+
+.lbl_highlight {
+    color: #4fc3f7;
+    font-weight: bold;
+}
+
+.lbl_header_gold {
+    color: #c8a800;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.lbl_header_dim {
+    color: #666666;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+/* ── Container & Hintergründe ───────────────────────────────────────────────── */
+
+.bg_dark {
+    background-color: #1a1a1a;
+}
+
+.bg_panel {
+    background-color: #242424;
+}
+
+.bg_header {
+    background-color: #1e1e1e;
+}
+
+.separator {
+    color: #2a2a2a;
 }
 
 /* Tooltips */

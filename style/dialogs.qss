@@ -67,6 +67,516 @@ QSplitter::handle:hover {
     background-color: #5a8fc0;
 }
 
+/* TypDialog Karten */
+QFrame#karten_button {
+    background-color: #2a2a2a;
+    border-radius: 6px;
+    border: 1px solid #3a3a3a;
+}
+
+QFrame#karten_button:hover {
+    background-color: #333333;
+    border-color: #4a4a4a;
+}
+
+QLabel#karte_icon {
+    font-size: 16px;
+    background: transparent;
+}
+
+QLabel#karte_titel {
+    font-size: 12px;
+    font-weight: bold;
+    background: transparent;
+}
+
+QLabel#dialog_titel_gross {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QLabel#template_canvas,
+QWidget#node_canvas,
+QLabel#roi_canvas,
+QLabel#ocr_canvas {
+    background-color: #1a1a1a;
+    border: 1px solid #3a3a3a;
+}
+
+QScrollArea#roi_scroll {
+    background-color: #000000;
+    border: 1px solid #333333;
+}
+
+/* TemplateEditor Toolbar */
+QFrame#template_editor_toolbar {
+    background-color: #252525;
+    border-radius: 4px;
+}
+
+QPushButton#btn_roi { color: #00ff00; }
+QPushButton#btn_ocr_action { color: #55aaff; }
+QPushButton#btn_states_action { color: #ffca28; }
+
+QPushButton#btn_roi:hover { background-color: #1a3a1a; }
+QPushButton#btn_ocr_action:hover { background-color: #1a2a3a; }
+QPushButton#btn_states_action:hover { background-color: #3a2a1a; }
+
+QLabel#version_info_label {
+    color: #666666;
+    font-size: 10px;
+    font-style: italic;
+}
+
+QLabel#version_info_label[master="true"] {
+    color: #ffca28;
+}
+
+QPushButton#btn_variant_save {
+    background-color: #1a3a5a;
+    color: #55aaff;
+}
+
+QPushButton#btn_variant_save:hover {
+    background-color: #1e4a7a;
+}
+
+QPushButton#btn_test_action {
+    background-color: #1a2a3a;
+    color: #4488ff;
+    font-weight: bold;
+    border: 1px solid #1e88e5;
+}
+
+QPushButton#btn_test_action:hover {
+    background-color: #1e88e5;
+    color: #ffffff;
+}
+
+/* WorkflowEditor Toolbar & Statusbar */
+QFrame#workflow_editor_toolbar,
+QFrame#workflow_editor_statusbar {
+    background-color: #2d2d2d;
+    border-radius: 4px;
+}
+
+QPushButton#btn_add_node {
+    color: white;
+    font-size: 11px;
+    padding: 2px 7px;
+    border: none;
+}
+
+QPushButton#btn_simulate {
+    background-color: #1565c0;
+    color: white;
+    font-weight: bold;
+    font-size: 11px;
+    padding: 2px 10px;
+    border: none;
+}
+
+QPushButton#btn_simulate:hover {
+    background-color: #1e88e5;
+}
+
+QPushButton#btn_simulate[state="active"] {
+    background-color: #b71c1c;
+    color: white;
+}
+
+QPushButton#btn_simulate[state="stopped"] {
+    background-color: #1565c0;
+    color: white;
+}
+
+QPlainTextEdit#workflow_editor_log {
+    background-color: #111111;
+    color: #cccccc;
+    font-family: "Consolas";
+    font-size: 11px;
+    border: none;
+}
+
+QLabel#ocr_preview_result {
+    color: #55ff88;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QLabel#slider_value_label {
+    color: #4fc3f7;
+    font-family: "Consolas";
+    font-weight: bold;
+}
+
+QPushButton#color_filter_indicator {
+    background-color: #ffffff;
+    border: 1px solid #555555;
+    border-radius: 2px;
+}
+
+QPushButton#btn_live_select {
+    background-color: #1a3a5a;
+    color: #ffffff;
+}
+
+QPushButton#btn_live_select:hover {
+    background-color: #1e4a7a;
+}
+
+/* Formel-Builder (DatenEditor) */
+QComboBox#formula_operator {
+    color: #ffca28;
+    font-weight: bold;
+}
+
+QPushButton#btn_operand_delete {
+    background-color: #3a1a1a;
+    color: #da3633;
+    border: none;
+    border-radius: 2px;
+}
+
+QPushButton#btn_add_var {
+    background-color: #1a3a1a;
+    color: #2ea043;
+    font-size: 10px;
+    font-weight: bold;
+    border: 1px solid #2ea043;
+    border-radius: 3px;
+}
+
+QPushButton#btn_add_num {
+    background-color: #1a2a3a;
+    color: #4fc3f7;
+    font-size: 10px;
+    font-weight: bold;
+    border: 1px solid #4fc3f7;
+    border-radius: 3px;
+}
+
+QLineEdit#formula_number_entry {
+    color: #4fc3f7;
+    font-family: "Consolas";
+}
+
+/* DatenEditor Blöcke & Werte */
+QFrame#editor_block {
+    background-color: #1a1a1a;
+    border-radius: 4px;
+}
+
+QFrame#dialog_header_frame {
+    background-color: #252525;
+    border-radius: 4px;
+}
+
+QLabel#live_value_raw {
+    color: #ffca28;
+    font-family: "Consolas";
+}
+
+QLabel#live_value_output {
+    color: #4fc3f7;
+    font-family: "Consolas";
+}
+
+QLabel#live_value_output_small {
+    color: #4fc3f7;
+    font-family: "Consolas";
+    font-size: 10px;
+}
+
+/* DatenEditor Berechnungs-Header */
+QFrame#calculation_header {
+    border-radius: 4px;
+    border: 1px solid #333333;
+}
+
+QFrame#calculation_header[type="zwischen"] {
+    background-color: #1a2a1a;
+}
+
+QFrame#calculation_header[type="ausgabe"] {
+    background-color: #1a1a2a;
+}
+
+QLabel#calculation_header_title {
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QLabel#calculation_header_title[type="zwischen"] {
+    color: #4caf50;
+}
+
+QLabel#calculation_header_title[type="ausgabe"] {
+    color: #4fc3f7;
+}
+
+QPushButton#btn_calculation_add {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid #555555;
+    border-radius: 3px;
+    font-size: 10px;
+    padding: 2px 8px;
+}
+
+QPushButton#btn_calculation_add[type="zwischen"] {
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+QPushButton#btn_calculation_add[type="ausgabe"] {
+    color: #4fc3f7;
+    border-color: #4fc3f7;
+}
+
+/* Struktur-Tab */
+QFrame#structure_row {
+    background-color: #1a1a1a;
+    border-radius: 2px;
+}
+
+QPushButton#btn_structure_delete {
+    background-color: transparent;
+    color: #555555;
+    border: none;
+}
+
+QPushButton#btn_structure_delete:hover {
+    color: #da3633;
+}
+
+/* Mapping-Tab */
+QTableWidget#mapping_table {
+    gridline-color: #2a2a2a;
+}
+
+QLabel#dialog_header_title_gold {
+    color: #ffca28;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QFrame#dialog_footer_input_frame {
+    background-color: #252525;
+    border-radius: 4px;
+}
+
+/* EinheitenDialog */
+QScrollArea#units_scroll_area {
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
+    border-radius: 4px;
+}
+
+QFrame#unit_list_row {
+    background-color: #222222;
+    border-radius: 3px;
+    border-bottom: 1px solid #333333;
+}
+
+QLabel#unit_label_key {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+QLabel#unit_label_value {
+    color: #aaaaaa;
+    font-family: "Consolas";
+    font-size: 13px;
+}
+
+QPushButton#btn_unit_delete {
+    background-color: transparent;
+    color: #da3633;
+    font-weight: bold;
+    font-size: 14px;
+    border: none;
+}
+
+QLabel#dialog_header_title_gold_small {
+    color: #ffca28;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+/* GruppeEditor */
+QFrame#condition_group {
+    background-color: #222222;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+}
+
+QFrame#condition_group_header {
+    background-color: #252525;
+    border-radius: 0px;
+}
+
+QWidget#condition_rows_container {
+    background-color: #1a1a1a;
+}
+
+QFrame#condition_row {
+    background-color: #1a1a1a;
+    border-radius: 3px;
+}
+
+QPushButton#btn_add_condition {
+    text-align: left;
+    padding: 4px 8px;
+    background-color: #1a1a1a;
+    color: #aaaaaa;
+    border: none;
+    font-size: 10px;
+}
+
+QPushButton#btn_add_condition:hover {
+    color: #ffffff;
+}
+
+QPushButton#btn_connector_and:checked {
+    background-color: #1a3a5a;
+    color: #55aaff;
+    border-color: #55aaff;
+}
+
+QPushButton#btn_connector_or:checked {
+    background-color: #3a2a00;
+    color: #ffca28;
+    border-color: #ffca28;
+}
+
+QLabel#legend_symbol {
+    font-size: 11px;
+    background: transparent;
+}
+
+QLabel#group_type_label {
+    font-weight: bold;
+}
+
+QLabel#group_type_label[master="true"] {
+    color: #7a9abf;
+}
+
+QLabel#group_type_label[master="false"] {
+    color: #9abf7a;
+}
+
+/* ── Workflow & Logic Editor Details ────────────────────────────────────────── */
+
+QDialog#workflow_param_dialog,
+QDialog#logic_param_dialog {
+    background-color: #242424;
+}
+
+.bg_dialog_mid {
+    background-color: #2d2d2d;
+}
+
+.input_dark {
+    background-color: #111111;
+    color: #ffffff;
+    border: 1px solid #333333;
+    border-radius: 2px;
+    padding: 2px;
+}
+
+QScrollArea#selector_scroll,
+QWidget#selector_container {
+    background-color: #111111;
+    border: none;
+}
+
+QFrame#selector_row {
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    border: 1px solid #333333;
+}
+
+QPushButton#btn_logic_net {
+    color: #55ff88;
+    background-color: #333333;
+    font-size: 11px;
+    border: 1px solid #444444;
+}
+
+QPushButton#btn_logic_net:hover {
+    background-color: #444444;
+}
+
+.btn_node_type {
+    color: white;
+    font-weight: bold;
+    font-size: 9px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: none;
+}
+
+.btn_node_type[type="l_var"]    { background-color: #1e88e5; }
+.btn_node_type[type="l_match"]  { background-color: #00acc1; }
+.btn_node_type[type="l_const"]  { background-color: #546e7a; }
+.btn_node_type[type="l_and"]    { background-color: #2ea043; }
+.btn_node_type[type="l_or"]     { background-color: #2ea043; }
+.btn_node_type[type="l_not"]    { background-color: #b71c1c; }
+.btn_node_type[type="l_cmp"]    { background-color: #f9a825; }
+.btn_node_type[type="l_result"] { background-color: #673ab7; }
+
+QWidget#logic_view {
+    border: none;
+    background-color: #121212;
+}
+
+/* ── Template Editor Details ────────────────────────────────────────────────── */
+
+QDialog#template_states_dialog {
+    background-color: #242424;
+}
+
+.lbl_orange {
+    color: #ff6600;
+}
+
+.lbl_master {
+    color: #ffca28;
+}
+
+.bg_box_dark {
+    background-color: #1a1a1a;
+}
+
+.bg_box_mid {
+    background-color: #2a2a2a;
+}
+
+/* Typ-Farben für Icons/Labels */
+[type="workflow"] { color: #55ff88; }
+[type="state"]    { color: #ff7043; }
+[type="aktiv_gruppe"] { color: #ffca28; }
+[type="passiv_gruppe"], [type="master"] { color: #7a9abf; }
+[type="untergeordnet"] { color: #9abf7a; }
+[type="template"] { color: #cccccc; }
+[type="folder"]   { color: #888888; }
+[type="ocr"]      { color: #55aaff; }
+[type="klick"]    { color: #ff6600; }
+[type="roi"]      { color: #ffca28; }
+[type="logic"]    { color: #aaaaaa; }
+[type="and"]      { color: #55aaff; font-weight: bold; }
+[type="or"]       { color: #ffca28; font-weight: bold; }
+
+.ocr_zone_0 { color: #ff5555; font-weight: bold; }
+.ocr_zone_1 { color: #55aaff; font-weight: bold; }
+.ocr_zone_2 { color: #55ff88; font-weight: bold; }
+.ocr_zone_3 { color: #ffcc44; font-weight: bold; }
+.ocr_zone_4 { color: #cc55ff; font-weight: bold; }
+.ocr_zone_5 { color: #ff8844; font-weight: bold; }
+
 /* MessageBox */
 QMessageBox {
     background-color: #1a1a1a;

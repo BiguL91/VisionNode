@@ -13,8 +13,7 @@ class BedingungsZeile(QFrame):
 
     def __init__(self, bekannte: list[str], state_name: str = "", state_val: bool = True, parent=None):
         super().__init__(parent)
-        self.setObjectName("bedingung_zeile")
-        self.setStyleSheet("QFrame#bedingung_zeile { background: #1a1a1a; border-radius: 3px; }")
+        self.setObjectName("condition_row")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
@@ -34,7 +33,7 @@ class BedingungsZeile(QFrame):
         layout.addStretch()
 
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_danger")
+        btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(24, 24)
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(self))
@@ -53,14 +52,7 @@ class BedingungsGruppe(QFrame):
 
     def __init__(self, nr: int, gruppe_data: dict, bekannte: list[str], parent=None):
         super().__init__(parent)
-        self.setObjectName("bedingung_gruppe")
-        self.setStyleSheet("""
-            QFrame#bedingung_gruppe {
-                background: #222222;
-                border: 1px solid #3a3a3a;
-                border-radius: 4px;
-            }
-        """)
+        self.setObjectName("condition_group")
 
         self._bekannte = bekannte
         self._zeilen: list[BedingungsZeile] = []
@@ -71,13 +63,12 @@ class BedingungsGruppe(QFrame):
 
         # ── Connector (AND/OR) — nur für Gruppen nr > 1 ──────────────────────
         self._conn_frame = QFrame()
-        self._conn_frame.setStyleSheet("background: transparent;")
         conn_layout = QHBoxLayout(self._conn_frame)
         conn_layout.setContentsMargins(0, 6, 0, 4)
         conn_layout.setSpacing(6)
 
         lbl = QLabel("Verknüpfung:")
-        lbl.setStyleSheet("color: #888888; font-size: 10px; background: transparent;")
+        lbl.setProperty("class", "lbl_info")
         conn_layout.addWidget(lbl)
 
         self._btn_and = QPushButton("AND")
@@ -87,8 +78,8 @@ class BedingungsGruppe(QFrame):
             btn.setFixedWidth(50)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self._btn_and.setStyleSheet("QPushButton:checked { background: #1a3a5a; color: #55aaff; border-color: #55aaff; }")
-        self._btn_or.setStyleSheet("QPushButton:checked { background: #3a2a00; color: #ffca28; border-color: #ffca28; }")
+        self._btn_and.setObjectName("btn_connector_and")
+        self._btn_or.setObjectName("btn_connector_or")
 
         self._btn_grp = QButtonGroup(self)
         self._btn_grp.setExclusive(True)
@@ -108,17 +99,17 @@ class BedingungsGruppe(QFrame):
 
         # ── Header ────────────────────────────────────────────────────────────
         header = QFrame()
-        header.setStyleSheet("background: #252525; border-radius: 0px;")
+        header.setObjectName("condition_group_header")
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(8, 4, 8, 4)
 
         lbl_nr = QLabel(f"  Gruppe {nr}")
-        lbl_nr.setStyleSheet("color: #888888; font-size: 9px; font-weight: bold; background: transparent;")
+        lbl_nr.setProperty("class", "lbl_header_dim")
         h_layout.addWidget(lbl_nr)
         h_layout.addStretch()
 
         btn_del_gruppe = QPushButton("Gruppe löschen")
-        btn_del_gruppe.setObjectName("btn_danger")
+        btn_del_gruppe.setObjectName("btn_del")
         btn_del_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del_gruppe.clicked.connect(lambda: self.loeschen_requested.emit(self))
         h_layout.addWidget(btn_del_gruppe)
@@ -127,7 +118,7 @@ class BedingungsGruppe(QFrame):
 
         # ── Zeilen-Container ─────────────────────────────────────────────────
         self._zeilen_container = QWidget()
-        self._zeilen_container.setStyleSheet("background: #1a1a1a;")
+        self._zeilen_container.setObjectName("condition_rows_container")
         self._zeilen_layout = QVBoxLayout(self._zeilen_container)
         self._zeilen_layout.setContentsMargins(4, 4, 4, 0)
         self._zeilen_layout.setSpacing(2)
@@ -138,9 +129,8 @@ class BedingungsGruppe(QFrame):
 
         # ── "+ Bedingung" Button ──────────────────────────────────────────────
         btn_add = QPushButton("+ Bedingung hinzufügen")
-        btn_add.setObjectName("btn_icon")
+        btn_add.setObjectName("btn_add_condition")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setStyleSheet("text-align: left; padding: 4px 8px; background: #1a1a1a; color: #aaaaaa; border: none;")
         btn_add.clicked.connect(lambda: self._zeile_hinzufuegen())
         outer.addWidget(btn_add)
 
@@ -217,14 +207,14 @@ class GruppeEditorQt(QDialog):
 
         # ── Header ────────────────────────────────────────────────────────────
         lbl_titel = QLabel(f'Bedingungen für Gruppe "{self._gruppe_name}"')
-        lbl_titel.setStyleSheet("color: #ffca28; font-size: 11px; font-weight: bold;")
+        lbl_titel.setObjectName("dialog_header_title_gold_small")
         root.addWidget(lbl_titel)
 
         lbl_info = QLabel(
             "Alle Templates in dieser Gruppe sind nur aktiv wenn diese Bedingungen erfüllt sind.\n"
             "AND innerhalb einer Gruppe, Gruppen können AND oder OR verknüpft werden."
         )
-        lbl_info.setStyleSheet("color: #666666; font-size: 10px;")
+        lbl_info.setProperty("class", "lbl_dim")
         lbl_info.setWordWrap(True)
         root.addWidget(lbl_info)
 
@@ -249,30 +239,27 @@ class GruppeEditorQt(QDialog):
 
         # ── "+ Neue Gruppe" ───────────────────────────────────────────────────
         btn_neue_gruppe = QPushButton("＋ Neue Gruppe hinzufügen")
-        btn_neue_gruppe.setObjectName("btn_icon")
+        btn_neue_gruppe.setObjectName("btn_variant_save")
         btn_neue_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_neue_gruppe.setStyleSheet(
-            "background: #1a3a5a; color: #55aaff; padding: 5px 12px; border-radius: 4px;"
-        )
         btn_neue_gruppe.clicked.connect(lambda: self._gruppe_hinzufuegen({"connector": "OR", "states": {}}))
         root.addWidget(btn_neue_gruppe)
 
         # ── Trennlinie + Buttons ──────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: #3a3a3a;")
+        sep.setProperty("class", "separator")
         root.addWidget(sep)
 
         btn_row = QHBoxLayout()
 
         btn_save = QPushButton(lang.t("btn_save"))
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._speichern)
         btn_row.addWidget(btn_save)
 
         btn_del_cfg = QPushButton("Konfiguration löschen")
-        btn_del_cfg.setObjectName("btn_danger")
+        btn_del_cfg.setObjectName("btn_del")
         btn_del_cfg.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del_cfg.clicked.connect(self._loeschen)
         btn_row.addWidget(btn_del_cfg)

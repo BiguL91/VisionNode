@@ -32,18 +32,18 @@ class EinheitenDialogQt(QDialog):
 
         # Header Info
         header_lbl = QLabel("Zuweisung: Kürzel → Multiplikator")
-        header_lbl.setStyleSheet("color: #ffca28; font-size: 14px; font-weight: bold;")
+        header_lbl.setObjectName("dialog_header_title_gold")
         layout.addWidget(header_lbl)
 
         info_lbl = QLabel("Beispiel: 'Mio.' → 1.000.000 oder 'Tsd.' → 1.000")
-        info_lbl.setStyleSheet("color: #888888; font-size: 11px;")
+        info_lbl.setProperty("class", "lbl_info")
         layout.addWidget(info_lbl)
 
         # Scrollbare Liste
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background: #1a1a1a; border: 1px solid #333; border-radius: 4px;")
+        scroll.setObjectName("units_scroll_area")
         
         self.list_container = QWidget()
         self.list_layout = QVBoxLayout(self.list_container)
@@ -56,7 +56,7 @@ class EinheitenDialogQt(QDialog):
 
         # Eingabebereich
         eingabe_frame = QFrame()
-        eingabe_frame.setStyleSheet("background: #252525; border-radius: 4px; padding: 10px;")
+        eingabe_frame.setObjectName("dialog_footer_input_frame")
         eingabe_layout = QGridLayout(eingabe_frame)
         eingabe_layout.setContentsMargins(10, 10, 10, 10)
         eingabe_layout.setSpacing(10)
@@ -75,7 +75,7 @@ class EinheitenDialogQt(QDialog):
         eingabe_layout.addWidget(self.f_edit, 1, 1)
 
         btn_add = QPushButton("+ Hinzufügen / Update")
-        btn_add.setObjectName("btn_primary")
+        btn_add.setObjectName("btn_new")
         btn_add.setMinimumHeight(35)
         btn_add.clicked.connect(self._hinzufuegen)
         eingabe_layout.addWidget(btn_add, 2, 0, 1, 2)
@@ -93,7 +93,7 @@ class EinheitenDialogQt(QDialog):
         footer_layout.addWidget(btn_cancel)
 
         btn_save = QPushButton("Speichern")
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.setMinimumWidth(120)
         btn_save.setMinimumHeight(35)
         btn_save.clicked.connect(self._speichern)
@@ -110,12 +110,12 @@ class EinheitenDialogQt(QDialog):
 
         for k, v in sorted(self.aktuelle_einheiten.items()):
             row = QFrame()
-            row.setStyleSheet("background: #222; border-radius: 3px; border-bottom: 1px solid #333;")
+            row.setObjectName("unit_list_row")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(10, 5, 10, 5)
 
             lbl_k = QLabel(k)
-            lbl_k.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
+            lbl_k.setObjectName("unit_label_key")
             lbl_k.setFixedWidth(120)
             row_layout.addWidget(lbl_k)
 
@@ -126,13 +126,13 @@ class EinheitenDialogQt(QDialog):
                 val_str = f"× {v}"
                 
             lbl_v = QLabel(val_str)
-            lbl_v.setStyleSheet("color: #aaaaaa; font-family: 'Consolas'; font-size: 13px;")
+            lbl_v.setObjectName("unit_label_value")
             row_layout.addWidget(lbl_v)
             row_layout.addStretch()
 
             btn_del = QPushButton("✕")
             btn_del.setFixedSize(24, 24)
-            btn_del.setStyleSheet("background: transparent; color: #da3633; font-weight: bold; font-size: 14px; border: none;")
+            btn_del.setObjectName("btn_unit_delete")
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del.clicked.connect(lambda checked, key=k: self._loeschen(key))
             row_layout.addWidget(btn_del)

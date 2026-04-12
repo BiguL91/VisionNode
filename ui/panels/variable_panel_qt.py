@@ -29,7 +29,7 @@ class VariableGruppe(QFrame):
         eintraege: list of (entry_name, anzeige_name, modus, kann_geloescht_werden)
         """
         super().__init__(parent)
-        self.setStyleSheet(f"VariableGruppe {{ background: #1a1a1a; border-radius: 4px; }}")
+        self.setObjectName("variable_gruppe")
         self._wert_labels: dict[str, QLabel] = {}
         self._font_idx: dict[str, int] = {}
 
@@ -38,10 +38,11 @@ class VariableGruppe(QFrame):
         outer.setSpacing(0)
 
         # Farbbalken links
-        balken = QFrame()
-        balken.setFixedWidth(3)
-        balken.setStyleSheet(f"background-color: {farbe}; border-radius: 2px;")
-        outer.addWidget(balken)
+        self.balken = QFrame()
+        self.balken.setFixedWidth(3)
+        self.balken.setObjectName("gruppe_balken")
+        self.balken.setStyleSheet(f"background-color: {farbe};") 
+        outer.addWidget(self.balken)
 
         inner = QVBoxLayout()
         inner.setContentsMargins(6, 2, 0, 2)
@@ -52,7 +53,8 @@ class VariableGruppe(QFrame):
         kopf = QHBoxLayout()
         kopf.setContentsMargins(0, 0, 0, 2)
         lbl_name = QLabel(gruppen_name)
-        lbl_name.setStyleSheet(f"color: {farbe}; font-size: 11px; font-weight: bold; background: transparent;")
+        lbl_name.setObjectName("gruppe_titel")
+        lbl_name.setStyleSheet(f"color: {farbe};") 
         kopf.addWidget(lbl_name)
         kopf.addStretch()
         inner.addLayout(kopf)
@@ -60,7 +62,7 @@ class VariableGruppe(QFrame):
         # Trennlinie
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #2d2d2d;")
+        line.setProperty("class", "separator")
         inner.addWidget(line)
 
         # Einträge
@@ -73,11 +75,9 @@ class VariableGruppe(QFrame):
             links = QVBoxLayout()
             links.setSpacing(0)
             lbl_modus = QLabel(f"[{modus}]")
-            lbl_modus.setStyleSheet(
-                f"color: {MODUS_FARBEN.get(modus, '#aaaaaa')}; font-size: 9px; background: transparent;"
-            )
+            lbl_modus.setObjectName(f"lbl_modus_{modus.lower()}")
             lbl_anzeige = QLabel(anzeige_name)
-            lbl_anzeige.setStyleSheet("color: #888888; font-size: 10px; background: transparent;")
+            lbl_anzeige.setProperty("class", "lbl_dim")
             links.addWidget(lbl_modus)
             links.addWidget(lbl_anzeige)
             zeile.addLayout(links)
@@ -85,8 +85,8 @@ class VariableGruppe(QFrame):
 
             # Wert-Label (rechts, groß)
             wert_lbl = QLabel("–")
+            wert_lbl.setObjectName("variable_wert")
             wert_lbl.setFont(QFont("Consolas", FONT_GROESSEN[0], QFont.Weight.Bold))
-            wert_lbl.setStyleSheet("color: #555555; background: transparent;")
             wert_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             wert_lbl.mouseDoubleClickEvent = lambda e, n=entry_name: self._schrift_wechseln(n)
             zeile.addWidget(wert_lbl)
@@ -96,8 +96,7 @@ class VariableGruppe(QFrame):
             # Löschen-Button (optional)
             if kann_loeschen:
                 btn_del = QPushButton("✕")
-                btn_del.setObjectName("btn_icon")
-                btn_del.setFixedSize(20, 20)
+                btn_del.setObjectName("btn_del_sm")
                 btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_del.clicked.connect(lambda _, n=entry_name: self.loeschen_requested.emit(n))
                 zeile.addWidget(btn_del)
@@ -119,9 +118,8 @@ class VariableGruppe(QFrame):
             wert = "–"
         hat_wert = wert != "–"
         lbl.setText(wert)
-        lbl.setStyleSheet(
-            f"color: {'#ffffff' if hat_wert else '#555555'}; background: transparent;"
-        )
+        lbl.setProperty("active", hat_wert)
+        lbl.setStyle(lbl.style())
 
     def entry_names(self) -> list[str]:
         return list(self._wert_labels.keys())
@@ -194,7 +192,7 @@ class VariablePanel(QWidget):
 
         if not hat:
             lbl = QLabel("(Keine Variablen)")
-            lbl.setStyleSheet("color: #555555; padding: 8px;")
+            lbl.setProperty("class", "lbl_empty_hint")
             self.list_layout.insertWidget(0, lbl)
 
     def werte_aktualisieren(self, ocr_werte: dict, aktuelle_matches: set,

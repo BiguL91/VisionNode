@@ -37,7 +37,7 @@ class StateHinzufuegenDialog(QDialog):
         layout.setSpacing(10)
 
         lbl = QLabel(lang.t("state_add_label"))
-        lbl.setStyleSheet("color: #cccccc; font-size: 10px;")
+        lbl.setProperty("class", "lbl_dim")
         layout.addWidget(lbl)
 
         self._entry = QLineEdit()
@@ -52,7 +52,7 @@ class StateHinzufuegenDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_add = QPushButton(lang.t("btn_add"))
-        btn_add.setObjectName("btn_primary")
+        btn_add.setObjectName("btn_new")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.clicked.connect(self._bestaetigen)
         btn_row.addWidget(btn_add)
@@ -107,7 +107,7 @@ class StateUmbenennenDialog(QDialog):
         layout.setSpacing(10)
 
         lbl = QLabel(lang.t("state_rename_label"))
-        lbl.setStyleSheet("color: #cccccc; font-size: 10px;")
+        lbl.setProperty("class", "lbl_dim")
         layout.addWidget(lbl)
 
         self._entry = QLineEdit(self._alter_name)
@@ -119,7 +119,7 @@ class StateUmbenennenDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_rename = QPushButton("Umbenennen")
-        btn_rename.setObjectName("btn_primary")
+        btn_rename.setObjectName("btn_new")
         btn_rename.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_rename.clicked.connect(self._bestaetigen)
         btn_row.addWidget(btn_rename)

@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem, QLabel, QLineEdit, QComboBox, QFrame, QMenu,
     QFormLayout, QWidget
 )
-from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF
+from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG
 from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction
 )
@@ -353,6 +353,7 @@ class NodeParamDialog(QDialog):
     def __init__(self, node: NodeItem, game_states: dict, templates: list, ocr_vars: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Konfiguration: {node.data['typ'].upper()}")
+        self.setObjectName("logic_param_dialog")
         self.setModal(True)
         self.setFixedSize(420, 260)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -372,11 +373,11 @@ class NodeParamDialog(QDialog):
 
         if typ == "l_var":
             lbl = QLabel("Variable auswählen:")
-            lbl.setStyleSheet("color: #aaaaaa;")
+            lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
             self._var_btn = QPushButton(self._node.data.get("variable", "Bitte wählen..."))
-            self._var_btn.setStyleSheet("text-align: left; padding: 8px; background: #1a1a1a; color: #55ff88;")
+            self._var_btn.setObjectName("btn_logic_net")
             self._var_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._var_btn.clicked.connect(self._var_menu_zeigen)
             layout.addWidget(self._var_btn)
@@ -384,11 +385,11 @@ class NodeParamDialog(QDialog):
 
         elif typ == "l_match":
             lbl = QLabel("Template wählen (Gefunden = True):")
-            lbl.setStyleSheet("color: #aaaaaa;")
+            lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
             self._tpl_btn = QPushButton(self._node.data.get("template", "Bitte wählen..."))
-            self._tpl_btn.setStyleSheet("text-align: left; padding: 8px; background: #1a1a1a; color: #55ff88;")
+            self._tpl_btn.setObjectName("btn_logic_net")
             self._tpl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._tpl_btn.clicked.connect(self._tpl_menu_zeigen)
             layout.addWidget(self._tpl_btn)
@@ -396,7 +397,7 @@ class NodeParamDialog(QDialog):
 
         elif typ == "l_const":
             lbl = QLabel("Konstanter Wert:")
-            lbl.setStyleSheet("color: #aaaaaa;")
+            lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
             entry = QLineEdit(self._node.data.get("wert", "0"))
@@ -405,7 +406,7 @@ class NodeParamDialog(QDialog):
 
         elif typ == "l_cmp":
             lbl = QLabel("Vergleich (Input 1 gegen ...):")
-            lbl.setStyleSheet("color: #aaaaaa;")
+            lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
             row = QHBoxLayout()
@@ -423,13 +424,13 @@ class NodeParamDialog(QDialog):
             self._felder["wert"] = entry
 
             info = QLabel("Tipp: Feld leer lassen, um Input 2 zu verwenden.")
-            info.setStyleSheet("color: #666666; font-size: 9px;")
+            info.setProperty("class", "lbl_info")
             layout.addWidget(info)
 
         layout.addStretch()
 
         btn_apply = QPushButton("Übernehmen")
-        btn_apply.setObjectName("btn_primary")
+        btn_apply.setObjectName("btn_new")
         btn_apply.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_apply.clicked.connect(self._speichern)
         layout.addWidget(btn_apply)
@@ -515,18 +516,15 @@ class LogicEditorDialogQt(QDialog):
 
         # ── Toolbar ───────────────────────────────────────────────────────────
         bar = QFrame()
-        bar.setStyleSheet("background: #2d2d2d;")
+        bar.setProperty("class", "bg_dialog_mid")
         bar_layout = QHBoxLayout(bar)
         bar_layout.setContentsMargins(8, 6, 8, 6)
         bar_layout.setSpacing(6)
 
         for label, typ in TYPEN_LABEL:
-            farbe = FARBEN[typ]
             btn = QPushButton(label)
-            btn.setStyleSheet(
-                f"background: {farbe}; color: white; font-weight: bold; "
-                f"font-size: 9px; padding: 4px 10px; border-radius: 3px;"
-            )
+            btn.setProperty("class", "btn_node_type")
+            btn.setProperty("type", typ)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, t=typ: self._node_hinzufuegen(t))
             bar_layout.addWidget(btn)
@@ -534,7 +532,7 @@ class LogicEditorDialogQt(QDialog):
         bar_layout.addStretch()
 
         btn_save = QPushButton("💾 Speichern")
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._speichern)
         bar_layout.addWidget(btn_save)
@@ -550,7 +548,7 @@ class LogicEditorDialogQt(QDialog):
         self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self._view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self._view.setStyleSheet("border: none; background: #121212;")
+        self._view.setObjectName("logic_view")
         self._view.setSceneRect(0, 0, 3000, 2000)
         # Zoom via Ctrl+Scroll
         self._view.setInteractive(True)
@@ -562,14 +560,6 @@ class LogicEditorDialogQt(QDialog):
             self._view.scale(factor, factor)
         else:
             super().wheelEvent(event)
-
-    def _node_hinzufuegen(self, typ: str):
-        data = {"id": str(uuid.uuid4()), "typ": typ, "x": 150, "y": 150}
-        if typ == "l_cmp":
-            data["operator"] = "="
-        self._scene.add_node_item(data)
-        self._scene._nodes[data["id"]] = self._scene._nodes.get(data["id"]) or \
-            next(i for i in self._scene.items() if isinstance(i, NodeItem) and i.node_id() == data["id"])
 
     def _node_hinzufuegen(self, typ: str):
         data = {"id": str(uuid.uuid4()), "typ": typ, "x": 150, "y": 150}

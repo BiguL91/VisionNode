@@ -3,7 +3,7 @@ from lang import lang
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QScrollArea, QFrame, QGridLayout, QComboBox,
-    QInputDialog, QSizePolicy
+    QInputDialog, QSizePolicy, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
@@ -12,7 +12,7 @@ from core.daten_manager import (
     datenbank_initialisieren, alle_listen, spalten_der_liste,
     zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
     berechnungen_der_liste, berechnung_auswerten, cache_schreiben, cache_lesen,
-    zuordnungen_der_liste, sekunden_formatieren, liste_erstellen
+    zuordnungen_der_liste, sekunden_formatieren, liste_erstellen, liste_loeschen
 )
 
 
@@ -84,41 +84,42 @@ class ListenBlock(QFrame):
 
         if not spalten:
             lbl = QLabel("Keine Spalten — Edit zum Konfigurieren.")
-            lbl.setStyleSheet("color: #555555; font-size: 10px; padding: 4px;")
+            lbl.setProperty("class", "lbl_dim")
             self.tabelle_layout.addWidget(lbl, 0, 0)
             return
 
         if not zeilen_namen:
             lbl = QLabel("(Keine Zeilen — Edit zum Konfigurieren)")
-            lbl.setStyleSheet("color: #444444; font-size: 10px; padding: 4px;")
+            lbl.setProperty("class", "lbl_dim")
             self.tabelle_layout.addWidget(lbl, 0, 0)
             return
 
         # Header
-        header_style = "color: #555555; font-size: 10px; font-weight: bold; padding: 2px 6px; background: #1e1e1e;"
         lbl_zeile = QLabel("Zeile")
-        lbl_zeile.setStyleSheet(header_style + " text-align: left;")
+        lbl_zeile.setObjectName("daten_tab_header")
+        lbl_zeile.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.tabelle_layout.addWidget(lbl_zeile, 0, 0)
 
         for i, sp in enumerate(spalten):
             lbl = QLabel(sp["name"])
-            lbl.setStyleSheet(header_style + " text-align: right;")
+            lbl.setObjectName("daten_tab_header")
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.tabelle_layout.addWidget(lbl, 0, i + 1)
 
         # Trennlinie
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #333333;")
+        line.setProperty("class", "separator")
         self.tabelle_layout.addWidget(line, 1, 0, 1, len(spalten) + 1)
 
         # Datenzeilen
         for r, z in enumerate(zeilen_namen):
-            bg = "#1a1a1a" if r % 2 == 0 else "#212121"
+            is_alt = r % 2 != 0
             row_idx = r + 2
 
             lbl_name = QLabel(z["name"])
-            lbl_name.setStyleSheet(f"color: #cccccc; font-size: 10px; padding: 2px 6px; background: {bg};")
+            lbl_name.setObjectName("daten_tab_cell")
+            lbl_name.setProperty("alt", is_alt)
             self.tabelle_layout.addWidget(lbl_name, row_idx, 0)
 
             for ci, sp in enumerate(spalten):
@@ -132,11 +133,12 @@ class ListenBlock(QFrame):
                 wert = entry[0]
                 anzeige = self._format_wert(wert, sp.get("format", "standard"))
                 ist_berech = ocr_var in berech_namen
-                farbe = "#4fc3f7" if ist_berech else "#cccccc"
 
                 lbl = QLabel(anzeige)
+                lbl.setObjectName("daten_tab_cell")
+                lbl.setProperty("alt", is_alt)
+                lbl.setProperty("highlight", ist_berech)
                 lbl.setFont(QFont("Consolas", 8))
-                lbl.setStyleSheet(f"color: {farbe}; font-size: 10px; padding: 2px 6px; background: {bg};")
                 lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.tabelle_layout.addWidget(lbl, row_idx, ci + 1)
                 self._wert_labels[(z["name"], ci)] = lbl
@@ -273,32 +275,47 @@ class DatenPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
 
-        # Kopfleiste
-        kopf = QHBoxLayout()
-        kopf.setContentsMargins(4, 4, 4, 0)
-
-        self.btn_neu = QPushButton("+ Neu")
-        self.btn_neu.setStyleSheet("color: #2ea043; background: #1a3a1a; border-color: #1a3a1a;")
-        self.btn_neu.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_neu.clicked.connect(self._neue_liste)
-        kopf.addWidget(self.btn_neu)
+        # Zeile 1: Dropdown
+        zeile1 = QHBoxLayout()
+        zeile1.setContentsMargins(4, 4, 4, 0)
+        zeile1.setSpacing(4)
 
         self.dropdown = QComboBox()
         self.dropdown.setCursor(Qt.CursorShape.PointingHandCursor)
-        kopf.addWidget(self.dropdown)
+        zeile1.addWidget(self.dropdown)
 
-        self.btn_edit = QPushButton("✎ Edit")
+        root.addLayout(zeile1)
+
+        # Zeile 2: Buttons (strecken sich)
+        zeile2 = QHBoxLayout()
+        zeile2.setContentsMargins(4, 0, 4, 0)
+        zeile2.setSpacing(4)
+
+        self.btn_neu = QPushButton("+ Neu")
+        self.btn_neu.setObjectName("btn_new_sm")
+        self.btn_neu.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_neu.clicked.connect(self._neue_liste)
+
+        self.btn_edit = QPushButton("✎ Bearbeiten")
+        self.btn_edit.setObjectName("btn_sm")
         self.btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_edit.clicked.connect(self._liste_bearbeiten)
-        kopf.addWidget(self.btn_edit)
+
+        self.btn_delete = QPushButton("✕")
+        self.btn_delete.setObjectName("btn_del_sm")
+        self.btn_delete.setToolTip("Liste löschen")
+        self.btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_delete.clicked.connect(self._liste_loeschen_dialog)
 
         self.btn_einheiten = QPushButton("⚖️ Einheiten")
+        self.btn_einheiten.setObjectName("btn_sm")
         self.btn_einheiten.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_einheiten.clicked.connect(self.einheiten_requested)
-        kopf.addWidget(self.btn_einheiten)
 
-        kopf.addStretch()
-        root.addLayout(kopf)
+        for btn in [self.btn_neu, self.btn_edit, self.btn_delete, self.btn_einheiten]:
+            zeile2.addWidget(btn)
+
+        root.addLayout(zeile2)
 
         # Scrollbarer Bereich
         self.scroll = QScrollArea()
@@ -329,7 +346,7 @@ class DatenPanel(QWidget):
 
         if not self._listen_cache:
             lbl = QLabel("Keine Listen vorhanden.")
-            lbl.setStyleSheet("color: #555555; padding: 8px;")
+            lbl.setProperty("class", "lbl_empty_hint")
             self.container_layout.insertWidget(0, lbl)
             return
 
@@ -359,6 +376,20 @@ class DatenPanel(QWidget):
         l = next((x for x in self._listen_cache if x["id"] == listen_id), None)
         if l:
             self.liste_bearbeiten_requested.emit(l)
+
+    def _liste_loeschen_dialog(self):
+        listen_id = self.dropdown.currentData()
+        if listen_id is None:
+            return
+        listen_name = self.dropdown.currentText()
+        antwort = QMessageBox.question(
+            self, "Liste löschen",
+            f"Möchtest du die Liste '{listen_name}' wirklich unwiderruflich löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if antwort == QMessageBox.StandardButton.Yes:
+            liste_loeschen(listen_id)
+            self._alles_aufbauen()
 
     def _auto_update(self):
         for block in self._bloecke.values():

@@ -1,7 +1,8 @@
 /* ── Buttons ────────────────────────────────────────────────────────────────── */
 
+/* ── Basis ── */
 QPushButton {
-    background-color: #2a2a2a;
+    background-color: #1e1e1e;
     color: #cccccc;
     border: 1px solid #3a3a3a;
     border-radius: 5px;
@@ -9,56 +10,94 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #333333;
-    border-color: #444444;
+    background-color: #2a2a2a;
+    border-color: #555555;
 }
 
 QPushButton:pressed {
-    background-color: #404040;
+    background-color: #333333;
 }
 
 QPushButton:disabled {
     color: #484848;
-    border-color: #2a2a2a;
+    border-color: #252525;
     background-color: #1a1a1a;
 }
 
 QPushButton:checked {
-    background-color: #333333;
-    border-color: #6a9fd8;
-    color: #6a9fd8;
+    background-color: #1a3a5a;
+    border-color: #1e88e5;
+    color: #4fc3f7;
 }
 
-/* Primär (Speichern, Hinzufügen) */
-QPushButton#btn_primary {
-    background-color: #2ea043;
-    color: #ffffff;
-    font-weight: bold;
-    border: none;
+/* ── Neu / Erstellen (grüner Akzent) ── */
+QPushButton#btn_new {
+    color: #55ff88;
+    border-color: #2ea043;
 }
 
-QPushButton#btn_primary:hover {
-    background-color: #3ab054;
-}
-
-QPushButton#btn_primary:disabled {
+QPushButton#btn_new:hover {
     background-color: #1a3a1a;
+    border-color: #3ab054;
+    color: #77ffaa;
+}
+
+QPushButton#btn_new:disabled {
     color: #484848;
+    border-color: #2a2a2a;
 }
 
-/* Gefahr (Löschen, Stop) */
-QPushButton#btn_danger {
-    background-color: #c0392b;
-    color: #ffffff;
-    font-weight: bold;
-    border: none;
+/* ── Löschen (roter Akzent) ── */
+QPushButton#btn_del {
+    color: #ff6b6b;
+    border-color: #c0392b;
 }
 
-QPushButton#btn_danger:hover {
-    background-color: #da3633;
+QPushButton#btn_del:hover {
+    background-color: #3a1a1a;
+    border-color: #da3633;
+    color: #ff8888;
 }
 
-/* Start-Button */
+/* ── Klein neutral ── */
+QPushButton#btn_sm {
+    padding: 4px 8px;
+    min-width: 0;
+}
+
+QPushButton#btn_sm:checked {
+    background-color: #1a3a5a;
+    border-color: #1e88e5;
+    color: #4fc3f7;
+}
+
+/* ── Klein grün (Header Neu) ── */
+QPushButton#btn_new_sm {
+    padding: 4px 8px;
+    min-width: 0;
+    color: #55ff88;
+    border-color: #2ea043;
+}
+
+QPushButton#btn_new_sm:hover {
+    background-color: #1a3a1a;
+    color: #77ffaa;
+}
+
+/* ── Klein rot (Panel Löschen) ── */
+QPushButton#btn_del_sm {
+    padding: 4px 8px;
+    min-width: 0;
+    color: #ff6b6b;
+    border-color: #c0392b;
+}
+
+QPushButton#btn_del_sm:hover {
+    background-color: #3a1a1a;
+    color: #ff8888;
+}
+
+/* ── Start / Stop (Toolbar, bewusst groß) ── */
 QPushButton#btn_start {
     background-color: #2ea043;
     color: #ffffff;
@@ -68,16 +107,9 @@ QPushButton#btn_start {
     padding: 6px 20px;
 }
 
-QPushButton#btn_start:hover {
-    background-color: #3ab054;
-}
+QPushButton#btn_start:hover { background-color: #3ab054; }
+QPushButton#btn_start:disabled { background-color: #1a3a1a; color: #484848; }
 
-QPushButton#btn_start:disabled {
-    background-color: #1a3a1a;
-    color: #484848;
-}
-
-/* Stop-Button */
 QPushButton#btn_stop {
     background-color: #c0392b;
     color: #ffffff;
@@ -87,16 +119,10 @@ QPushButton#btn_stop {
     padding: 6px 20px;
 }
 
-QPushButton#btn_stop:hover {
-    background-color: #da3633;
-}
+QPushButton#btn_stop:hover { background-color: #da3633; }
+QPushButton#btn_stop:disabled { background-color: #3a1a1a; color: #484848; }
 
-QPushButton#btn_stop:disabled {
-    background-color: #3a1a1a;
-    color: #484848;
-}
-
-/* TRUE/FALSE Toggle-Badges */
+/* ── TRUE/FALSE Toggle-Badges ── */
 QPushButton#toggle_true {
     background-color: #2ea043;
     color: #ffffff;
@@ -109,9 +135,7 @@ QPushButton#toggle_true {
     min-width: 54px;
 }
 
-QPushButton#toggle_true:hover {
-    background-color: #3ab054;
-}
+QPushButton#toggle_true:hover { background-color: #3ab054; }
 
 QPushButton#toggle_false {
     background-color: #c0392b;
@@ -125,20 +149,26 @@ QPushButton#toggle_false {
     min-width: 54px;
 }
 
-QPushButton#toggle_false:hover {
-    background-color: #da3633;
+QPushButton#toggle_false:hover { background-color: #da3633; }
+
+/* ── Debug-Toggle (Toolbar) ── */
+QPushButton#btn_debug_toggle {
+    color: #666666;
+    font-weight: bold;
 }
 
-/* Icon-Buttons (klein, quadratisch) */
-QPushButton#btn_icon {
-    background-color: transparent;
-    border: none;
-    padding: 2px 6px;
-    color: #484848;
+QPushButton#btn_debug_toggle:checked {
+    background-color: #1a3a1a;
+    color: #2ea043;
+    border-color: #2ea043;
 }
 
-QPushButton#btn_icon:hover {
-    color: #cccccc;
-    background-color: #2a2a2a;
-    border-radius: 4px;
+/* ── Klick-Button aktiv-Status ── */
+QPushButton#btn_klick[active="true"] {
+    background-color: #e65100;
+    color: #ffffff;
 }
+
+/* ── Master-Aktiv ── */
+QPushButton#btn_master_aktiv { color: #ffca28; }
+QPushButton#btn_master_aktiv:hover { background-color: #3a3a1a; color: #ffd54f; }

@@ -28,31 +28,28 @@ class WorkflowPanel(QWidget):
 
         # ── Master-Flows ───────────────────────────────────────────────────────
         lbl_master = QLabel("MASTER-FLOWS (Schrittketten)")
-        lbl_master.setStyleSheet("color: #c8a800; font-size: 10px; font-weight: bold;")
+        lbl_master.setProperty("class", "lbl_header_gold")
         layout.addWidget(lbl_master)
 
         self.master_liste = QListWidget()
         self.master_liste.setFixedHeight(120)
-        self.master_liste.setStyleSheet(
-            "QListWidget { font-weight: bold; }"
-            "QListWidget::item:selected { background: #1565c0; }"
-        )
+        self.master_liste.setObjectName("master_liste")
         layout.addWidget(self.master_liste)
 
         m_btns = QHBoxLayout()
         m_btns.setSpacing(4)
         self.btn_master_neu      = QPushButton("+ Neu")
-        self.btn_master_neu.setStyleSheet("color: #55ff88; background: #1a3a1a; border-color: #1a3a1a;")
-        self.btn_master_bearbeiten = QPushButton("✎")
+        self.btn_master_neu.setObjectName("btn_new_sm")
+        self.btn_master_bearbeiten = QPushButton("✎ Bearbeiten")
+        self.btn_master_bearbeiten.setObjectName("btn_sm")
         self.btn_master_aktiv    = QPushButton("★ Aktiv")
-        self.btn_master_aktiv.setStyleSheet("color: #ffca28;")
+        self.btn_master_aktiv.setObjectName("btn_master_aktiv")
         self.btn_master_loeschen = QPushButton("✕")
-        self.btn_master_loeschen.setObjectName("btn_danger")
+        self.btn_master_loeschen.setObjectName("btn_del_sm")
         for btn in [self.btn_master_neu, self.btn_master_bearbeiten,
                     self.btn_master_aktiv, self.btn_master_loeschen]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             m_btns.addWidget(btn)
-        m_btns.addStretch()
         layout.addLayout(m_btns)
 
         self.btn_master_neu.clicked.connect(self.master_neu_requested)
@@ -63,27 +60,30 @@ class WorkflowPanel(QWidget):
         # Trenner
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #2a2a2a;")
+        line.setProperty("class", "separator")
         layout.addWidget(line)
 
         # ── Sub-Workflows ──────────────────────────────────────────────────────
         lbl_sub = QLabel("SUB-WORKFLOWS (Funktionsbausteine)")
-        lbl_sub.setStyleSheet("color: #666666; font-size: 10px; font-weight: bold;")
+        lbl_sub.setProperty("class", "lbl_header_dim")
         layout.addWidget(lbl_sub)
-
+        ...
         self.workflow_liste = QListWidget()
+        self.workflow_liste.setObjectName("workflow_liste")
         layout.addWidget(self.workflow_liste)
+
 
         wf_btns = QHBoxLayout()
         wf_btns.setSpacing(4)
         self.btn_wf_neu       = QPushButton("+ Neu")
+        self.btn_wf_neu.setObjectName("btn_new_sm")
         self.btn_wf_bearbeiten = QPushButton("✎ Bearbeiten")
+        self.btn_wf_bearbeiten.setObjectName("btn_sm")
         self.btn_wf_loeschen  = QPushButton("✕")
-        self.btn_wf_loeschen.setObjectName("btn_danger")
+        self.btn_wf_loeschen.setObjectName("btn_del_sm")
         for btn in [self.btn_wf_neu, self.btn_wf_bearbeiten, self.btn_wf_loeschen]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             wf_btns.addWidget(btn)
-        wf_btns.addStretch()
         layout.addLayout(wf_btns)
 
         self.btn_wf_neu.clicked.connect(self.workflow_neu_requested)
@@ -133,7 +133,10 @@ class WorkflowPanel(QWidget):
         text = item.text().strip()
         if text.startswith("("):
             return None
-        return text[3:].strip()  # Präfix "   " oder " ★ " entfernen
+        # Icons und Leerzeichen am Anfang entfernen
+        for icon in ["★", " "]:
+            text = text.replace(icon, "")
+        return text.strip()
 
     def _get_workflow_name(self) -> str | None:
         item = self.workflow_liste.currentItem()
@@ -142,7 +145,12 @@ class WorkflowPanel(QWidget):
         text = item.text().strip()
         if text.startswith("("):
             return None
-        return text.split("  (")[0].strip()
+        # Name ist alles vor dem doppelten Leerzeichen oder der Klammer
+        if "  (" in text:
+            return text.split("  (")[0].strip()
+        if " (" in text:
+            return text.split(" (")[0].strip()
+        return text
 
     def _master_bearbeiten(self):
         name = self._get_master_name()

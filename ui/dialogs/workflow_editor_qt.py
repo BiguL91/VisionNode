@@ -96,7 +96,7 @@ class NodeCanvas(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.ArrowCursor)
-        self.setStyleSheet(f"background: {CANVAS_BG};")
+        self.setObjectName("node_canvas")
 
         self.nodes:       list[dict] = []
         self.connections: list[dict] = []
@@ -525,7 +525,7 @@ class WorkflowEditorDialogQt(QDialog):
 
         # ── Toolbar ────────────────────────────────────────────────────────────
         tb = QFrame()
-        tb.setStyleSheet("background: #2d2d2d;")
+        tb.setObjectName("workflow_editor_toolbar")
         tb_lay = QHBoxLayout(tb)
         tb_lay.setContentsMargins(4, 4, 4, 4)
         tb_lay.setSpacing(6)
@@ -537,11 +537,11 @@ class WorkflowEditorDialogQt(QDialog):
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setStyleSheet("color: #444444;")
+        sep1.setProperty("class", "separator")
         tb_lay.addWidget(sep1)
 
         lbl = QLabel("+ Node:")
-        lbl.setStyleSheet("color: #666666; font-size: 8pt;")
+        lbl.setProperty("class", "lbl_dim")
         tb_lay.addWidget(lbl)
 
         typen = [
@@ -559,20 +559,19 @@ class WorkflowEditorDialogQt(QDialog):
         for label, typ in typen:
             farbe = NODE_FARBEN.get(typ, "#555555")
             btn = QPushButton(label)
-            btn.setStyleSheet(
-                f"background: {farbe}; color: white; font-size: 8pt; padding: 2px 7px;")
+            btn.setObjectName("btn_add_node")
+            btn.setStyleSheet(f"background-color: {farbe};") # Dynamische Node-Farbe
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, t=typ: self._node_hinzufuegen(t))
             tb_lay.addWidget(btn)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setStyleSheet("color: #444444;")
+        sep2.setProperty("class", "separator")
         tb_lay.addWidget(sep2)
 
         self._sim_btn = QPushButton("▶ Simulieren")
-        self._sim_btn.setStyleSheet(
-            "background: #1565c0; color: white; font-weight: bold; font-size: 8pt; padding: 2px 10px;")
+        self._sim_btn.setObjectName("btn_simulate")
         self._sim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sim_btn.clicked.connect(self._simulation_toggle)
         tb_lay.addWidget(self._sim_btn)
@@ -592,28 +591,27 @@ class WorkflowEditorDialogQt(QDialog):
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(90)
-        self._log.setStyleSheet(
-            "background: #111111; color: #cccccc; font-family: Consolas; font-size: 8pt; border: none;")
+        self._log.setObjectName("workflow_editor_log")
         root.addWidget(self._log)
 
         # ── Status + Buttons ───────────────────────────────────────────────────
         bar = QFrame()
-        bar.setStyleSheet("background: #2d2d2d;")
+        bar.setObjectName("workflow_editor_statusbar")
         bar_lay = QHBoxLayout(bar)
         bar_lay.setContentsMargins(4, 4, 4, 4)
 
         self._status_lbl = QLabel("")
-        self._status_lbl.setStyleSheet("color: #666666; font-size: 8pt;")
+        self._status_lbl.setProperty("class", "lbl_info")
         bar_lay.addWidget(self._status_lbl)
         bar_lay.addStretch()
 
         btn_ab = QPushButton("Abbrechen")
-        btn_ab.setObjectName("btn_icon")
+        btn_ab.setObjectName("btn_sm")
         btn_ab.clicked.connect(self._abbrechen)
         bar_lay.addWidget(btn_ab)
 
         btn_sp = QPushButton("Speichern")
-        btn_sp.setObjectName("btn_success")
+        btn_sp.setObjectName("btn_new")
         btn_sp.clicked.connect(self._speichern)
         bar_lay.addWidget(btn_sp)
 
@@ -692,7 +690,7 @@ class WorkflowEditorDialogQt(QDialog):
 
         dlg = QDialog(self)
         dlg.setWindowTitle(f"{typ.upper()} – Parameter")
-        dlg.setStyleSheet("background: #2d2d2d;")
+        dlg.setObjectName("workflow_param_dialog")
         dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         dlg.setMinimumWidth(420)
 
@@ -714,14 +712,14 @@ class WorkflowEditorDialogQt(QDialog):
             if typ in ("suche", "suche_optional"):
                 sp = QSpinBox()
                 sp.setRange(1, 300); sp.setValue(int(node.get("timeout", 10)))
-                sp.setStyleSheet("background: #1a1a1a; color: white;")
+                sp.setProperty("class", "input_dark")
                 add_row("Timeout (s):", "timeout", sp)
 
         elif typ == "warten":
             sp = QDoubleSpinBox()
             sp.setRange(0.1, 300.0); sp.setSingleStep(0.5)
             sp.setValue(float(node.get("sekunden", 2.0)))
-            sp.setStyleSheet("background: #1a1a1a; color: white;")
+            sp.setProperty("class", "input_dark")
             add_row("Sekunden:", "sekunden", sp)
 
         elif typ == "bedingung":
@@ -736,7 +734,7 @@ class WorkflowEditorDialogQt(QDialog):
             for op in [">", "<", ">=", "<=", "=", "!="]:
                 rb = QRadioButton(op)
                 rb.setChecked(op == op_selected[0])
-                rb.setStyleSheet("color: #cccccc;")
+                rb.setProperty("class", "lbl_dim")
                 rb.toggled.connect(lambda chk, o=op: op_selected.__setitem__(0, o) if chk else None)
                 op_group.addButton(rb)
                 op_lay.addWidget(rb)
@@ -744,7 +742,7 @@ class WorkflowEditorDialogQt(QDialog):
             add_row("Operator:", "operator_widget", op_widget)
 
             wert_edit = QLineEdit(str(node.get("wert", "0")))
-            wert_edit.setStyleSheet("background: #1a1a1a; color: white;")
+            wert_edit.setProperty("class", "input_dark")
             add_row("Wert:", "wert", wert_edit)
 
         elif typ == "call_workflow":
@@ -780,8 +778,8 @@ class WorkflowEditorDialogQt(QDialog):
             dlg.accept()
             self._sync_canvas()
 
-        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_icon")
-        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_success")
+        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_sm")
+        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_new")
         btn_ab.clicked.connect(dlg.reject)
         btn_ok.clicked.connect(anwenden)
         btn_row.addWidget(btn_ab); btn_row.addWidget(btn_ok)
@@ -794,10 +792,10 @@ class WorkflowEditorDialogQt(QDialog):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background: #1a1a1a; border: none;")
+        scroll.setObjectName("selector_scroll")
         scroll.setMinimumHeight(200)
         container = QWidget()
-        container.setStyleSheet("background: #1a1a1a;")
+        container.setObjectName("selector_container")
         c_lay = QVBoxLayout(container)
         scroll.setWidget(container)
         lay.addWidget(scroll)
@@ -812,18 +810,18 @@ class WorkflowEditorDialogQt(QDialog):
                 c_lay.takeAt(0)
             rows_widgets.clear()
             for i, aus in enumerate(ausgaenge_liste):
-                row = QWidget()
-                row.setStyleSheet("background: #2d2d2d;")
+                row = QFrame()
+                row.setObjectName("selector_row")
                 rl = QHBoxLayout(row)
                 rl.setContentsMargins(4, 2, 4, 2)
 
                 p_edit = QLineEdit(aus.get("port", f"Prio {i+1}"))
                 p_edit.setFixedWidth(100)
-                p_edit.setStyleSheet("background: #1a1a1a; color: white; font-weight: bold;")
+                p_edit.setProperty("class", "input_dark")
 
                 has_logic = aus.get("logic_graph")
                 btn_logic = QPushButton("★ Netzwerk" if has_logic else "🛠 Netzwerk")
-                btn_logic.setStyleSheet("color: #55ff88; background: #444; font-size: 8pt;")
+                btn_logic.setObjectName("btn_logic_net")
                 def _edit_logic(a_obj=aus, b=btn_logic):
                     from ui.dialogs.logic_editor_qt import LogicEditorDialogQt
                     g = a_obj.get("logic_graph") or {"nodes": [], "connections": []}
@@ -839,16 +837,16 @@ class WorkflowEditorDialogQt(QDialog):
 
                 c_sp = QDoubleSpinBox()
                 c_sp.setRange(0, 3600); c_sp.setValue(float(aus.get("cooldown", 0)))
-                c_sp.setFixedWidth(70); c_sp.setStyleSheet("background: #1a1a1a; color: #fbc02d;")
+                c_sp.setFixedWidth(70); c_sp.setProperty("class", "input_dark")
 
                 m_sp = QSpinBox()
                 m_sp.setRange(0, 9999); m_sp.setValue(int(aus.get("max_runs", 0)))
-                m_sp.setFixedWidth(70); m_sp.setStyleSheet("background: #1a1a1a; color: #ff7043;")
+                m_sp.setFixedWidth(70); m_sp.setProperty("class", "input_dark")
 
                 btn_up = QPushButton("↑"); btn_up.setFixedWidth(28)
                 btn_dn = QPushButton("↓"); btn_dn.setFixedWidth(28)
                 btn_dl = QPushButton("✕"); btn_dl.setFixedWidth(28)
-                btn_dl.setStyleSheet("background: #b71c1c; color: white;")
+                btn_dl.setObjectName("btn_del")
 
                 def _up(idx=i):
                     if idx > 0:
@@ -874,7 +872,7 @@ class WorkflowEditorDialogQt(QDialog):
         rebuild()
 
         btn_add = QPushButton("+ Ausgang hinzufügen")
-        btn_add.setStyleSheet("background: #1a3a1a; color: #55ff88; padding: 5px;")
+        btn_add.setObjectName("btn_new_sm")
         def _add():
             ausgaenge_liste.append({"port": f"Prio {len(ausgaenge_liste)+1}",
                                     "cooldown": 0, "max_runs": 0, "logic_graph": None})
@@ -903,8 +901,8 @@ class WorkflowEditorDialogQt(QDialog):
             parent_dlg.accept()
             self._sync_canvas()
 
-        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_icon")
-        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_success")
+        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_sm")
+        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_new")
         btn_ab.clicked.connect(parent_dlg.reject)
         btn_ok.clicked.connect(anwenden)
         btn_row.addWidget(btn_ab); btn_row.addWidget(btn_ok)
@@ -921,7 +919,7 @@ class WorkflowEditorDialogQt(QDialog):
         lay.setSpacing(2)
 
         edit = QLineEdit(current)
-        edit.setStyleSheet("background: #1a1a1a; color: white;")
+        edit.setProperty("class", "input_dark")
         lay.addWidget(edit)
 
         btn = QPushButton("▾")
@@ -971,7 +969,7 @@ class WorkflowEditorDialogQt(QDialog):
 
     def _variablen_picker_btn(self, current: str, parent) -> QLineEdit:
         edit = QLineEdit(current)
-        edit.setStyleSheet("background: #1a1a1a; color: white;")
+        edit.setProperty("class", "input_dark")
         btn = QPushButton("▾")
         btn.setFixedWidth(28)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1016,7 +1014,7 @@ class WorkflowEditorDialogQt(QDialog):
 
     def _workflow_picker_btn(self, current: str, parent) -> QLineEdit:
         edit = QLineEdit(current)
-        edit.setStyleSheet("background: #1a1a1a; color: white;")
+        edit.setProperty("class", "input_dark")
         btn = QPushButton("▾")
         btn.setFixedWidth(28)
         menu = QMenu(parent)
@@ -1056,8 +1054,8 @@ class WorkflowEditorDialogQt(QDialog):
         self._sim_zustand  = {}
         self._sim_progress = {}
         self._sim_btn.setText("⏹ Stopp")
-        self._sim_btn.setStyleSheet(
-            "background: #b71c1c; color: white; font-weight: bold; font-size: 8pt; padding: 2px 10px;")
+        self._sim_btn.setProperty("state", "active")
+        self._sim_btn.setStyle(self._sim_btn.style())
         self._log.clear()
         self._sim_log("▶ Live-Simulation gestartet", "info")
 
@@ -1070,8 +1068,8 @@ class WorkflowEditorDialogQt(QDialog):
         self._sim_zustand  = {}
         self._sim_progress = {}
         self._sim_btn.setText("▶ Simulieren")
-        self._sim_btn.setStyleSheet(
-            "background: #1565c0; color: white; font-weight: bold; font-size: 8pt; padding: 2px 10px;")
+        self._sim_btn.setProperty("state", "stopped")
+        self._sim_btn.setStyle(self._sim_btn.style())
         self._sync_canvas()
 
     def _simulation_schritt(self, node, nodes_index, schritt):
@@ -1132,8 +1130,8 @@ class WorkflowEditorDialogQt(QDialog):
         self._sim_log("✓ Simulation abgeschlossen", "done")
         self._sim_aktiv = False
         self._sim_btn.setText("▶ Simulieren")
-        self._sim_btn.setStyleSheet(
-            "background: #1565c0; color: white; font-weight: bold; font-size: 8pt; padding: 2px 10px;")
+        self._sim_btn.setProperty("state", "stopped")
+        self._sim_btn.setStyle(self._sim_btn.style())
         self._status_aktualisieren()
 
     def _sim_log(self, text: str, tag: str = "done"):
@@ -1174,12 +1172,13 @@ class WorkflowEditorDialogQt(QDialog):
         if self._sim_aktiv:
             self._status_lbl.setText(
                 f"▶ Simulation läuft …  ·  {len(self.nodes)} Nodes  ·  Zoom {z}%")
-            self._status_lbl.setStyleSheet("color: #f9a825; font-size: 8pt;")
+            self._status_lbl.setProperty("class", "lbl_warning")
         else:
             self._status_lbl.setText(
                 f"{len(self.nodes)} Nodes  ·  {len(self.connections)} Verbindungen"
                 f"  ·  Zoom {z}%  ·  Port ziehen = Verbindung  ·  Scrollen = Zoom")
-            self._status_lbl.setStyleSheet("color: #666666; font-size: 8pt;")
+            self._status_lbl.setProperty("class", "lbl_dim")
+        self._status_lbl.setStyle(self._status_lbl.style())
 
     def _speichern(self):
         name = self._name_edit.text().strip()
@@ -1213,7 +1212,6 @@ class WorkflowEditorDialogQt(QDialog):
             dlg = QMessageBox(self.parent)
             dlg.setWindowTitle(titel)
             dlg.setText(msg)
-            dlg.setStyleSheet("background: #2d2d2d; color: white;")
             btn_sim = dlg.addButton("Simulieren",     QMessageBox.ButtonRole.NoRole)
             btn_adb = dlg.addButton("ADB Ausführen",  QMessageBox.ButtonRole.YesRole)
             btn_ab  = dlg.addButton("Abbrechen",      QMessageBox.ButtonRole.RejectRole)
@@ -1265,3 +1263,4 @@ class WorkflowEditorDialogQt(QDialog):
                 self.parent._simulation_stoppen()
             else:
                 self.log("[SIM] Home-Button (simuliert)", "info")
+

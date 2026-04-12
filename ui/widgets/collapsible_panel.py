@@ -63,13 +63,26 @@ class CollapsiblePanel(QWidget):
         root.addWidget(self._content)
         self._content.setVisible(expanded)
 
-        if stretch:
-            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._update_size_policy()
+
+    def _update_size_policy(self):
+        """Passt die SizePolicy an den Klapp-Zustand an."""
+        if self._expanded:
+            if self._stretch:
+                self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+                self._content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            else:
+                self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                self._content.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        else:
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            self._content.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def _toggle(self):
         self._expanded = not self._expanded
         self._content.setVisible(self._expanded)
         self._arrow.setText("▼" if self._expanded else "▶")
+        self._update_size_policy()
         self.toggled.emit(self._expanded)
 
     def set_expanded(self, val: bool):

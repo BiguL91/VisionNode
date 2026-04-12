@@ -94,7 +94,7 @@ class VorschauLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background:#1a1a1a;")
+        self.setObjectName("preview")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(400, 300)
 
@@ -183,14 +183,13 @@ class VorschauLabel(QLabel):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor("#1a1a1a"))
-
+        # Hintergrund wird durch QSS gezeichnet (oder falls nötig hier via Palette)
+        
         if self._pixmap:
             p.drawPixmap(self._offset_x, self._offset_y, self._pixmap)
             self._zeichne_overlays(p)
         else:
             p.setPen(QColor("#555555"))
-            p.setFont(QFont("Segoe UI", 11))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._status)
 
         # Auswahl-Rechteck im Einlern-Modus
@@ -264,6 +263,7 @@ class TilesBotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Ai-Bot")
+        self.setMinimumSize(1450, 700)
 
         # Core
         self.app = TilesBotApp(log_callback=self._log)
@@ -309,25 +309,30 @@ class TilesBotWindow(QMainWindow):
         # ── Haupt-Splitter ────────────────────────────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(4)
+        splitter.setChildrenCollapsible(False)
         root.addWidget(splitter, stretch=1)
 
         # Linke Spalte (Workflows)
         self._spalte_links = self._setup_linke_spalte()
+        self._spalte_links.setMinimumWidth(320)
         splitter.addWidget(self._spalte_links)
 
         # Mitte (Live-Vorschau)
         self._vorschau = VorschauLabel()
+        self._vorschau.setMinimumWidth(400)
         splitter.addWidget(self._vorschau)
 
         # Rechte Spalte 1 (Templates, OCR, State, Log)
         self._spalte_rechts1 = self._setup_rechte_spalte1()
+        self._spalte_rechts1.setMinimumWidth(320)
         splitter.addWidget(self._spalte_rechts1)
 
         # Rechte Spalte 2 (Daten-Listen)
         self._spalte_rechts2 = self._setup_rechte_spalte2()
+        self._spalte_rechts2.setMinimumWidth(360)
         splitter.addWidget(self._spalte_rechts2)
 
-        splitter.setSizes([260, 800, 320, 280])
+        splitter.setSizes([320, 800, 320, 360])
         splitter.setStretchFactor(1, 1)  # Vorschau nimmt restlichen Platz
 
         # ── Toolbar ───────────────────────────────────────────────────────────
@@ -360,15 +365,8 @@ class TilesBotWindow(QMainWindow):
 
         # Workflow-Templates
         wt_panel = CollapsiblePanel("WORKFLOW TEMPLATES", expanded=True, stretch=True)
-        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True)
+        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=False)
         wt_panel.content_layout.addWidget(self.template_panel)
-
-        # Neu-Button im Header
-        btn_neu = QPushButton("+ Neu")
-        btn_neu.setStyleSheet("background:#1a3a1a;color:#55ff88;font-size:10px;padding:1px 6px;")
-        btn_neu.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_neu.clicked.connect(self._template_neu_erstellen)
-        wt_panel.set_header_extra(btn_neu)
         l.addWidget(wt_panel, stretch=2)
 
         # State-Templates
@@ -384,7 +382,7 @@ class TilesBotWindow(QMainWindow):
         # Nur-Aktive Button im Header
         self._btn_nur_aktive = QPushButton("Nur Aktive")
         self._btn_nur_aktive.setCheckable(True)
-        self._btn_nur_aktive.setStyleSheet("background:#1a1a1a;color:#555555;font-size:10px;padding:1px 6px;")
+        self._btn_nur_aktive.setObjectName("btn_sm")
         self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_nur_aktive.toggled.connect(self._nur_aktive_toggle)
         ocr_panel_coll.set_header_extra(self._btn_nur_aktive)
@@ -394,12 +392,12 @@ class TilesBotWindow(QMainWindow):
         sv_panel = CollapsiblePanel("STATE VARIABLEN", expanded=True)
         self.state_panel = StatePanelQt()
         sv_panel.content_layout.addWidget(self.state_panel)
-        # Hinzufügen-Button im Header
-        btn_add_state = QPushButton("➕")
-        btn_add_state.setStyleSheet("background:#1a1a1a;color:#555555;font-size:10px;padding:1px 6px;")
-        btn_add_state.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add_state.clicked.connect(self._state_hinzufuegen)
-        sv_panel.set_header_extra(btn_add_state)
+        btn_nur_aktive_st = QPushButton("Nur Aktive")
+        btn_nur_aktive_st.setObjectName("btn_sm")
+        btn_nur_aktive_st.setCheckable(True)
+        btn_nur_aktive_st.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_nur_aktive_st.toggled.connect(self.state_panel.set_nur_aktive)
+        sv_panel.set_header_extra(btn_nur_aktive_st)
         l.addWidget(sv_panel)
 
         # Log
@@ -428,7 +426,6 @@ class TilesBotWindow(QMainWindow):
     def _setup_toolbar(self) -> QWidget:
         toolbar = QFrame()
         toolbar.setObjectName("toolbar_frame")
-        toolbar.setStyleSheet("QFrame#toolbar_frame{background:#252525;}")
         toolbar.setFixedHeight(44)
 
         l = QHBoxLayout(toolbar)
@@ -449,39 +446,30 @@ class TilesBotWindow(QMainWindow):
 
         # Status
         self.status_label = QLabel("● Bereit")
-        self.status_label.setStyleSheet("color:#888888;")
+        self.status_label.setObjectName("status_label")
         l.addWidget(self.status_label)
 
         l.addStretch()
 
-        # Rechts: Debug / OCR / + Template / Snapshot / Einstellungen / ?
+        # Rechts: Debug / Snapshot / Einstellungen / ?
         self.debug_btn = QPushButton("● Debug Aus")
-        self.debug_btn.setStyleSheet("background:#3a3a3a;color:#555555;")
+        self.debug_btn.setObjectName("btn_debug_toggle")
+        self.debug_btn.setCheckable(True)
         self.debug_btn.clicked.connect(self._debug_umschalten)
         l.addWidget(self.debug_btn)
 
-        self.ocr_btn = QPushButton("+ OCR-Region")
-        self.ocr_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
-        self.ocr_btn.clicked.connect(self._ocr_modus_umschalten)
-        l.addWidget(self.ocr_btn)
-
-        self.einlern_btn = QPushButton("+ Template")
-        self.einlern_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
-        self.einlern_btn.clicked.connect(self._einlern_modus_umschalten)
-        l.addWidget(self.einlern_btn)
-
         snapshot_btn = QPushButton("📸 Snapshot")
-        snapshot_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        snapshot_btn.setObjectName("btn_sm")
         snapshot_btn.clicked.connect(self._snapshot_erstellen)
         l.addWidget(snapshot_btn)
 
         settings_btn = QPushButton("Einstellungen")
-        settings_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
+        settings_btn.setObjectName("btn_sm")
         settings_btn.clicked.connect(self._einstellungen_dialog)
         l.addWidget(settings_btn)
 
         legende_btn = QPushButton("?")
-        legende_btn.setStyleSheet("background:#3a3a3a;color:#555555;font-weight:bold;")
+        legende_btn.setObjectName("btn_sm")
         legende_btn.setFixedWidth(28)
         legende_btn.clicked.connect(self._legende_zeigen)
         l.addWidget(legende_btn)
@@ -504,8 +492,9 @@ class TilesBotWindow(QMainWindow):
         self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
 
         # Template-Panels
+        self.template_panel.neu_laden_requested.connect(self._template_neu_laden)
+        self.state_template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
         for panel in [self.template_panel, self.state_template_panel]:
-            panel.neu_laden_requested.connect(self._template_neu_laden)
             panel.bearbeiten_requested.connect(self._template_bearbeiten)
             panel.loeschen_requested.connect(self._template_loeschen)
             panel.ocr_konfigurieren_requested.connect(self._ocr_konfigurieren)
@@ -519,6 +508,7 @@ class TilesBotWindow(QMainWindow):
             lambda n: (self.ocr_engine.template_ocr_deaktivieren(n), self._panels_aktualisieren()))
 
         # State-Panel
+        self.state_panel.add_requested.connect(self._state_hinzufuegen)
         self.state_panel.rename_requested.connect(self._state_umbenennen)
         self.state_panel.delete_requested.connect(self._state_loeschen)
 
@@ -612,11 +602,12 @@ class TilesBotWindow(QMainWindow):
         if self.ocr_engine.debug_filter == "Aus":
             self.ocr_engine.debug_filter = "Alle"
             self.debug_btn.setText("● Debug An")
-            self.debug_btn.setStyleSheet("background:#1a3a1a;color:#2ea043;")
+            self.debug_btn.setProperty("active", True)
         else:
             self.ocr_engine.debug_filter = "Aus"
             self.debug_btn.setText("● Debug Aus")
-            self.debug_btn.setStyleSheet("background:#3a3a3a;color:#555555;")
+            self.debug_btn.setProperty("active", False)
+        self.debug_btn.setStyle(self.debug_btn.style())
 
     # ── Einlern-Modus ─────────────────────────────────────────────────────────
 
@@ -625,32 +616,33 @@ class TilesBotWindow(QMainWindow):
             self._ocr_modus_umschalten()
         self.einlern_modus = not self.einlern_modus
         if self.einlern_modus:
-            self.einlern_btn.setText("✕ Abbrechen")
-            self.einlern_btn.setStyleSheet("background:#1565c0;color:white;")
             self._vorschau.set_aktiv(True)
             self._log("Einlern-Modus aktiv – Region auf der Vorschau auswählen.")
-            self._einlern_dialog_oeffnen()
+            self.status_label.setText("● Einlern-Modus")
+            self.status_label.setProperty("class", "lbl_warning")
         else:
             self._geplanter_typ = None
             self._geplante_kategorie = None
             self._aktueller_ausschnitt = None
-            self.einlern_btn.setText("+ Template")
-            self.einlern_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
             self._vorschau.set_aktiv(False)
+            self.status_label.setText("● Bereit")
+            self.status_label.setProperty("class", "")
+        self.status_label.setStyle(self.status_label.style())
 
     def _ocr_modus_umschalten(self):
         if self.einlern_modus:
             self._einlern_modus_umschalten()
         self.ocr_modus = not self.ocr_modus
         if self.ocr_modus:
-            self.ocr_btn.setText("✕ Abbrechen")
-            self.ocr_btn.setStyleSheet("background:#6a1b9a;color:white;")
             self._vorschau.set_aktiv(True)
             self._log("OCR-Modus aktiv – Region auf der Vorschau auswählen.")
+            self.status_label.setText("● OCR-Modus")
+            self.status_label.setProperty("class", "lbl_highlight")
         else:
-            self.ocr_btn.setText("+ OCR-Region")
-            self.ocr_btn.setStyleSheet("background:#3a3a3a;color:#cccccc;")
             self._vorschau.set_aktiv(False)
+            self.status_label.setText("● Bereit")
+            self.status_label.setProperty("class", "")
+        self.status_label.setStyle(self.status_label.style())
 
     def _region_ausgewaehlt(self, x0: int, y0: int, x1: int, y1: int):
         screenshot = self.app.current_screenshot_pil
@@ -665,10 +657,12 @@ class TilesBotWindow(QMainWindow):
         if self.einlern_modus and _PILImage:
             ausschnitt = screenshot.crop((x0, y0, x1, y1))
             self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0)
-            # Öffne/update Template-Editor wenn bereits offen
+            # Öffne/update Template-Editor
             if hasattr(self, "_einlern_editor") and self._einlern_editor and \
                     self._einlern_editor.isVisible():
                 self._einlern_editor._vorschau_setzen(ausschnitt, x1 - x0, y1 - y0)
+            else:
+                self._einlern_dialog_oeffnen()
 
     def _ocr_region_speichern(self, x0: int, y0: int, x1: int, y1: int):
         name, ok = QInputDialog.getText(self, "OCR-Region", "Name der Region:")
@@ -836,11 +830,11 @@ class TilesBotWindow(QMainWindow):
             canvas.update()
 
         info = QLabel("Klick-Punkt setzen.")
-        info.setStyleSheet("color:#888888;")
+        info.setProperty("class", "lbl_info")
         root.addWidget(info)
 
         btn_save = QPushButton("Speichern")
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
 
         def speichern():
             if canvas._rx is not None:
@@ -882,7 +876,8 @@ class TilesBotWindow(QMainWindow):
 
         root = QVBoxLayout(dlg)
         art_lbl = QLabel("Master Gruppe" if ist_master else "Untergeordnete Gruppe")
-        art_lbl.setStyleSheet(f"color:{'#7a9abf' if ist_master else '#9abf7a'};font-weight:bold;")
+        art_lbl.setObjectName("group_type_label")
+        art_lbl.setProperty("master", ist_master)
         root.addWidget(art_lbl)
 
         root.addWidget(QLabel("Gruppen-Name:"))
@@ -903,11 +898,11 @@ class TilesBotWindow(QMainWindow):
             root.addWidget(combo)
 
         err_lbl = QLabel("")
-        err_lbl.setStyleSheet("color:#da3633;")
+        err_lbl.setProperty("class", "lbl_error")
         root.addWidget(err_lbl)
 
         btn_erstellen = QPushButton("Erstellen")
-        btn_erstellen.setObjectName("btn_primary")
+        btn_erstellen.setObjectName("btn_new")
 
         def erstellen():
             n = name_edit.text().strip()
@@ -939,8 +934,8 @@ class TilesBotWindow(QMainWindow):
         name, ok = QInputDialog.getText(self, "Master Workflow", "Name des Master-Workflows:")
         if not ok or not name:
             return
-        self.workflow_engine.master_workflow_erstellen(name)
-        self.workflow_panel.aktualisieren()
+        self.workflow_engine.master_workflow_speichern(name, {"nodes": [], "connections": []})
+        self._panels_aktualisieren()
         self._log(f"Master-Workflow erstellt: {name}")
 
     def _master_bearbeiten(self, name: str):
@@ -949,7 +944,7 @@ class TilesBotWindow(QMainWindow):
 
         def on_gespeichert(neuer_name, neuer_graph):
             self.workflow_engine.master_workflow_speichern(neuer_name, neuer_graph, alter_name=name)
-            self.workflow_panel.aktualisieren()
+            self._panels_aktualisieren()
             self._log(f"Master-Workflow gespeichert: {neuer_name}")
 
         dlg.gespeichert.connect(on_gespeichert)
@@ -962,12 +957,12 @@ class TilesBotWindow(QMainWindow):
         )
         if antwort == QMessageBox.StandardButton.Yes:
             self.workflow_engine.master_workflow_loeschen(name)
-            self.workflow_panel.aktualisieren()
+            self._panels_aktualisieren()
             self._log(f"Master-Workflow gelöscht: {name}")
 
     def _master_aktiv_setzen(self, name: str):
         self.workflow_engine.aktiver_master = name
-        self.workflow_panel.aktualisieren()
+        self._panels_aktualisieren()
         self._log(f"Aktiver Master-Workflow: {name}")
 
     def _workflow_neu(self):
@@ -975,7 +970,7 @@ class TilesBotWindow(QMainWindow):
         if not ok or not name:
             return
         self.workflow_engine.workflow_speichern(name, {"nodes": [], "connections": []})
-        self.workflow_panel.aktualisieren()
+        self._panels_aktualisieren()
 
     def _workflow_bearbeiten(self, name: str):
         graph = self.workflow_engine.workflows.get(name, {"nodes": [], "connections": []})
@@ -983,7 +978,7 @@ class TilesBotWindow(QMainWindow):
 
         def on_gespeichert(neuer_name, neuer_graph):
             self.workflow_engine.workflow_speichern(neuer_name, neuer_graph, alter_name=name)
-            self.workflow_panel.aktualisieren()
+            self._panels_aktualisieren()
             self._log(f"Workflow gespeichert: {neuer_name}")
 
         dlg.gespeichert.connect(on_gespeichert)
@@ -996,7 +991,7 @@ class TilesBotWindow(QMainWindow):
         )
         if antwort == QMessageBox.StandardButton.Yes:
             self.workflow_engine.workflow_loeschen(name)
-            self.workflow_panel.aktualisieren()
+            self._panels_aktualisieren()
             self._log(f"Workflow gelöscht: {name}")
 
     # ── State-Aktionen ────────────────────────────────────────────────────────
@@ -1006,7 +1001,7 @@ class TilesBotWindow(QMainWindow):
         if result:
             name, wert = result
             self.app.state.set_game_state(name, wert)
-            self.state_panel.aktualisieren()
+            self._panels_aktualisieren()
             self._log(f"State-Variable hinzugefügt: {name} = {wert}")
 
     def _state_umbenennen(self, alter_name: str):
@@ -1028,7 +1023,7 @@ class TilesBotWindow(QMainWindow):
                     ss[neuer_name] = ss.pop(alter_name)
             with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
                 json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
-            self.state_panel.aktualisieren()
+            self.state_panel.aktualisieren(dict(self.app.state.game_states))
             self._log(f"State umbenannt: {alter_name} → {neuer_name}")
 
     def _state_loeschen(self, name: str):
@@ -1042,17 +1037,15 @@ class TilesBotWindow(QMainWindow):
             t_settings.get("set_states", {}).pop(name, None)
         with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
-        self.state_panel.aktualisieren()
+        self.state_panel.aktualisieren(dict(self.app.state.game_states))
         self._log(f"State-Variable gelöscht: {name}")
 
     # ── Variablen / OCR Aktionen ──────────────────────────────────────────────
 
     def _nur_aktive_toggle(self, aktiv: bool):
         self._nur_aktive_variablen = aktiv
-        self._btn_nur_aktive.setStyleSheet(
-            "background:#2ea043;color:#ffffff;" if aktiv
-            else "background:#1a1a1a;color:#555555;"
-        )
+        self._btn_nur_aktive.setProperty("active", aktiv)
+        self._btn_nur_aktive.setStyle(self._btn_nur_aktive.style())
         self.ocr_panel.set_nur_aktive(aktiv)
 
     # ── Dialoge ───────────────────────────────────────────────────────────────
@@ -1108,7 +1101,11 @@ class TilesBotWindow(QMainWindow):
     def _status_setzen(self, text: str, farbe: str):
         if hasattr(self, "status_label"):
             self.status_label.setText(text)
-            self.status_label.setStyleSheet(f"color:{farbe};")
+            if farbe == "#2ea043":
+                self.status_label.setProperty("class", "lbl_success")
+            else:
+                self.status_label.setProperty("class", "lbl_dim")
+            self.status_label.setStyle(self.status_label.style())
 
     def _panels_aktualisieren(self):
         """Aktualisiert alle Panels nach Template/OCR/Workflow-Änderungen."""

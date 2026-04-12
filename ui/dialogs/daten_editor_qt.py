@@ -61,7 +61,7 @@ class FormelBuilder(QWidget):
                 op_combo.addItems(["+", "-", "*", "/"])
                 op_combo.setCurrentText(teil.get("op", "+"))
                 op_combo.setFixedWidth(50)
-                op_combo.setStyleSheet("color: #ffca28; font-weight: bold;")
+                op_combo.setObjectName("formula_operator")
                 idx = i
                 op_combo.currentTextChanged.connect(lambda v, ix=idx: self._op_geaendert(ix, v))
                 self._layout.addWidget(op_combo)
@@ -71,7 +71,7 @@ class FormelBuilder(QWidget):
                     # Löschen-Button
                     btn_del = QPushButton("–")
                     btn_del.setFixedSize(22, 22)
-                    btn_del.setStyleSheet("background: #3a1a1a; color: #da3633; border: none;")
+                    btn_del.setObjectName("btn_operand_delete")
                     btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_del.clicked.connect(lambda _, ix=i: self._operand_loeschen(ix))
                     self._layout.addWidget(btn_del)
@@ -84,13 +84,13 @@ class FormelBuilder(QWidget):
 
         # +Var / +Zahl Buttons
         btn_var = QPushButton("+ Var")
-        btn_var.setStyleSheet("background: #1a3a1a; color: #2ea043; font-size: 8px; padding: 2px 6px;")
+        btn_var.setObjectName("btn_add_var")
         btn_var.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_var.clicked.connect(lambda: self._operand_hinzufuegen("var"))
         self._layout.addWidget(btn_var)
 
         btn_zahl = QPushButton("+ Zahl")
-        btn_zahl.setStyleSheet("background: #1a2a3a; color: #4fc3f7; font-size: 8px; padding: 2px 6px;")
+        btn_zahl.setObjectName("btn_add_num")
         btn_zahl.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_zahl.clicked.connect(lambda: self._operand_hinzufuegen("zahl"))
         self._layout.addWidget(btn_zahl)
@@ -108,7 +108,7 @@ class FormelBuilder(QWidget):
         elif "zahl" in teil:
             entry = QLineEdit(str(teil.get("zahl", "")))
             entry.setFixedWidth(70)
-            entry.setStyleSheet("color: #4fc3f7; font-family: Consolas;")
+            entry.setObjectName("formula_number_entry")
             entry.textChanged.connect(lambda v, ix=idx: self._zahl_geaendert(ix, v))
             self._layout.addWidget(entry)
 
@@ -142,14 +142,14 @@ class FormelBuilder(QWidget):
 
 # ── Transform-Block ────────────────────────────────────────────────────────────
 class TransformBlock(QFrame):
-    loeschen_requested = pyqtSignal(str)
+    loeschen_requested = pyqtSignal(int)
 
     def __init__(self, t: dict, ocr_vars: list[str], ocr_state_func, db_cache: dict, parent=None):
         super().__init__(parent)
         self._t = t
         self._ocr_state_func = ocr_state_func
         self._db_cache = db_cache
-        self.setStyleSheet("QFrame { background: #1a1a1a; border-radius: 4px; }")
+        self.setObjectName("editor_block")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -181,7 +181,7 @@ class TransformBlock(QFrame):
 
         z1.addStretch()
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_danger")
+        btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(22, 22)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(t["id"]))
         z1.addWidget(btn_del)
@@ -191,12 +191,12 @@ class TransformBlock(QFrame):
         z2 = QHBoxLayout()
         z2.addWidget(QLabel("Rohwert:"))
         self._roh_lbl = QLabel("—")
-        self._roh_lbl.setStyleSheet("color: #ffca28; font-family: Consolas;")
+        self._roh_lbl.setObjectName("live_value_raw")
         z2.addWidget(self._roh_lbl)
         z2.addWidget(QLabel("→"))
         z2.addWidget(QLabel("Ausgabe:"))
         self._aus_lbl = QLabel("—")
-        self._aus_lbl.setStyleSheet("color: #4fc3f7; font-family: Consolas;")
+        self._aus_lbl.setObjectName("live_value_output")
         z2.addWidget(self._aus_lbl)
         z2.addStretch()
         layout.addLayout(z2)
@@ -234,7 +234,7 @@ class TransformBlock(QFrame):
 
 # ── Berechnungs-Block ──────────────────────────────────────────────────────────
 class BerechnungsBlock(QFrame):
-    loeschen_requested = pyqtSignal(str)
+    loeschen_requested = pyqtSignal(int)
 
     def __init__(self, b: dict, vars_func, werte_func, liste_id: str, parent=None):
         super().__init__(parent)
@@ -242,7 +242,7 @@ class BerechnungsBlock(QFrame):
         self._vars_func = vars_func
         self._werte_func = werte_func
         self._liste_id = liste_id
-        self.setStyleSheet("QFrame { background: #1a1a1a; border-radius: 4px; }")
+        self.setObjectName("editor_block")
 
         formel = b["formel_json"] if b["formel_json"] else [{"var": ""}]
 
@@ -259,12 +259,12 @@ class BerechnungsBlock(QFrame):
         kopf.addWidget(self._name_edit)
 
         self._ergebnis_lbl = QLabel("= —")
-        self._ergebnis_lbl.setStyleSheet("color: #4fc3f7; font-family: Consolas; font-size: 9px;")
+        self._ergebnis_lbl.setObjectName("live_value_output_small")
         kopf.addWidget(self._ergebnis_lbl)
         kopf.addStretch()
 
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_danger")
+        btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(22, 22)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(b["id"]))
         kopf.addWidget(btn_del)
@@ -344,7 +344,7 @@ class DatenListeEditorQt(QDialog):
 
         # ── Kopf ──────────────────────────────────────────────────────────────
         kopf = QFrame()
-        kopf.setStyleSheet("background: #252525; border-radius: 4px;")
+        kopf.setObjectName("dialog_header_frame")
         kl = QHBoxLayout(kopf)
         kl.setContentsMargins(10, 6, 10, 6)
 
@@ -373,12 +373,12 @@ class DatenListeEditorQt(QDialog):
         # ── Buttons ───────────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: #3a3a3a;")
+        sep.setProperty("class", "separator")
         root.addWidget(sep)
 
         btn_row = QHBoxLayout()
         btn_del_liste = QPushButton("✕ Liste löschen")
-        btn_del_liste.setObjectName("btn_danger")
+        btn_del_liste.setObjectName("btn_del")
         btn_del_liste.clicked.connect(self._liste_loeschen)
         btn_row.addWidget(btn_del_liste)
         btn_row.addStretch()
@@ -388,7 +388,7 @@ class DatenListeEditorQt(QDialog):
         btn_row.addWidget(btn_close)
 
         btn_save = QPushButton("✔ " + lang.t("btn_save"))
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.clicked.connect(self._speichern)
         btn_row.addWidget(btn_save)
 
@@ -402,7 +402,7 @@ class DatenListeEditorQt(QDialog):
         layout.setContentsMargins(4, 8, 4, 4)
 
         btn_add = QPushButton("+ Transformation hinzufügen")
-        btn_add.setObjectName("btn_icon")
+        btn_add.setObjectName("btn_sm")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.clicked.connect(self._transformation_hinzufuegen)
         layout.addWidget(btn_add)
@@ -432,7 +432,7 @@ class DatenListeEditorQt(QDialog):
 
         if not self._transformationen:
             lbl = QLabel("Keine Transformationen definiert.")
-            lbl.setStyleSheet("color: #555555;")
+            lbl.setProperty("class", "lbl_dim")
             self._transform_layout.insertWidget(0, lbl)
             return
 
@@ -445,7 +445,7 @@ class DatenListeEditorQt(QDialog):
         transformation_hinzufuegen(self._liste["id"], "neu_transform", "", "einheit_zu_zahl")
         self._transform_neu_aufbauen()
 
-    def _transformation_loeschen(self, trans_id: str):
+    def _transformation_loeschen(self, trans_id: int):
         transformation_loeschen(trans_id)
         self._transformationen = [t for t in self._transformationen if t["id"] != trans_id]
         self._transform_neu_aufbauen()
@@ -500,15 +500,19 @@ class DatenListeEditorQt(QDialog):
 
     def _berech_sektion(self, titel: str, farbe: str, blocks: list, typ: str):
         header = QFrame()
-        header.setStyleSheet(f"background: {'#1a2a1a' if typ == 'zwischen' else '#1a1a2a'}; border-radius: 3px;")
+        header.setObjectName("calculation_header")
+        header.setProperty("type", typ) # "zwischen" | "ausgabe"
         h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(8, 4, 8, 4)
+        h_layout.setContentsMargins(10, 6, 10, 6)
         lbl = QLabel(titel)
-        lbl.setStyleSheet(f"color: {farbe}; font-size: 8px; font-weight: bold;")
+        lbl.setObjectName("calculation_header_title")
+        lbl.setProperty("type", typ)
         h_layout.addWidget(lbl)
         h_layout.addStretch()
         btn_add = QPushButton("+ Hinzufügen")
-        btn_add.setStyleSheet(f"color: {farbe}; background: transparent; border: none; font-size: 8px;")
+        btn_add.setObjectName("btn_calculation_add")
+        btn_add.setProperty("type", typ)
+        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.clicked.connect(lambda: self._berechnung_hinzufuegen(typ))
         h_layout.addWidget(btn_add)
         self._berech_layout.insertWidget(self._berech_layout.count() - 1, header)
@@ -541,7 +545,7 @@ class DatenListeEditorQt(QDialog):
         berechnung_hinzufuegen(self._liste["id"], name, typ=typ)
         self._berech_neu_aufbauen()
 
-    def _berechnung_loeschen(self, bid: str):
+    def _berechnung_loeschen(self, bid: int):
         berechnung_loeschen(bid)
         self._berechnungen = [b for b in self._berechnungen if b["id"] != bid]
         self._berech_neu_aufbauen()
@@ -559,10 +563,10 @@ class DatenListeEditorQt(QDialog):
         ll = QVBoxLayout(links)
         ll.setContentsMargins(0, 0, 0, 0)
         lbl_z = QLabel("ZEILEN")
-        lbl_z.setStyleSheet("color: #888888; font-size: 8px; font-weight: bold;")
+        lbl_z.setProperty("class", "lbl_header_dim")
         ll.addWidget(lbl_z)
         btn_z = QPushButton("+ Zeile")
-        btn_z.setObjectName("btn_icon")
+        btn_z.setObjectName("btn_sm")
         btn_z.clicked.connect(self._zeile_hinzufuegen)
         ll.addWidget(btn_z)
         sc_z = QScrollArea()
@@ -582,10 +586,10 @@ class DatenListeEditorQt(QDialog):
         rl = QVBoxLayout(rechts)
         rl.setContentsMargins(0, 0, 0, 0)
         lbl_s = QLabel("SPALTEN")
-        lbl_s.setStyleSheet("color: #888888; font-size: 8px; font-weight: bold;")
+        lbl_s.setProperty("class", "lbl_header_dim")
         rl.addWidget(lbl_s)
         btn_s = QPushButton("+ Spalte")
-        btn_s.setObjectName("btn_icon")
+        btn_s.setObjectName("btn_sm")
         btn_s.clicked.connect(self._spalte_hinzufuegen)
         rl.addWidget(btn_s)
         sc_s = QScrollArea()
@@ -606,7 +610,7 @@ class DatenListeEditorQt(QDialog):
 
     def _zeile_widget_erstellen(self, z: dict):
         row = QFrame()
-        row.setStyleSheet("background: #1a1a1a; border-radius: 2px;")
+        row.setObjectName("structure_row")
         rl = QHBoxLayout(row)
         rl.setContentsMargins(4, 2, 4, 2)
         entry = QLineEdit(z["name"])
@@ -614,7 +618,7 @@ class DatenListeEditorQt(QDialog):
         rl.addWidget(entry)
         btn = QPushButton("✕")
         btn.setFixedSize(18, 18)
-        btn.setStyleSheet("background: transparent; color: #555555; border: none;")
+        btn.setObjectName("btn_structure_delete")
         btn.clicked.connect(lambda _, zid=z["id"]: self._zeile_loeschen(zid))
         rl.addWidget(btn)
         return row
@@ -644,7 +648,7 @@ class DatenListeEditorQt(QDialog):
 
     def _spalte_widget_erstellen(self, sp: dict):
         row = QFrame()
-        row.setStyleSheet("background: #1a1a1a; border-radius: 2px;")
+        row.setObjectName("structure_row")
         rl = QHBoxLayout(row)
         rl.setContentsMargins(4, 2, 4, 2)
         rl.setSpacing(4)
@@ -670,7 +674,7 @@ class DatenListeEditorQt(QDialog):
 
         btn = QPushButton("✕")
         btn.setFixedSize(18, 18)
-        btn.setStyleSheet("background: transparent; color: #555555; border: none;")
+        btn.setObjectName("btn_structure_delete")
         btn.clicked.connect(lambda _, sid=sp["id"]: self._spalte_loeschen(sid))
         rl.addWidget(btn)
         return row
@@ -701,11 +705,11 @@ class DatenListeEditorQt(QDialog):
         layout.setContentsMargins(4, 8, 4, 4)
 
         info = QLabel("Spezifische Zuordnung: Welcher Wert für welche Zelle?")
-        info.setStyleSheet("color: #888888; font-size: 9px;")
+        info.setProperty("class", "lbl_info")
         layout.addWidget(info)
 
         self._mapping_table = QTableWidget()
-        self._mapping_table.setStyleSheet("QTableWidget { gridline-color: #2a2a2a; }")
+        self._mapping_table.setObjectName("mapping_table")
         self._mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self._mapping_table)
 

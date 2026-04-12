@@ -32,36 +32,45 @@ class TemplatePanel(QWidget):
         layout.setSpacing(4)
 
         self.liste = QListWidget()
-        self.liste.setFont(__import__("PyQt6.QtGui", fromlist=["QFont"]).QFont("Segoe UI", 9))
+        self.liste.setObjectName("template_liste")
         self.liste.currentRowChanged.connect(self._on_select)
         self.liste.itemDoubleClicked.connect(self._on_doppelklick)
         layout.addWidget(self.liste)
 
         if self.show_buttons:
-            # Zeile 1
+            self.buttons_widget = QWidget()
+            btn_layout = QVBoxLayout(self.buttons_widget)
+            btn_layout.setContentsMargins(0, 4, 0, 4)
+            btn_layout.setSpacing(4)
+
+            self.btn_neu_laden  = QPushButton("+ Neu")
+            self.btn_neu_laden.setObjectName("btn_new_sm")
+            self.btn_bearbeiten = QPushButton("✎ Bearbeiten")
+            self.btn_bearbeiten.setObjectName("btn_sm")
+            self.btn_loeschen   = QPushButton("✕ Lösch")
+            self.btn_loeschen.setObjectName("btn_del_sm")
+            self.btn_ocr    = QPushButton("🔤 OCR")
+            self.btn_ocr.setObjectName("btn_sm")
+            self.btn_klick  = QPushButton("🖱 Klick")
+            self.btn_klick.setObjectName("btn_sm")
+            self.btn_gruppe = QPushButton("📦 Grupp")
+            self.btn_gruppe.setObjectName("btn_sm")
+
             zeile1 = QHBoxLayout()
             zeile1.setSpacing(4)
-            self.btn_neu_laden  = QPushButton("↺ Neu laden")
-            self.btn_bearbeiten = QPushButton("✎ Bearbeiten")
-            self.btn_loeschen   = QPushButton("✕ Löschen")
-            self.btn_loeschen.setObjectName("btn_danger")
             for btn in [self.btn_neu_laden, self.btn_bearbeiten, self.btn_loeschen]:
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 zeile1.addWidget(btn)
-            zeile1.addStretch()
-            layout.addLayout(zeile1)
 
-            # Zeile 2
             zeile2 = QHBoxLayout()
             zeile2.setSpacing(4)
-            self.btn_ocr    = QPushButton("🔤 OCR")
-            self.btn_klick  = QPushButton("🖱 Klick")
-            self.btn_gruppe = QPushButton("📦 Gruppe")
             for btn in [self.btn_ocr, self.btn_klick, self.btn_gruppe]:
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 zeile2.addWidget(btn)
-            zeile2.addStretch()
-            layout.addLayout(zeile2)
+
+            btn_layout.addLayout(zeile1)
+            btn_layout.addLayout(zeile2)
+            layout.addWidget(self.buttons_widget)
 
             self.btn_neu_laden.clicked.connect(self.neu_laden_requested)
             self.btn_bearbeiten.clicked.connect(self._bearbeiten)

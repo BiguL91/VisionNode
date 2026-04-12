@@ -39,7 +39,7 @@ class SettingsDialog(QDialog):
 
     def _sektion(self, layout: QVBoxLayout, text: str):
         lbl = QLabel(text)
-        lbl.setStyleSheet("color: #888888; font-size: 9px; font-weight: bold;")
+        lbl.setProperty("class", "lbl_header_dim")
         layout.addSpacing(8)
         layout.addWidget(lbl)
 
@@ -47,7 +47,7 @@ class SettingsDialog(QDialog):
         """Erzeugt eine Zeile mit RadioButtons. Gibt {wert: QRadioButton} zurück."""
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #cccccc; font-size: 10px;")
+        lbl.setProperty("class", "lbl_dim")
         lbl.setFixedWidth(130)
         row.addWidget(lbl)
 
@@ -100,7 +100,7 @@ class SettingsDialog(QDialog):
         root.addSpacing(8)
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: #3a3a3a;")
+        sep.setProperty("class", "separator")
         root.addWidget(sep)
 
         btn_row = QHBoxLayout()
@@ -112,7 +112,7 @@ class SettingsDialog(QDialog):
         btn_row.addWidget(btn_cancel)
 
         btn_save = QPushButton(lang.t("btn_save"))
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._speichern)
         btn_row.addWidget(btn_save)

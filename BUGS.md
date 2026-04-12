@@ -7,8 +7,6 @@
 ## Priorität: Hoch
 
 
-
-
 ## Priorität: Mittel
 
 
@@ -24,7 +22,18 @@
 
 ## ✅ Behoben
 
+- ✅ **PyQt6 Revolution & UI Polish (Aktuell)**
+  - **Crashes:** Veraltete Methodenaufrufe (`_templates_liste_aktualisieren`) und Parameter-Fehler (`TypeError` in `aktualisieren()`) behoben.
+  - **Layout:** Globale Mindestgröße (1000x600) und feste Panel-Mindestbreiten via `QSplitter` eingeführt.
+  - **Collapsible Panels:** "Springen" beim Ein-/Ausklappen behoben, automatisches Nachskalieren implementiert.
+  - **Cleanup:** Obsolete Toolbar-Buttons (`+ OCR-Region`, `+ Template`) und ROI-Editor-Buttons (`Live wählen`) entfernt.
+  - **OCR-Dialog:** Pfeile durch intuitive `QSlider` (mit Wertanzeige) ersetzt; Color Picker für Filterfarbe integriert.
+  - **Template-Editor:** Skalierung im ROI-Editor auf 1:1 (Originalgröße) fixiert für pixelgenaue Auswahl.
+  - **Usability:** Checkbox-Styling (Checked-Status) verbessert, Button-Kontraste in Toolbar und Editoren optimiert.
+  - **Daten-Listen:** Lösch-Funktion im `DatenPanelQt` implementiert inkl. UI-Refresh; Layout im Berechnungs-Tab entzerrt.
+
 - ✅ **OCR-Optimierung: Timer & Umlaute** *(Commit: tbd)*
+...
   - Adaptives Thresholding für Timer gegen transparente Hintergründe implementiert
   - Unterstützung für Timer mit Tagen (z.B. '2T 12:44:15') inkl. Sekunden-Umrechnung
   - Deutsch-Support für EasyOCR hinzugefügt (Ä, Ö, Ü Erkennung)

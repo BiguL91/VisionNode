@@ -8,7 +8,7 @@ import threading
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox, QSpinBox,
-    QSlider, QFrame, QWidget, QScrollArea, QSizePolicy,
+    QSlider, QFrame, QWidget, QScrollArea, QSizePolicy, QColorDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRectF
 from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QImage, QFont
@@ -47,7 +47,7 @@ class OCRCanvas(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background:#1a1a1a; border:1px solid #3a3a3a;")
+        self.setObjectName("ocr_canvas")
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._pixmap: QPixmap = QPixmap()
         self._eintraege: list = []        # [(name,modus,co,cu,cl,cr,...), ...]
@@ -162,6 +162,7 @@ class OCRKonfigDialog(QDialog):
         self._th = 1
         self._template_pil = None
         self._vorschau_basis_pil = None
+        self._target_color = [255, 255, 255]
 
         self._setup_ui()
         self._lade_template()
@@ -187,38 +188,46 @@ class OCRKonfigDialog(QDialog):
         # OCR-Ergebnis Vorschau
         self._ocr_label = QLabel("—")
         self._ocr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._ocr_label.setStyleSheet("color:#55ff88; font-size:14px; font-weight:bold;")
+        self._ocr_label.setObjectName("ocr_preview_result")
         root.addWidget(self._ocr_label)
 
         # Parameter
         param_frame = QFrame()
         param_frame.setObjectName("group_box")
-        pl = QHBoxLayout(param_frame)
-        pl.setSpacing(8)
+        pl = QVBoxLayout(param_frame)
+        pl.setSpacing(10)
 
-        def spin_block(label, lo, hi, step, default, decimals=1):
-            col = QVBoxLayout()
-            col.addWidget(QLabel(label))
-            sb = QDoubleSpinBox() if decimals > 0 else QSpinBox()
-            sb.setRange(lo, hi)
-            if decimals > 0:
-                sb.setSingleStep(step)
-                sb.setDecimals(decimals)
-            else:
-                sb.setSingleStep(int(step))
-            sb.setValue(default)
-            sb.valueChanged.connect(self._ocr_vorschau_starten)
-            col.addWidget(sb)
-            return col, sb
+        def slider_block(label, lo, hi, step, default, factor=1.0):
+            row = QHBoxLayout()
+            lbl = QLabel(label)
+            lbl.setFixedWidth(70)
+            row.addWidget(lbl)
+            
+            val_lbl = QLabel(str(default))
+            val_lbl.setFixedWidth(40)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            val_lbl.setObjectName("slider_value_label")
 
-        c, self._sb_kontrast   = spin_block("Kontrast",    0.5,  3.0,  0.1, 1.0)
-        pl.addLayout(c)
-        c, self._sb_helligkeit = spin_block("Helligkeit", -100,  100,  5,   0,   0)
-        pl.addLayout(c)
-        c, self._sb_schaerfe   = spin_block("Schärfe",     0.0,  5.0,  0.1, 1.0)
-        pl.addLayout(c)
-        c, self._sb_upscale    = spin_block("Upscale",     1.0,  8.0,  0.5, 5.0)
-        pl.addLayout(c)
+            sl = QSlider(Qt.Orientation.Horizontal)
+            sl.setRange(int(lo * factor), int(hi * factor))
+            sl.setValue(int(default * factor))
+            sl.setSingleStep(int(step * factor))
+            
+            sl.valueChanged.connect(lambda v: val_lbl.setText(f"{v/factor:.1f}" if factor > 1 else str(v)))
+            sl.valueChanged.connect(self._ocr_vorschau_starten)
+            
+            row.addWidget(sl)
+            row.addWidget(val_lbl)
+            return row, sl, factor
+
+        r, self._sl_kontrast, self._f_k = slider_block("Kontrast", 0.5, 3.0, 0.1, 1.0, 10.0)
+        pl.addLayout(r)
+        r, self._sl_helligkeit, self._f_h = slider_block("Helligkeit", -100, 100, 5, 0, 1.0)
+        pl.addLayout(r)
+        r, self._sl_schaerfe, self._f_s = slider_block("Schärfe", 0.0, 5.0, 0.1, 1.0, 10.0)
+        pl.addLayout(r)
+        r, self._sl_upscale, self._f_u = slider_block("Upscale", 1.0, 8.0, 0.5, 5.0, 2.0)
+        pl.addLayout(r)
         root.addWidget(param_frame)
 
         # Farbfilter
@@ -231,9 +240,11 @@ class OCRKonfigDialog(QDialog):
         self._cb_farbe.stateChanged.connect(self._ocr_vorschau_starten)
         cl.addWidget(self._cb_farbe)
 
-        self._farbe_indicator = QLabel("      ")
-        self._farbe_indicator.setStyleSheet("background:#ffffff; border:1px solid #555;")
+        self._farbe_indicator = QPushButton("      ")
+        self._farbe_indicator.setObjectName("color_filter_indicator")
         self._farbe_indicator.setFixedSize(30, 20)
+        self._farbe_indicator.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._farbe_indicator.clicked.connect(self._farbe_waehlen)
         cl.addWidget(self._farbe_indicator)
 
         self._sb_toleranz = QSpinBox()
@@ -260,7 +271,7 @@ class OCRKonfigDialog(QDialog):
             eingabe.addWidget(rb)
 
         btn_add = QPushButton("+ Hinzufügen")
-        btn_add.setObjectName("btn_primary")
+        btn_add.setObjectName("btn_new")
         btn_add.clicked.connect(self._hinzufuegen)
         eingabe.addWidget(btn_add)
         root.addLayout(eingabe)
@@ -277,13 +288,13 @@ class OCRKonfigDialog(QDialog):
         # Footer
         footer = QHBoxLayout()
         self._live_btn = QPushButton("📍 Live wählen")
-        self._live_btn.setStyleSheet("background:#1a3a5a;color:#ffffff;")
+        self._live_btn.setObjectName("btn_live_select")
         self._live_btn.clicked.connect(self._live_focus)
         footer.addWidget(self._live_btn)
         footer.addStretch()
 
         btn_save = QPushButton("Speichern")
-        btn_save.setObjectName("btn_primary")
+        btn_save.setObjectName("btn_new")
         btn_save.clicked.connect(self._final_speichern)
         footer.addWidget(btn_save)
 
@@ -291,6 +302,13 @@ class OCRKonfigDialog(QDialog):
         btn_close.clicked.connect(self.close)
         footer.addWidget(btn_close)
         root.addLayout(footer)
+
+    def _farbe_waehlen(self):
+        c = QColorDialog.getColor(QColor(*self._target_color), self, "Filter-Farbe wählen")
+        if c.isValid():
+            self._target_color = [c.red(), c.green(), c.blue()]
+            self._farbe_indicator.setStyleSheet(f"background: {c.name()}; border: 1px solid #555;")
+            self._ocr_vorschau_starten()
 
     # ── Laden ────────────────────────────────────────────────────────────────
 
@@ -359,14 +377,13 @@ class OCRKonfigDialog(QDialog):
             zeile = QWidget()
             zl = QHBoxLayout(zeile)
             zl.setContentsMargins(4, 2, 4, 2)
-            farbe = ZONE_FARBEN[i % len(ZONE_FARBEN)]
             lbl = QLabel(e[0])
-            lbl.setStyleSheet(f"color:{farbe}; font-weight:bold;")
+            lbl.setProperty("class", f"ocr_zone_{i % 6}")
             lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             lbl.mouseReleaseEvent = lambda _, idx=i: self._laden(idx)
             zl.addWidget(lbl, 1)
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_danger")
+            btn_del.setObjectName("btn_del")
             btn_del.setFixedSize(22, 22)
             btn_del.clicked.connect(lambda _, idx=i: self._loeschen(idx))
             zl.addWidget(btn_del)
@@ -379,11 +396,14 @@ class OCRKonfigDialog(QDialog):
         for btn in self._modus_grp.buttons():
             if btn.text() == e[1]:
                 btn.setChecked(True)
-        self._sb_kontrast.setValue(e[6])
-        self._sb_helligkeit.setValue(int(e[7]))
-        self._sb_schaerfe.setValue(e[8])
-        self._sb_upscale.setValue(e[9])
+        self._sl_kontrast.setValue(int(e[6] * self._f_k))
+        self._sl_helligkeit.setValue(int(e[7] * self._f_h))
+        self._sl_schaerfe.setValue(int(e[8] * self._f_s))
+        self._sl_upscale.setValue(int(e[9] * self._f_u))
         self._cb_farbe.setChecked(e[10])
+        if len(e) > 11:
+            self._target_color = list(e[11])
+            self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
         self._sb_toleranz.setValue(e[12] if len(e) > 12 else 30)
 
         # Restore auswahl from crop percentages
@@ -434,12 +454,12 @@ class OCRKonfigDialog(QDialog):
             n,
             self._get_modus(),
             co, cu, cl, cr,
-            self._sb_kontrast.value(),
-            self._sb_helligkeit.value(),
-            self._sb_schaerfe.value(),
-            self._sb_upscale.value(),
+            self._sl_kontrast.value() / self._f_k,
+            self._sl_helligkeit.value() / self._f_h,
+            self._sl_schaerfe.value() / self._f_s,
+            self._sl_upscale.value() / self._f_u,
             self._cb_farbe.isChecked(),
-            [255, 255, 255],  # target_color (Pipette nicht implementiert)
+            list(self._target_color),
             self._sb_toleranz.value(),
         ]
         for i, e in enumerate(self._eintraege):
@@ -471,12 +491,12 @@ class OCRKonfigDialog(QDialog):
             "modus": self._get_modus(),
             "crop_oben": co, "crop_unten": cu,
             "crop_links": cl, "crop_rechts": cr,
-            "contrast": self._sb_kontrast.value(),
-            "brightness": self._sb_helligkeit.value(),
-            "sharpness": self._sb_schaerfe.value(),
-            "upscale": self._sb_upscale.value(),
+            "contrast": self._sl_kontrast.value() / self._f_k,
+            "brightness": self._sl_helligkeit.value() / self._f_h,
+            "sharpness": self._sl_schaerfe.value() / self._f_s,
+            "upscale": self._sl_upscale.value() / self._f_u,
             "color_filter": self._cb_farbe.isChecked(),
-            "target_color": [255, 255, 255],
+            "target_color": list(self._target_color),
             "color_tolerance": self._sb_toleranz.value(),
         }
         pil_basis = self._template_pil

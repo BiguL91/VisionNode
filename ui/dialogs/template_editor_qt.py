@@ -41,7 +41,7 @@ class TemplateCanvas(QLabel):
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.setCursor(Qt.CursorShape.CrossCursor)
-        self.setStyleSheet("background: #1a1a1a; border: 1px solid #3a3a3a;")
+        self.setObjectName("template_canvas")
         self.setFixedSize(400, 200)
 
         self._placeholder_text = placeholder_text
@@ -262,37 +262,34 @@ class TemplateEditorQt(QDialog):
 
         # ── Toolbar ──────────────────────────────────────────────────────────
         tb = QFrame()
-        tb.setStyleSheet("background: #252525;")
+        tb.setObjectName("template_editor_toolbar")
         tb_lay = QHBoxLayout(tb)
         tb_lay.setContentsMargins(0, 0, 0, 0)
         tb_lay.setSpacing(4)
 
         self._btn_ignorieren = QPushButton("■ Ignorieren")
-        self._btn_ignorieren.setObjectName("btn_icon")
+        self._btn_ignorieren.setObjectName("btn_sm")
         self._btn_ignorieren.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_ignorieren.setStyleSheet("background: #555555; color: white;")
+        # Modus-Styling wird via property gesteuert
         self._btn_ignorieren.clicked.connect(lambda: self._modus_setzen("ignore"))
 
         self._btn_klick = QPushButton("⊕ Klick-Zone")
-        self._btn_klick.setObjectName("btn_icon")
+        self._btn_klick.setObjectName("btn_sm")
         self._btn_klick.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_klick.clicked.connect(lambda: self._modus_setzen("klick"))
 
         btn_roi = QPushButton("🔍 Scannbereiche")
-        btn_roi.setObjectName("btn_icon")
-        btn_roi.setStyleSheet("color: #00ff00;")
+        btn_roi.setObjectName("btn_roi")
         btn_roi.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_roi.clicked.connect(self._roi_fenster_oeffnen)
 
         btn_ocr = QPushButton("🔤 OCR")
-        btn_ocr.setObjectName("btn_icon")
-        btn_ocr.setStyleSheet("color: #55aaff;")
+        btn_ocr.setObjectName("btn_ocr_action")
         btn_ocr.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_ocr.clicked.connect(self._ocr_konfigurieren)
 
         btn_states = QPushButton("🚩 Zustände")
-        btn_states.setObjectName("btn_icon")
-        btn_states.setStyleSheet("color: #ffca28;")
+        btn_states.setObjectName("btn_states_action")
         btn_states.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_states.clicked.connect(self._states_konfigurieren)
 
@@ -317,25 +314,25 @@ class TemplateEditorQt(QDialog):
 
         # ── Info + Steuerung ─────────────────────────────────────────────────
         self.info_label = QLabel("")
-        self.info_label.setStyleSheet("color: #888888; font-size: 8pt;")
+        self.info_label.setProperty("class", "lbl_info")
         root.addWidget(self.info_label)
 
         ign_row = QHBoxLayout()
         ign_row.addStretch()
         btn_ign_undo = QPushButton("↩ Letzten entfernen")
-        btn_ign_undo.setObjectName("btn_icon")
+        btn_ign_undo.setObjectName("btn_sm")
         btn_ign_undo.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_ign_undo.clicked.connect(self._ignore_letzten_entfernen)
         ign_row.addWidget(btn_ign_undo)
         root.addLayout(ign_row)
 
         self.klick_info = QLabel("Klick-Zone: nicht gesetzt")
-        self.klick_info.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.klick_info.setProperty("class", "lbl_dim")
         root.addWidget(self.klick_info)
 
         klick_row = QHBoxLayout()
         btn_klick_del = QPushButton("× Klick entfernen")
-        btn_klick_del.setObjectName("btn_icon")
+        btn_klick_del.setObjectName("btn_sm")
         btn_klick_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_klick_del.clicked.connect(self._klick_entfernen)
         klick_row.addWidget(btn_klick_del)
@@ -346,14 +343,14 @@ class TemplateEditorQt(QDialog):
         # ── Separator ─────────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background: #3a3a3a;")
+        sep.setProperty("class", "separator")
         sep.setFixedHeight(1)
         root.addWidget(sep)
         root.addSpacing(10)
 
         # ── Name ─────────────────────────────────────────────────────────────
         lbl_name = QLabel("Name:")
-        lbl_name.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        lbl_name.setProperty("class", "lbl_header_dim")
         root.addWidget(lbl_name)
         root.addSpacing(2)
 
@@ -372,22 +369,22 @@ class TemplateEditorQt(QDialog):
         vn_lay.setSpacing(2)
 
         self.btn_var_prev = QPushButton("◀")
-        self.btn_var_prev.setObjectName("btn_icon")
+        self.btn_var_prev.setObjectName("btn_sm")
         self.btn_var_prev.setFixedWidth(26)
         self.btn_var_prev.clicked.connect(self._variante_prev)
 
         self.var_label = QLabel("")
         self.var_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.var_label.setFixedWidth(100)
-        self.var_label.setStyleSheet("color: #888888; font-size: 8pt;")
+        self.var_label.setProperty("class", "lbl_info")
 
         self.btn_var_next = QPushButton("▶")
-        self.btn_var_next.setObjectName("btn_icon")
+        self.btn_var_next.setObjectName("btn_sm")
         self.btn_var_next.setFixedWidth(26)
         self.btn_var_next.clicked.connect(self._variante_next)
 
         self.btn_var_del = QPushButton("🗑")
-        self.btn_var_del.setObjectName("btn_danger")
+        self.btn_var_del.setObjectName("btn_del")
         self.btn_var_del.setFixedWidth(26)
         self.btn_var_del.clicked.connect(self._variante_loeschen)
 
@@ -399,7 +396,7 @@ class TemplateEditorQt(QDialog):
         root.addLayout(name_row)
 
         self.version_info_label = QLabel("")
-        self.version_info_label.setStyleSheet("color: #666666; font-size: 7pt; font-style: italic;")
+        self.version_info_label.setObjectName("version_info_label")
         root.addWidget(self.version_info_label)
         root.addSpacing(2)
 
@@ -409,7 +406,7 @@ class TemplateEditorQt(QDialog):
         vbf_lay.setContentsMargins(0, 0, 0, 0)
         self.btn_neue_variante = QPushButton("➕ Als neue Variante speichern")
         self.btn_neue_variante.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_neue_variante.setStyleSheet("background: #1a3a5a; color: #55aaff;")
+        self.btn_neue_variante.setObjectName("btn_variant_save")
         self.btn_neue_variante.clicked.connect(self._als_neue_variante_speichern)
         vbf_lay.addWidget(self.btn_neue_variante)
         vbf_lay.addStretch()
@@ -428,7 +425,7 @@ class TemplateEditorQt(QDialog):
             "template": "Gruppe: *",
         }.get(self.typ, "Gruppe:")
         self._gruppe_label = QLabel(gruppe_label_text or "Gruppe:")
-        self._gruppe_label.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        self._gruppe_label.setProperty("class", "lbl_header_dim")
         g_lay.addWidget(self._gruppe_label)
 
         alle_gruppen = self.template_engine.get_gruppen(kategorie=self.kategorie)
@@ -451,7 +448,7 @@ class TemplateEditorQt(QDialog):
         sw_lay.setSpacing(2)
 
         lbl_sw = QLabel("Match-Schwellwert:")
-        lbl_sw.setStyleSheet("color: #cccccc; font-size: 9pt;")
+        lbl_sw.setProperty("class", "lbl_header_dim")
         sw_lay.addWidget(lbl_sw)
 
         sw_row = QHBoxLayout()
@@ -463,7 +460,7 @@ class TemplateEditorQt(QDialog):
         ))
         self._schwellwert_slider.setValue(start_sw)
         self._schwellwert_wert_lbl = QLabel(f"{start_sw / 100:.2f}")
-        self._schwellwert_wert_lbl.setStyleSheet("color: #aaaaaa; font-size: 8pt;")
+        self._schwellwert_wert_lbl.setProperty("class", "lbl_info")
         self._schwellwert_wert_lbl.setFixedWidth(34)
         self._schwellwert_slider.valueChanged.connect(
             lambda v: self._schwellwert_wert_lbl.setText(f"{v / 100:.2f}"))
@@ -484,7 +481,7 @@ class TemplateEditorQt(QDialog):
         hg_lay.addWidget(self.hg_checkbox)
 
         lbl_tol = QLabel("Toleranz:")
-        lbl_tol.setStyleSheet("color: #888888; font-size: 8pt;")
+        lbl_tol.setProperty("class", "lbl_info")
         hg_lay.addWidget(lbl_tol)
 
         self._hg_tol_slider = QSlider(Qt.Orientation.Horizontal)
@@ -492,7 +489,7 @@ class TemplateEditorQt(QDialog):
         self._hg_tol_slider.setValue(30)
         self._hg_tol_slider.setFixedWidth(130)
         self._hg_tol_wert_lbl = QLabel("30")
-        self._hg_tol_wert_lbl.setStyleSheet("color: #aaaaaa; font-size: 8pt;")
+        self._hg_tol_wert_lbl.setProperty("class", "lbl_info")
         self._hg_tol_slider.valueChanged.connect(lambda v: self._hg_tol_wert_lbl.setText(str(v)))
         self._hg_tol_slider.sliderReleased.connect(self._hg_vorschau_aktualisieren)
 
@@ -506,21 +503,20 @@ class TemplateEditorQt(QDialog):
         btn_leiste = QHBoxLayout()
 
         btn_test = QPushButton("🚀 Test")
-        btn_test.setObjectName("btn_primary")
-        btn_test.setStyleSheet("color: #4488ff; font-weight: bold;")
+        btn_test.setObjectName("btn_test_action")
         btn_test.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_test.clicked.connect(self._erkennung_test)
         btn_leiste.addWidget(btn_test)
         btn_leiste.addStretch()
 
         btn_schliessen = QPushButton("Schließen")
-        btn_schliessen.setObjectName("btn_icon")
+        btn_schliessen.setObjectName("btn_sm")
         btn_schliessen.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_schliessen.clicked.connect(self._schliessen)
         btn_leiste.addWidget(btn_schliessen)
 
         btn_speichern = QPushButton("Speichern")
-        btn_speichern.setObjectName("btn_success")
+        btn_speichern.setObjectName("btn_new")
         btn_speichern.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_speichern.clicked.connect(self._speichern)
         btn_leiste.addWidget(btn_speichern)
@@ -535,12 +531,12 @@ class TemplateEditorQt(QDialog):
     def _modus_setzen(self, modus: str):
         self._canvas_modus = modus
         self.canvas._modus = modus
-        if modus == "ignore":
-            self._btn_ignorieren.setStyleSheet("background: #555555; color: white;")
-            self._btn_klick.setStyleSheet("")
-        else:
-            self._btn_ignorieren.setStyleSheet("")
-            self._btn_klick.setStyleSheet("background: #e65100; color: white;")
+        
+        self._btn_ignorieren.setProperty("active", modus == "ignore")
+        self._btn_klick.setProperty("active", modus == "klick")
+        
+        self._btn_ignorieren.setStyle(self._btn_ignorieren.style())
+        self._btn_klick.setStyle(self._btn_klick.style())
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Laden
@@ -591,7 +587,8 @@ class TemplateEditorQt(QDialog):
                 k = klick_konfig[name]
                 self.klick_zone[0] = (k["klick_rel_x"], k["klick_rel_y"])
                 self.klick_info.setText(f"Klick-Zone: {k['klick_rel_x']:.0f}% / {k['klick_rel_y']:.0f}%")
-                self.klick_info.setStyleSheet("color: #ff6600; font-size: 8pt;")
+                self.klick_info.setProperty("class", "lbl_orange")
+                self.klick_info.setStyle(self.klick_info.style())
 
             self._varianten_erkennen(name)
             QTimer.singleShot(120, self._overlays_zeichnen)
@@ -624,10 +621,11 @@ class TemplateEditorQt(QDialog):
             self.varianten_nav.show()
             if idx == 0:
                 self.var_label.setText(f"★ Master  1/{n}")
-                self.var_label.setStyleSheet("color: #ffca28; font-size: 8pt;")
+                self.var_label.setProperty("class", "lbl_master")
             else:
                 self.var_label.setText(f"V.{idx + 1}  {idx + 1}/{n}")
-                self.var_label.setStyleSheet("color: #aaaaaa; font-size: 8pt;")
+                self.var_label.setProperty("class", "lbl_dim")
+            self.var_label.setStyle(self.var_label.style())
             self.btn_var_prev.setEnabled(idx > 0)
             self.btn_var_next.setEnabled(idx < n - 1)
             self.btn_var_del.setEnabled(idx > 0)
@@ -647,16 +645,15 @@ class TemplateEditorQt(QDialog):
             if idx == 0:
                 self.version_info_label.setText(
                     f"★ Master-Version von \"{basis}\" · {n} Variante(n) gesamt")
-                self.version_info_label.setStyleSheet(
-                    "color: #ffca28; font-size: 7pt; font-style: italic;")
+                self.version_info_label.setProperty("master", True)
             else:
                 self.version_info_label.setText(f"Variante {idx + 1} von \"{basis}\" · {n} gesamt")
-                self.version_info_label.setStyleSheet(
-                    "color: #888888; font-size: 7pt; font-style: italic;")
+                self.version_info_label.setProperty("master", False)
         else:
             self.version_info_label.setText("Keine weiteren Varianten")
-            self.version_info_label.setStyleSheet(
-                "color: #555555; font-size: 7pt; font-style: italic;")
+            self.version_info_label.setProperty("master", False)
+        
+        self.version_info_label.setStyle(self.version_info_label.style())
 
     def _variante_prev(self):
         if self.aktuelle_variante_idx > 0:
@@ -681,7 +678,7 @@ class TemplateEditorQt(QDialog):
         except Exception:
             pass
         self.action_engine.klickzone_loeschen(name)
-        self.bot._templates_liste_aktualisieren()
+        self.bot._panels_aktualisieren()
         self.bot.app.reload_templates()
         self.bot._timer_panel_aktualisieren()
         self.bot._log(f"Variante gelöscht: \"{name}\"")
@@ -721,11 +718,13 @@ class TemplateEditorQt(QDialog):
             k = klick_konfig[name]
             self.klick_zone[0] = (k["klick_rel_x"], k["klick_rel_y"])
             self.klick_info.setText(f"Klick-Zone: {k['klick_rel_x']:.0f}% / {k['klick_rel_y']:.0f}%")
-            self.klick_info.setStyleSheet("color: #ff6600; font-size: 8pt;")
+            self.klick_info.setProperty("class", "lbl_orange")
+            self.klick_info.setStyle(self.klick_info.style())
         else:
             self.klick_zone[0] = None
             self.klick_info.setText("Klick-Zone: nicht gesetzt")
-            self.klick_info.setStyleSheet("color: #555555; font-size: 8pt;")
+            self.klick_info.setProperty("class", "lbl_dim")
+            self.klick_info.setStyle(self.klick_info.style())
 
         self.initial_scan_regions = s.get("scan_regions", [])
         if self.roi_editor and self.roi_editor.isVisible():
@@ -782,7 +781,7 @@ class TemplateEditorQt(QDialog):
             condition_states=list(self.condition_states), set_states=dict(self.set_states))
 
         self.bot._log(f"Neue Variante gespeichert: \"{neuer_name}\"")
-        self.bot._templates_liste_aktualisieren()
+        self.bot._panels_aktualisieren()
         self.bot.app.reload_templates()
         self.bot._timer_panel_aktualisieren()
 
@@ -827,7 +826,7 @@ class TemplateEditorQt(QDialog):
         dialog = QDialog(self)
         dialog.setWindowTitle("Zustände konfigurieren")
         dialog.setMinimumSize(600, 540)
-        dialog.setStyleSheet("background: #2d2d2d;")
+        dialog.setObjectName("template_states_dialog")
         dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         try:
@@ -840,20 +839,20 @@ class TemplateEditorQt(QDialog):
         root_lay.setSpacing(4)
 
         lbl_head = QLabel("Aktiv wenn:")
-        lbl_head.setStyleSheet("color: #ffca28; font-weight: bold; font-size: 10pt;")
+        lbl_head.setProperty("class", "lbl_master")
         root_lay.addWidget(lbl_head)
 
         lbl_hint = QLabel("Bedingungen innerhalb einer Gruppe sind AND-verknüpft.\n"
                           "Gruppen untereinander können AND oder OR verknüpft werden.")
-        lbl_hint.setStyleSheet("color: #666666; font-size: 8pt;")
+        lbl_hint.setProperty("class", "lbl_dim")
         root_lay.addWidget(lbl_hint)
         root_lay.addSpacing(8)
 
         gruppen_scroll = QScrollArea()
         gruppen_scroll.setWidgetResizable(True)
-        gruppen_scroll.setStyleSheet("background: #2d2d2d; border: none;")
+        gruppen_scroll.setObjectName("selector_scroll")
         gruppen_container_w = QWidget()
-        gruppen_container_w.setStyleSheet("background: #2d2d2d;")
+        gruppen_container_w.setObjectName("selector_container")
         gruppen_lay = QVBoxLayout(gruppen_container_w)
         gruppen_lay.setContentsMargins(0, 0, 0, 0)
         gruppen_lay.setSpacing(2)
@@ -873,7 +872,7 @@ class TemplateEditorQt(QDialog):
 
         def zeile_in_gruppe_bauen(g, state_name="", state_val=True):
             z_widget = QWidget()
-            z_widget.setStyleSheet("background: #1a1a1a;")
+            z_widget.setProperty("class", "bg_box_dark")
             z_lay = QHBoxLayout(z_widget)
             z_lay.setContentsMargins(6, 4, 6, 4)
             z_lay.setSpacing(4)
@@ -884,9 +883,9 @@ class TemplateEditorQt(QDialog):
             combo.setMinimumWidth(180)
             chk = QCheckBox("True")
             chk.setChecked(state_val)
-            chk.setStyleSheet("color: #cccccc;")
+            chk.setProperty("class", "lbl_dim")
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_danger")
+            btn_del.setObjectName("btn_del")
             btn_del.setFixedSize(22, 22)
             z_lay.addWidget(combo)
             z_lay.addWidget(chk)
@@ -904,7 +903,7 @@ class TemplateEditorQt(QDialog):
 
         def gruppe_bauen(gruppe_data):
             wrapper = QWidget()
-            wrapper.setStyleSheet("background: #2d2d2d;")
+            wrapper.setProperty("class", "bg_dialog_mid")
             w_lay = QVBoxLayout(wrapper)
             w_lay.setContentsMargins(0, 0, 0, 2)
             w_lay.setSpacing(0)
@@ -914,7 +913,7 @@ class TemplateEditorQt(QDialog):
                  "zeilen_lay": None, "zeilen": []}
 
             conn_w = QWidget()
-            conn_w.setStyleSheet("background: #2d2d2d;")
+            conn_w.setProperty("class", "bg_dialog_mid")
             conn_lay = QHBoxLayout(conn_w)
             conn_lay.setContentsMargins(0, 8, 0, 3)
             conn_lay.setSpacing(4)
@@ -922,7 +921,7 @@ class TemplateEditorQt(QDialog):
             bg = QButtonGroup(conn_w)
             for txt, clr in [("AND", "#55aaff"), ("OR", "#ffca28")]:
                 rb = QRadioButton(txt)
-                rb.setStyleSheet(f"color: {clr}; font-weight: bold;")
+                rb.setProperty("type", txt.lower())
                 rb.setChecked(txt == (gruppe_data.get("connector") or "OR"))
                 rb.toggled.connect(
                     lambda checked, t=txt, ref=g: ref["connector_var"].__setitem__(0, t) if checked else None)
@@ -935,28 +934,29 @@ class TemplateEditorQt(QDialog):
             nr = len(gruppen) + 1
             box = QFrame()
             box.setFrameShape(QFrame.Shape.StyledPanel)
-            box.setStyleSheet("background: #1a1a1a; border: 1px solid #3a3a3a;")
+            box.setProperty("class", "bg_box_dark")
             box_lay = QVBoxLayout(box)
             box_lay.setContentsMargins(0, 0, 0, 4)
             box_lay.setSpacing(0)
 
             hdr = QFrame()
-            hdr.setStyleSheet("background: #252525;")
+            hdr.setProperty("class", "bg_header")
             hdr_lay = QHBoxLayout(hdr)
             hdr_lay.setContentsMargins(8, 4, 8, 4)
             lbl_nr = QLabel(f"Gruppe {nr}")
-            lbl_nr.setStyleSheet("color: #888888; font-weight: bold; font-size: 9pt;")
+            lbl_nr.setProperty("class", "lbl_header_dim")
             hdr_lay.addWidget(lbl_nr)
             hdr_lay.addStretch()
             btn_del_g = QPushButton("Gruppe löschen")
-            btn_del_g.setStyleSheet("color: #da3633; background: #252525; border: none;")
+            btn_del_g.setObjectName("btn_sm")
+            btn_del_g.setProperty("class", "lbl_error")
             btn_del_g.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del_g.clicked.connect(lambda _, ref=g: gruppe_loeschen(ref))
             hdr_lay.addWidget(btn_del_g)
             box_lay.addWidget(hdr)
 
             zeilen_container = QWidget()
-            zeilen_container.setStyleSheet("background: #1a1a1a;")
+            zeilen_container.setProperty("class", "bg_box_dark")
             zeilen_lay = QVBoxLayout(zeilen_container)
             zeilen_lay.setContentsMargins(4, 4, 4, 0)
             zeilen_lay.setSpacing(2)
@@ -967,7 +967,8 @@ class TemplateEditorQt(QDialog):
                 zeile_in_gruppe_bauen(g, sn, sv)
 
             btn_add_z = QPushButton("+ Bedingung hinzufügen")
-            btn_add_z.setStyleSheet("color: #aaaaaa; background: #1a1a1a; border: none;")
+            btn_add_z.setObjectName("btn_sm")
+            btn_add_z.setProperty("class", "lbl_dim")
             btn_add_z.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_add_z.clicked.connect(lambda _, ref=g: zeile_in_gruppe_bauen(ref))
             box_lay.addWidget(btn_add_z, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -984,7 +985,7 @@ class TemplateEditorQt(QDialog):
             gruppe_bauen(gd)
 
         btn_neue_gruppe = QPushButton("＋ Neue Gruppe hinzufügen")
-        btn_neue_gruppe.setStyleSheet("background: #1a3a5a; color: #55aaff;")
+        btn_neue_gruppe.setObjectName("btn_variant_save")
         btn_neue_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_neue_gruppe.clicked.connect(lambda: gruppe_bauen({"connector": "OR", "states": {}}))
         gruppen_lay.addWidget(btn_neue_gruppe, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -993,16 +994,16 @@ class TemplateEditorQt(QDialog):
         # ── set_states ────────────────────────────────────────────────────────
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet("background: #3a3a3a;")
+        sep2.setProperty("class", "separator")
         sep2.setFixedHeight(1)
         root_lay.addWidget(sep2)
 
         lbl_set = QLabel("Setzt Zustände (bei Erkennung):")
-        lbl_set.setStyleSheet("color: #55ff88; font-weight: bold; font-size: 10pt;")
+        lbl_set.setProperty("class", "lbl_success")
         root_lay.addWidget(lbl_set)
 
         set_container = QWidget()
-        set_container.setStyleSheet("background: #1a1a1a;")
+        set_container.setProperty("class", "bg_box_dark")
         set_lay = QVBoxLayout(set_container)
         set_lay.setContentsMargins(0, 0, 0, 0)
         set_lay.setSpacing(2)
@@ -1012,7 +1013,7 @@ class TemplateEditorQt(QDialog):
 
         def set_zeile_bauen(state_name="", state_val=True):
             z = QWidget()
-            z.setStyleSheet("background: #1a1a1a;")
+            z.setProperty("class", "bg_box_dark")
             z_lay = QHBoxLayout(z)
             z_lay.setContentsMargins(6, 4, 6, 4)
             combo = QComboBox()
@@ -1022,9 +1023,9 @@ class TemplateEditorQt(QDialog):
             combo.setMinimumWidth(180)
             chk = QCheckBox("True")
             chk.setChecked(state_val)
-            chk.setStyleSheet("color: #cccccc;")
+            chk.setProperty("class", "lbl_dim")
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_danger")
+            btn_del.setObjectName("btn_del")
             btn_del.setFixedSize(22, 22)
             z_lay.addWidget(combo)
             z_lay.addWidget(chk)
@@ -1044,7 +1045,8 @@ class TemplateEditorQt(QDialog):
             set_zeile_bauen(sk, sv)
 
         btn_add_set = QPushButton("+ Zustand hinzufügen")
-        btn_add_set.setStyleSheet("color: #aaaaaa; background: #2d2d2d; border: none;")
+        btn_add_set.setObjectName("btn_sm")
+        btn_add_set.setProperty("class", "lbl_dim")
         btn_add_set.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add_set.clicked.connect(set_zeile_bauen)
         root_lay.addWidget(btn_add_set, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -1076,10 +1078,10 @@ class TemplateEditorQt(QDialog):
             dialog.accept()
 
         btn_abbruch = QPushButton("Abbrechen")
-        btn_abbruch.setObjectName("btn_icon")
+        btn_abbruch.setObjectName("btn_sm")
         btn_abbruch.clicked.connect(dialog.reject)
         btn_uebernehmen = QPushButton("Übernehmen")
-        btn_uebernehmen.setObjectName("btn_success")
+        btn_uebernehmen.setObjectName("btn_new")
         btn_uebernehmen.clicked.connect(speichern)
         btn_row.addWidget(btn_abbruch)
         btn_row.addWidget(btn_uebernehmen)
@@ -1101,16 +1103,18 @@ class TemplateEditorQt(QDialog):
         from ui.dialogs.roi_editor_qt import ROIEditorQt
 
         t_name = self.bearbeiten_name or self.name_entry.text().strip() or "Unbenannt"
+        snap_pil = None
+        if self.bot and hasattr(self.bot.app, "current_screenshot_np"):
+            snap_np = self.bot.app.current_screenshot_np
+            if snap_np is not None:
+                snap_pil = Image.fromarray(cv2.cvtColor(snap_np, cv2.COLOR_BGR2RGB))
 
-        def get_snapshot():
-            if hasattr(self.bot.app, "current_screenshot_np"):
-                snap_np = self.bot.app.current_screenshot_np
-                if snap_np is not None:
-                    return Image.fromarray(cv2.cvtColor(snap_np, cv2.COLOR_BGR2RGB))
-            return None
-
-        self.roi_editor = ROIEditorQt(t_name, self.initial_scan_regions, get_snapshot, parent=self)
+        self.roi_editor = ROIEditorQt(t_name, self.initial_scan_regions, snap_pil, parent=self)
+        self.roi_editor.regionen_geaendert.connect(self._on_roi_changed)
         self.roi_editor.show()
+
+    def _on_roi_changed(self, regions):
+        self.initial_scan_regions = regions
 
     def _erkennung_test(self):
         if not (self.roi_editor and self.roi_editor.isVisible()):
@@ -1240,7 +1244,8 @@ class TemplateEditorQt(QDialog):
     def _on_klick_gesetzt(self, rel_x: float, rel_y: float):
         self.klick_zone[0] = (rel_x, rel_y)
         self.klick_info.setText(f"Klick-Zone: {rel_x:.0f}% / {rel_y:.0f}%")
-        self.klick_info.setStyleSheet("color: #ff6600; font-size: 8pt;")
+        self.klick_info.setProperty("class", "lbl_orange")
+        self.klick_info.setStyle(self.klick_info.style())
         self._overlays_zeichnen()
 
     def _ignore_letzten_entfernen(self):
@@ -1252,7 +1257,8 @@ class TemplateEditorQt(QDialog):
     def _klick_entfernen(self):
         self.klick_zone[0] = None
         self.klick_info.setText("Klick-Zone: nicht gesetzt")
-        self.klick_info.setStyleSheet("color: #555555; font-size: 8pt;")
+        self.klick_info.setProperty("class", "lbl_dim")
+        self.klick_info.setStyle(self.klick_info.style())
         self._overlays_zeichnen()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1382,7 +1388,7 @@ class TemplateEditorQt(QDialog):
                 aktion = "umbenannt" if umbenennen else ("aktualisiert" if alter_name else "erstellt")
                 self.bot._log(f"Passive Gruppe {aktion}: \"{n}\"")
                 self.bot.app.reload_templates()
-                self.bot._templates_liste_aktualisieren()
+                self.bot._panels_aktualisieren()
                 return
 
             if self.typ == "aktiv_gruppe":
@@ -1443,7 +1449,7 @@ class TemplateEditorQt(QDialog):
                 self.action_engine.klickzone_loeschen(n)
 
             self.bot._log(f"Template {'aktualisiert' if alter_name else 'gespeichert'}: \"{n}\"")
-            self.bot._templates_liste_aktualisieren()
+            self.bot._panels_aktualisieren()
             self.bot.app.reload_templates()
             self.bot._timer_panel_aktualisieren()
 

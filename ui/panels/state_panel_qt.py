@@ -19,7 +19,7 @@ class StateRow(QFrame):
         layout.setContentsMargins(8, 4, 8, 4)
 
         self.name_label = QLabel(name)
-        self.name_label.setStyleSheet("color: #cccccc; font-size: 13px;")
+        self.name_label.setObjectName("state_name")
         layout.addWidget(self.name_label, stretch=1)
 
         self.toggle_btn = QPushButton()
@@ -48,8 +48,8 @@ class StateRow(QFrame):
             self._update_toggle()
 
     def set_selected(self, selected: bool):
-        color = "#0d47a1" if selected else "transparent"
-        self.setStyleSheet(f"StateRow {{ background-color: {color}; border-radius: 4px; }}")
+        self.setProperty("selected", selected)
+        self.setStyle(self.style())
 
     def mousePressEvent(self, event):
         self.selected.emit(self.name)
@@ -58,6 +58,7 @@ class StateRow(QFrame):
 
 class StatePanel(QWidget):
     # Signals für den Bot-Controller
+    add_requested    = pyqtSignal()
     rename_requested = pyqtSignal(str)       # alter Name
     delete_requested = pyqtSignal(str)       # Name
     toggle_requested = pyqtSignal(str, bool) # Name, neuer Wert
@@ -89,22 +90,28 @@ class StatePanel(QWidget):
 
         # Button-Leiste
         btn_bar = QHBoxLayout()
-        btn_bar.setContentsMargins(4, 4, 4, 4)
+        btn_bar.setContentsMargins(0, 2, 0, 0)
+        btn_bar.setSpacing(4)
+
+        self.btn_add = QPushButton("+ Neu")
+        self.btn_add.setObjectName("btn_new_sm")
+        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add.clicked.connect(self.add_requested)
 
         self.btn_rename = QPushButton(lang.t("btn_rename"))
+        self.btn_rename.setObjectName("btn_sm")
         self.btn_rename.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_rename.setEnabled(False)
         self.btn_rename.clicked.connect(self._umbenennen)
 
         self.btn_delete = QPushButton(lang.t("btn_delete"))
-        self.btn_delete.setObjectName("btn_danger")
+        self.btn_delete.setObjectName("btn_del_sm")
         self.btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self._loeschen)
 
-        btn_bar.addWidget(self.btn_rename)
-        btn_bar.addWidget(self.btn_delete)
-        btn_bar.addStretch()
+        for btn in [self.btn_add, self.btn_rename, self.btn_delete]:
+            btn_bar.addWidget(btn)
         root.addLayout(btn_bar)
 
     # ── Öffentliche API ────────────────────────────────────────────────────────
@@ -124,7 +131,7 @@ class StatePanel(QWidget):
         if not keys:
             key = "state_only_active_empty" if self.nur_aktive else "state_no_states"
             lbl = QLabel(lang.t(key))
-            lbl.setStyleSheet("color: #555555; padding: 8px;")
+            lbl.setProperty("class", "lbl_empty_hint")
             self.list_layout.insertWidget(0, lbl)
             return
 
@@ -172,24 +179,9 @@ class StatePanel(QWidget):
         self.btn_delete.setEnabled(has_sel)
 
     def _umbenennen(self):
-        if not self.ausgewaehlt:
-            return
-        neuer_name, ok = QInputDialog.getText(
-            self, lang.t("state_rename_title"),
-            lang.t("state_rename_label"),
-            text=self.ausgewaehlt
-        )
-        if ok and neuer_name and neuer_name != self.ausgewaehlt:
+        if self.ausgewaehlt:
             self.rename_requested.emit(self.ausgewaehlt)
 
     def _loeschen(self):
-        if not self.ausgewaehlt:
-            return
-        antwort = QMessageBox.question(
-            self, lang.t("btn_delete"),
-            lang.t("state_delete_confirm", name=self.ausgewaehlt),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        if self.ausgewaehlt:
             self.delete_requested.emit(self.ausgewaehlt)
-            self._auswahl_setzen(None)

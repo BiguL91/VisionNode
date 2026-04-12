@@ -74,8 +74,15 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #5a8fc0;
-    border-color: #5a8fc0;
+    background-color: #6a9fd8;
+    border-color: #ffffff;
+    image: url(none); /* Falls Icons fehlen, nutzen wir Farbe */
+}
+
+/* Visueller Checkmark-Ersatz via Border oder Farbe */
+QCheckBox::indicator:checked {
+    background-color: #6a9fd8;
+    border: 2px solid #ffffff;
 }
 
 QCheckBox::indicator:hover {

@@ -10,13 +10,10 @@ class KartenButton(QFrame):
     """Klickbare Karte mit Icon, Label und Beschreibung."""
     clicked = pyqtSignal()
 
-    def __init__(self, icon: str, label: str, farbe: str, beschreibung: str, parent=None):
+    def __init__(self, icon: str, label: str, type_key: str, beschreibung: str, parent=None):
         super().__init__(parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("""
-            KartenButton { background: #2a2a2a; border-radius: 6px; border: 1px solid #3a3a3a; }
-            KartenButton:hover { background: #333333; border-color: #4a4a4a; }
-        """)
+        self.setObjectName("karten_button")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
@@ -24,16 +21,18 @@ class KartenButton(QFrame):
 
         kopf = QHBoxLayout()
         lbl_icon = QLabel(icon)
-        lbl_icon.setStyleSheet(f"color: {farbe}; font-size: 16px; background: transparent;")
+        lbl_icon.setObjectName("karte_icon")
+        lbl_icon.setProperty("type", type_key)
         lbl_name = QLabel(label)
-        lbl_name.setStyleSheet(f"color: {farbe}; font-size: 12px; font-weight: bold; background: transparent;")
+        lbl_name.setObjectName("karte_titel")
+        lbl_name.setProperty("type", type_key)
         kopf.addWidget(lbl_icon)
         kopf.addWidget(lbl_name)
         kopf.addStretch()
         layout.addLayout(kopf)
 
         lbl_desc = QLabel(beschreibung)
-        lbl_desc.setStyleSheet("color: #666666; font-size: 10px; background: transparent;")
+        lbl_desc.setProperty("class", "lbl_dim")
         lbl_desc.setWordWrap(True)
         layout.addWidget(lbl_desc)
 
@@ -53,31 +52,24 @@ class TypDialog(QDialog):
 
     KATEGORIEN = [
         {"key": "workflow", "label": "Workflow Template", "icon": "⚙",
-         "farbe": "#55ff88",
          "beschreibung": "Führt Aktionen aus (Klicks, Abläufe).\nWird im Workflow-Panel angezeigt."},
         {"key": "state", "label": "State Template", "icon": "🚩",
-         "farbe": "#ff7043",
          "beschreibung": "Erkennt einen Spielzustand und setzt einen Game-State.\nWird im State-Panel angezeigt."},
     ]
 
     TYPEN = [
         {"key": "aktiv_gruppe", "label": "Aktive Gruppe", "icon": "★",
-         "farbe": "#ffca28",
          "beschreibung": "Hat ein Bild, erkennt sich selbst als Gruppe.\nKind-Templates können zugeordnet werden."},
         {"key": "passiv_gruppe", "label": "Passive Gruppe", "icon": "📦",
-         "farbe": "#7a9abf",
          "beschreibung": "Kein Bild, nur Bedingungen.\nOrganisiert andere Templates/Gruppen."},
         {"key": "template", "label": "Template", "icon": "◻",
-         "farbe": "#cccccc",
          "beschreibung": "Normales Erkennungs-Template.\nGehört zu einer Gruppe."},
     ]
 
     PASSIV_ARTEN = [
         {"key": "master", "label": "Master Gruppe", "icon": "◈",
-         "farbe": "#7a9abf",
          "beschreibung": "Eigenständige Gruppe ohne übergeordnete Gruppe.\nTop-Level-Organisationseinheit."},
         {"key": "untergeordnet", "label": "Untergeordnete Gruppe", "icon": "↳",
-         "farbe": "#9abf7a",
          "beschreibung": "Gehört zu einer bestehenden Gruppe.\nWird ihr untergeordnet zugewiesen."},
     ]
 
@@ -119,26 +111,26 @@ class TypDialog(QDialog):
         kopf = QHBoxLayout()
         if zurueck is not None:
             btn_back = QPushButton("← Zurück")
-            btn_back.setObjectName("btn_icon")
+            btn_back.setObjectName("btn_sm")
             btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_back.clicked.connect(zurueck)
             kopf.addWidget(btn_back)
         kopf.addStretch()
         if zurueck_label:
             lbl = QLabel(zurueck_label)
-            lbl.setStyleSheet("color: #666666; font-size: 10px;")
+            lbl.setProperty("class", "lbl_dim")
             kopf.addWidget(lbl)
         if zurueck is not None:
             layout.addLayout(kopf)
 
         lbl_titel = QLabel(titel)
-        lbl_titel.setStyleSheet("color: #ffffff; font-size: 13px; font-weight: bold;")
+        lbl_titel.setObjectName("dialog_titel_gross")
         layout.addWidget(lbl_titel)
 
         for item in items:
             karte = KartenButton(
                 icon=item["icon"], label=item["label"],
-                farbe=item["farbe"], beschreibung=item["beschreibung"]
+                type_key=item["key"], beschreibung=item["beschreibung"]
             )
             karte.clicked.connect(lambda key=item["key"]: on_click(key))
             layout.addWidget(karte)
