@@ -13,6 +13,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRectF
 from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QImage, QFont
 
+from ui.widgets.click_step_slider import ClickStepSlider
+
+
 try:
     from PIL import Image
     import numpy as np
@@ -208,10 +211,11 @@ class OCRKonfigDialog(QDialog):
             val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             val_lbl.setObjectName("slider_value_label")
 
-            sl = QSlider(Qt.Orientation.Horizontal)
+            sl = ClickStepSlider(Qt.Orientation.Horizontal)
             sl.setRange(int(lo * factor), int(hi * factor))
             sl.setValue(int(default * factor))
-            sl.setSingleStep(int(step * factor))
+            sl.setSingleStep(1)
+            sl.setPageStep(1)
             
             sl.valueChanged.connect(lambda v: val_lbl.setText(f"{v/factor:.1f}" if factor > 1 else str(v)))
             sl.valueChanged.connect(self._ocr_vorschau_starten)

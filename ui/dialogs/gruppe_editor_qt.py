@@ -312,13 +312,16 @@ class GruppeEditorQt(QDialog):
         self.accept()
 
     def _loeschen(self):
-        antwort = QMessageBox.question(
-            self,
-            "Konfiguration löschen",
-            f'Gruppen-Konfiguration für "{self._gruppe_name}" wirklich löschen?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Konfiguration löschen")
+        msg.setText(f'Gruppen-Konfiguration für "{self._gruppe_name}" wirklich löschen?')
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+        
+        if msg.clickedButton() == btn_ja:
             self.geloescht.emit(self._gruppe_name)
             self.accept()
 

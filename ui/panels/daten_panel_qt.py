@@ -383,12 +383,17 @@ class DatenPanel(QWidget):
         if listen_id is None:
             return
         listen_name = self.dropdown.currentText()
-        antwort = QMessageBox.question(
-            self, "Liste löschen",
-            f"Möchtest du die Liste '{listen_name}' wirklich unwiderruflich löschen?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Liste löschen")
+        msg.setText(f"Möchtest du die Liste '{listen_name}' wirklich unwiderruflich löschen?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+
+        if msg.clickedButton() == btn_ja:
             liste_loeschen(listen_id)
             self._alles_aufbauen()
 

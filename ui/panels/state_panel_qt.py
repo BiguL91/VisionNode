@@ -80,6 +80,7 @@ class StatePanel(QWidget):
         # Scroll-Liste
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setMinimumHeight(200)  # Mindesthöhe für die Liste
         self.list_container = QWidget()
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(4, 4, 4, 4)

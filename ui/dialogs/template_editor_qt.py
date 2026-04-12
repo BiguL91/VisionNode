@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPoint
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
+from ui.widgets.click_step_slider import ClickStepSlider
+
 
 def _pil_to_qpixmap(pil_img) -> QPixmap:
     rgb = pil_img.convert("RGB")
@@ -452,8 +454,10 @@ class TemplateEditorQt(QDialog):
         sw_lay.addWidget(lbl_sw)
 
         sw_row = QHBoxLayout()
-        self._schwellwert_slider = QSlider(Qt.Orientation.Horizontal)
+        self._schwellwert_slider = ClickStepSlider(Qt.Orientation.Horizontal)
         self._schwellwert_slider.setRange(50, 100)
+        self._schwellwert_slider.setSingleStep(1)
+        self._schwellwert_slider.setPageStep(1)
         start_sw = int(round(
             self.template_engine.settings.get(self.bearbeiten_name, {}).get("match_schwellwert", 0.85) * 100
             if self.bearbeiten_name else 85
@@ -484,8 +488,10 @@ class TemplateEditorQt(QDialog):
         lbl_tol.setProperty("class", "lbl_info")
         hg_lay.addWidget(lbl_tol)
 
-        self._hg_tol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._hg_tol_slider = ClickStepSlider(Qt.Orientation.Horizontal)
         self._hg_tol_slider.setRange(5, 80)
+        self._hg_tol_slider.setSingleStep(1)
+        self._hg_tol_slider.setPageStep(1)
         self._hg_tol_slider.setValue(30)
         self._hg_tol_slider.setFixedWidth(130)
         self._hg_tol_wert_lbl = QLabel("30")
@@ -667,11 +673,19 @@ class TemplateEditorQt(QDialog):
         if self.aktuelle_variante_idx == 0:
             return
         name = self.varianten_liste[self.aktuelle_variante_idx]
-        if QMessageBox.question(
-                self, "Variante löschen?", f"Variante \"{name}\" wirklich löschen?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) != QMessageBox.StandardButton.Yes:
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Variante löschen?")
+        msg.setText(f"Variante \"{name}\" wirklich löschen?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+
+        if msg.clickedButton() != btn_ja:
             return
+            
         self.template_engine.template_loeschen(name)
         try:
             self.bot.ocr_engine.template_ocr_alle_loeschen(name)
@@ -974,7 +988,12 @@ class TemplateEditorQt(QDialog):
             box_lay.addWidget(btn_add_z, alignment=Qt.AlignmentFlag.AlignLeft)
 
             w_lay.addWidget(box)
-            gruppen_lay.addWidget(wrapper)
+            
+            # Einfügen vor dem Button und Stretch (falls bereits vorhanden)
+            # Der Button ist an vorletzter Stelle, der Stretch an letzter.
+            idx = max(0, gruppen_lay.count() - 2) if gruppen_lay.count() >= 2 else gruppen_lay.count()
+            gruppen_lay.insertWidget(idx, wrapper)
+            
             gruppen.append(g)
             refresh_first_connector()
 
@@ -1048,7 +1067,7 @@ class TemplateEditorQt(QDialog):
         btn_add_set.setObjectName("btn_sm")
         btn_add_set.setProperty("class", "lbl_dim")
         btn_add_set.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add_set.clicked.connect(set_zeile_bauen)
+        btn_add_set.clicked.connect(lambda: set_zeile_bauen())
         root_lay.addWidget(btn_add_set, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # ── Dialog-Buttons ────────────────────────────────────────────────────
@@ -1331,10 +1350,16 @@ class TemplateEditorQt(QDialog):
         existiert = n in self.template_engine.templates or n in self.template_engine.settings
 
         if existiert and n != alter_name:
-            if QMessageBox.question(
-                    self, "Überschreiben?", f"'{n}' existiert bereits. Überschreiben?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            ) != QMessageBox.StandardButton.Yes:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Überschreiben?")
+            msg.setText(f"'{n}' existiert bereits. Überschreiben?")
+            msg.setIcon(QMessageBox.Icon.Question)
+            btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+            btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+            msg.setDefaultButton(btn_nein)
+            msg.exec()
+            
+            if msg.clickedButton() != btn_ja:
                 return
 
         try:

@@ -130,7 +130,17 @@ class TemplatePanel(QWidget):
             self._item("  (Keine Einträge)", "#555555")
             return
 
+        from PyQt6.QtCore import QSize
         for i, gruppe in enumerate(alle_gruppen):
+            # Trennlinie VOR jeder Gruppe (außer der ersten)
+            if i > 0:
+                sep = QListWidgetItem("──────────────────────────")
+                sep.setFlags(Qt.ItemFlag.NoItemFlags)
+                sep.setForeground(QColor("#333333"))
+                sep.setSizeHint(QSize(0, 12))  # Sehr flache Trennlinie
+                sep.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.liste.addItem(sep)
+
             if not gruppe:
                 self._item("[Global]", "#888888", gruppe_key="")
                 for name in sorted(nach_gruppen[""]):
@@ -165,12 +175,6 @@ class TemplatePanel(QWidget):
                     v = f" ({varianten_count[name]})" if varianten_count[name] > 1 else ""
                     self._item(f"{basis_einzug}    └─ {name}{v}{mark(name)}", "#cccccc")
 
-            # Leerzeile zwischen Top-Level-Gruppen
-            if i < len(alle_gruppen) - 1:
-                next_g = alle_gruppen[i + 1]
-                if not next_g.startswith(gruppe + "/") and gruppe != "":
-                    self._item("", "#000000")
-
     def get_auswahl_name(self) -> str | None:
         item = self.liste.currentItem()
         if not item:
@@ -191,8 +195,10 @@ class TemplatePanel(QWidget):
     # ── Intern ────────────────────────────────────────────────────────────────
 
     def _item(self, text: str, farbe: str, gruppe_key: str | None = None):
+        from PyQt6.QtCore import QSize
         item = QListWidgetItem(text)
         item.setForeground(QColor(farbe))
+        item.setSizeHint(QSize(0, 20))  # Kompaktere Zeilenhöhe
         if gruppe_key is not None:
             item.setData(Qt.ItemDataRole.UserRole, gruppe_key)
         self.liste.addItem(item)

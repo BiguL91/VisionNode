@@ -13,50 +13,23 @@ QMainWindow {
 
 QLabel {
     background-color: transparent;
+    font-size: 13px;
+}
+
+QPushButton {
+    font-size: 13px;
 }
 
 QRadioButton {
     background-color: transparent;
     spacing: 6px;
-}
-
-QRadioButton::indicator {
-    width: 14px;
-    height: 14px;
-    border-radius: 7px;
-    border: 2px solid #555555;
-    background-color: #1a1a1a;
-}
-
-QRadioButton::indicator:hover {
-    border-color: #888888;
-}
-
-QRadioButton::indicator:checked {
-    border-color: #4fc3f7;
-    background-color: #4fc3f7;
+    font-size: 13px;
 }
 
 QCheckBox {
     background-color: transparent;
     spacing: 6px;
-}
-
-QCheckBox::indicator {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    border: 2px solid #555555;
-    background-color: #1a1a1a;
-}
-
-QCheckBox::indicator:hover {
-    border-color: #888888;
-}
-
-QCheckBox::indicator:checked {
-    border-color: #4fc3f7;
-    background-color: #4fc3f7;
+    font-size: 13px;
 }
 
 /* Panel-Rahmen */

@@ -765,12 +765,16 @@ class DatenListeEditorQt(QDialog):
         self.accept()
 
     def _liste_loeschen(self):
-        antwort = QMessageBox.question(
-            self, "Liste löschen",
-            f"Liste '{self._liste['name']}' wirklich löschen?\nAlle Daten gehen verloren.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Liste löschen")
+        msg.setText(f"Liste '{self._liste['name']}' wirklich löschen?\nAlle Daten gehen verloren.")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+        
+        if msg.clickedButton() == btn_ja:
             liste_loeschen(self._liste["id"])
             self.geloescht.emit()
             if self._on_gespeichert:

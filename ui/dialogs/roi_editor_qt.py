@@ -6,9 +6,9 @@ from __future__ import annotations
 import os
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QWidget, QScrollArea, QSizePolicy
+    QFrame, QWidget, QScrollArea, QSizePolicy, QApplication
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRectF, QRect
 from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QImage, QFont
 
 try:
@@ -32,13 +32,14 @@ def _pil_to_qpixmap(pil_img) -> QPixmap:
 
 
 class ROICanvas(QLabel):
-    """Zeigt das Bild in 1:1 an und erlaubt das Zeichnen von Rechtecken."""
+    """Zeigt das Bild skaliert an und erlaubt das Zeichnen von Rechtecken auf Original-Koordinaten."""
     regionen_geaendert = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("roi_canvas")
         self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self._pixmap = QPixmap()
         self._regionen = []  # [[x0, y0, x1, y1], ...]
@@ -47,11 +48,42 @@ class ROICanvas(QLabel):
 
         self._drag_start = None
         self._drag_cur = None
+        
+        self._scale = 1.0
+        self._offset = QPoint(0, 0)
+        
+        # Font vorab initialisieren
+        self._font = QFont("Segoe UI", 8)
+        self._font_bold = QFont("Segoe UI", 8, QFont.Weight.Bold)
 
     def set_pixmap(self, pm: QPixmap):
         self._pixmap = pm
-        self.setFixedSize(pm.width(), pm.height())
         self.update()
+
+    def _get_scaling_params(self):
+        if self._pixmap.isNull():
+            return 1.0, QPoint(0, 0)
+        
+        cw, ch = self.width(), self.height()
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        
+        s = min(cw / pw, ch / ph)
+        rw, rh = int(pw * s), int(ph * s)
+        ox = (cw - rw) // 2
+        oy = (ch - rh) // 2
+        
+        return s, QPoint(ox, oy)
+
+    def _to_original(self, pos: QPoint) -> QPoint:
+        s, off = self._get_scaling_params()
+        if s == 0: return pos
+        x = (pos.x() - off.x()) / s
+        y = (pos.y() - off.y()) / s
+        return QPoint(int(x), int(y))
+
+    def _from_original(self, x: float, y: float) -> QPoint:
+        s, off = self._get_scaling_params()
+        return QPoint(int(x * s + off.x()), int(y * s + off.y()))
 
     def set_regionen(self, regions: list):
         self._regionen = [list(r) for r in regions]
@@ -67,61 +99,82 @@ class ROICanvas(QLabel):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        if not self._pixmap.isNull():
-            p.drawPixmap(0, 0, self._pixmap)
+        if self._pixmap.isNull():
+            p.end()
+            return
+
+        s, off = self._get_scaling_params()
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        target_rect = QRectF(off.x(), off.y(), pw * s, ph * s)
+        
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.drawPixmap(target_rect.toRect(), self._pixmap)
 
         # Vorhandene Regionen (🎯)
         for i, r in enumerate(self._regionen):
             p.setPen(QPen(QColor("#ffca28"), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            x0, y0, x1, y1 = r
-            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+            
+            p0 = self._from_original(r[0], r[1])
+            p1 = self._from_original(r[2], r[3])
+            
+            rect = QRect(p0, p1).normalized()
+            p.drawRect(rect)
+            
             p.setPen(QColor("#ffca28"))
-            p.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
-            p.drawText(x0 + 2, y0 + 12, f"#{i+1}")
+            p.setFont(self._font_bold)
+            p.drawText(int(rect.x() + 2), int(rect.y() + 12), f"#{i+1}")
 
         # Aktueller Drag
         if self._drag_start and self._drag_cur:
             p.setPen(QPen(QColor("#1e88e5"), 2, Qt.PenStyle.DashLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            x0 = min(self._drag_start.x(), self._drag_cur.x())
-            y0 = min(self._drag_start.y(), self._drag_cur.y())
-            x1 = max(self._drag_start.x(), self._drag_cur.x())
-            y1 = max(self._drag_start.y(), self._drag_cur.y())
-            p.drawRect(x0, y0, x1 - x0, y1 - y0)
+            
+            p0 = self._from_original(self._drag_start.x(), self._drag_start.y())
+            p1 = self._from_original(self._drag_cur.x(), self._drag_cur.y())
+            
+            p.drawRect(QRect(p0, p1).normalized())
 
         # Test-Matches
         for m in self._test_matches:
             name, mx, my, mw, mh, score = m[:6]
             farbe = QColor("#4caf50") if score >= self._test_limit else QColor("#f44336")
             p.setPen(QPen(farbe, 2))
-            p.drawRect(mx, my, mw, mh)
+            
+            p0 = self._from_original(mx, my)
+            p1 = self._from_original(mx + mw, my + mh)
+            p.drawRect(QRect(p0, p1).normalized())
+            
             p.setPen(farbe)
-            p.drawText(mx + 2, my - 2, f"{score:.2f}")
+            p.setFont(self._font)
+            p.drawText(p0.x() + 2, p0.y() - 2, f"{score:.2f}")
 
         p.end()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = e.pos()
-            self._drag_cur = e.pos()
+            orig = self._to_original(e.pos())
+            self._drag_start = orig
+            self._drag_cur = orig
             self.update()
 
     def mouseMoveEvent(self, e):
         if self._drag_start:
-            self._drag_cur = e.pos()
+            self._drag_cur = self._to_original(e.pos())
             self.update()
 
     def mouseReleaseEvent(self, e):
         if self._drag_start and e.button() == Qt.MouseButton.LeftButton:
-            x0 = min(self._drag_start.x(), e.pos().x())
-            y0 = min(self._drag_start.y(), e.pos().y())
-            x1 = max(self._drag_start.x(), e.pos().x())
-            y1 = max(self._drag_start.y(), e.pos().y())
+            orig_end = self._to_original(e.pos())
+            x0 = min(self._drag_start.x(), orig_end.x())
+            y0 = min(self._drag_start.y(), orig_end.y())
+            x1 = max(self._drag_start.x(), orig_end.x())
+            y1 = max(self._drag_start.y(), orig_end.y())
+            
             self._drag_start = None
             self._drag_cur = None
 
-            if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
+            if abs(x1 - x0) > 2 and abs(y1 - y0) > 2:
                 self._regionen.append([x0, y0, x1, y1])
                 self.regionen_geaendert.emit(self._regionen)
                 self.update()
@@ -156,6 +209,19 @@ class ROIEditorQt(QDialog):
         if snapshot_pil:
             pm = _pil_to_qpixmap(snapshot_pil)
             self._canvas.set_pixmap(pm)
+            
+            # Fenstergröße an Bild anpassen (ohne Vollbild-Zwang)
+            screen = QApplication.primaryScreen().availableGeometry()
+            # Verfügbare Fläche abzüglich Puffer für Taskleiste/Ränder
+            max_w = screen.width() - 40
+            max_h = screen.height() - 80
+            
+            target_w = min(pm.width() + 80, max_w)
+            target_h = min(pm.height() + 180, max_h)
+            
+            self.resize(target_w, target_h)
+            # Zentriere das Fenster auf dem Bildschirm
+            self.move(screen.center() - self.rect().center())
 
         self._canvas.set_regionen(regions)
 
@@ -174,7 +240,8 @@ class ROIEditorQt(QDialog):
 
         # Scroll Area für 1:1 Anzeige
         scroll = QScrollArea()
-        scroll.setWidgetResizable(False)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll.setObjectName("roi_scroll")
 

@@ -64,21 +64,21 @@ DISPLAY_FPS_DEFAULT = 30
 
 # ── Helper ───────────────────────────────────────────────────────────────────
 
-def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float, int, int]:
+def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float, float, float]:
     """BGR numpy → QPixmap, skaliert auf max_w × max_h.
-    Gibt (pixmap, scale, offset_x, offset_y) zurück.
+    Gibt (pixmap, skala, offset_x, offset_y) zurück.
     """
     if cv2 is None:
-        return QPixmap(), 1.0, 0, 0
+        return QPixmap(), 1.0, 0.0, 0.0
     h, w = frame_bgr.shape[:2]
     skala = min(max_w / w, max_h / h)
-    nw, nh = int(w * skala), int(h * skala)
+    nw, nh = int(round(w * skala)), int(round(h * skala))
     resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
     qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
     pm = QPixmap.fromImage(qimg)
-    ox = (max_w - nw) // 2
-    oy = (max_h - nh) // 2
+    ox = (max_w - nw) / 2.0
+    oy = (max_h - nh) / 2.0
     return pm, skala, ox, oy
 
 
@@ -100,8 +100,8 @@ class VorschauLabel(QLabel):
 
         self._pixmap:    QPixmap | None = None
         self._skala:     float          = 1.0
-        self._offset_x:  int            = 0
-        self._offset_y:  int            = 0
+        self._offset_x:  float          = 0.0
+        self._offset_y:  float          = 0.0
         self._status:    str            = "Suche MEMUPlayer..."
 
         self._matches:       list  = []
@@ -186,7 +186,7 @@ class VorschauLabel(QLabel):
         # Hintergrund wird durch QSS gezeichnet (oder falls nötig hier via Palette)
         
         if self._pixmap:
-            p.drawPixmap(self._offset_x, self._offset_y, self._pixmap)
+            p.drawPixmap(int(round(self._offset_x)), int(round(self._offset_y)), self._pixmap)
             self._zeichne_overlays(p)
         else:
             p.setPen(QColor("#555555"))
@@ -212,10 +212,10 @@ class VorschauLabel(QLabel):
         # 1. Globale OCR-Regionen
         p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
         for r_name, r in self._ocr_regionen.items():
-            rx = int(ox + r["x"] * s)
-            ry = int(oy + r["y"] * s)
-            rw = int(r["breite"] * s)
-            rh = int(r["hoehe"] * s)
+            rx = int(round(ox + r["x"] * s))
+            ry = int(round(oy + r["y"] * s))
+            rw = int(round(r["breite"] * s))
+            rh = int(round(r["hoehe"] * s))
             p.drawRect(rx, ry, rw, rh)
             val = self._ocr_werte.get(r_name, "")
             p.setPen(QColor("#ffca28"))
@@ -231,10 +231,10 @@ class VorschauLabel(QLabel):
         for match in self._matches:
             name, mx, my, mw, mh, score = match[:6]
             farbe = QColor(_template_farbe(name))
-            cx = int(ox + mx * s)
-            cy = int(oy + my * s)
-            cw = int(mw * s)
-            ch = int(mh * s)
+            cx = int(round(ox + mx * s))
+            cy = int(round(oy + my * s))
+            cw = int(round(mw * s))
+            ch = int(round(mh * s))
 
             p.setPen(QPen(farbe, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -786,12 +786,16 @@ class TilesBotWindow(QMainWindow):
         editor.show()
 
     def _template_loeschen(self, name: str):
-        antwort = QMessageBox.question(
-            self, "Löschen",
-            f"\"{name}\" wirklich löschen?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if antwort != QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Löschen")
+        msg.setText(f"\"{name}\" wirklich löschen?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+        
+        if msg.clickedButton() != btn_ja:
             return
         typ = self.template_engine.settings.get(name, {}).get("typ", "template")
         if typ in ("passiv_gruppe", "aktiv_gruppe"):
@@ -937,64 +941,89 @@ class TilesBotWindow(QMainWindow):
     # ── Passiv-Gruppe ─────────────────────────────────────────────────────────
 
     def _passiv_gruppe_erstellen_dialog(self, kategorie: str = "workflow", ist_master: bool = True):
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QLabel, QPushButton
         dlg = QDialog(self)
-        dlg.setWindowTitle("Passive Gruppe erstellen")
+        dlg.setWindowTitle("Neue Gruppe erstellen")
         dlg.setModal(True)
-        dlg.setFixedWidth(320)
+        dlg.setFixedWidth(350)
+        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         root = QVBoxLayout(dlg)
-        art_lbl = QLabel("Master Gruppe" if ist_master else "Untergeordnete Gruppe")
-        art_lbl.setObjectName("group_type_label")
-        art_lbl.setProperty("master", ist_master)
-        root.addWidget(art_lbl)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(10)
 
-        root.addWidget(QLabel("Gruppen-Name:"))
+        titel = "Master-Gruppe" if ist_master else "Untergeordnete Gruppe"
+        lbl_titel = QLabel(f"{titel} ({kategorie.capitalize()})")
+        lbl_titel.setObjectName("dialog_header_title_gold_small")
+        root.addWidget(lbl_titel)
+
+        root.addWidget(QLabel("Name der neuen Gruppe:"))
         name_edit = QLineEdit()
+        name_edit.setPlaceholderText("z.B. Hauptmenü, Kampf, etc.")
         root.addWidget(name_edit)
 
         combo = None
         if not ist_master:
-            root.addWidget(QLabel("Übergeordnete Gruppe:"))
+            root.addWidget(QLabel("Zuweisen zu Gruppe:"))
             combo = QComboBox()
+            # Nur Gruppen der gleichen Kategorie anzeigen
             verfuegbar = sorted([
                 g for g, v in self.template_engine.settings.items()
                 if isinstance(v, dict)
                 and v.get("typ") in ("passiv_gruppe", "aktiv_gruppe")
                 and v.get("kategorie") == kategorie
             ])
-            combo.addItems(verfuegbar)
-            root.addWidget(combo)
+            if not verfuegbar:
+                lbl_no = QLabel("Keine Gruppen zur Zuweisung vorhanden!\nBitte erst eine Master-Gruppe erstellen.")
+                lbl_no.setProperty("class", "lbl_error")
+                root.addWidget(lbl_no)
+                btn_erstellen.setEnabled(False)
+            else:
+                combo.addItems(verfuegbar)
+                root.addWidget(combo)
 
         err_lbl = QLabel("")
         err_lbl.setProperty("class", "lbl_error")
         root.addWidget(err_lbl)
 
+        btn_row = QHBoxLayout()
+        btn_cancel = QPushButton("Abbrechen")
+        btn_cancel.clicked.connect(dlg.reject)
+        
         btn_erstellen = QPushButton("Erstellen")
         btn_erstellen.setObjectName("btn_new")
+        
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_erstellen)
+        root.addLayout(btn_row)
 
         def erstellen():
             n = name_edit.text().strip()
             if not n:
                 err_lbl.setText("Name darf nicht leer sein.")
                 return
-            if n in self.template_engine.settings and \
-                    self.template_engine.settings[n].get("typ") == "passiv_gruppe":
+            if n in self.template_engine.settings:
                 err_lbl.setText(f"'{n}' existiert bereits.")
                 return
-            uebergeordnet = "" if ist_master else (combo.currentText().strip() if combo else "")
+            
+            uebergeordnet = ""
+            if not ist_master and combo:
+                uebergeordnet = combo.currentText().strip()
+                if not uebergeordnet:
+                    err_lbl.setText("Bitte eine Gruppe auswählen.")
+                    return
+
+            # Speichern in der Engine
             self.template_engine.gruppe_config_speichern(
                 n, [], uebergeordnete_gruppe=uebergeordnet, kategorie=kategorie)
+            
+            self._log(f"Passive Gruppe erstellt: {n} (Kategorie: {kategorie})")
             dlg.accept()
+            self.app.reload_templates()
             self._panels_aktualisieren()
 
         name_edit.returnPressed.connect(erstellen)
         btn_erstellen.clicked.connect(erstellen)
-        root.addWidget(btn_erstellen)
-
-        btn_ab = QPushButton("Abbrechen")
-        btn_ab.clicked.connect(dlg.reject)
-        root.addWidget(btn_ab)
         dlg.exec()
 
     # ── Workflow-Aktionen ─────────────────────────────────────────────────────
@@ -1020,11 +1049,16 @@ class TilesBotWindow(QMainWindow):
         dlg.show()
 
     def _master_loeschen(self, name: str):
-        antwort = QMessageBox.question(
-            self, "Master löschen", f"Master-Workflow \"{name}\" löschen?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Master löschen")
+        msg.setText(f"Master-Workflow \"{name}\" löschen?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+        
+        if msg.clickedButton() == btn_ja:
             self.workflow_engine.master_workflow_loeschen(name)
             self._panels_aktualisieren()
             self._log(f"Master-Workflow gelöscht: {name}")
@@ -1054,11 +1088,16 @@ class TilesBotWindow(QMainWindow):
         dlg.show()
 
     def _workflow_loeschen(self, name: str):
-        antwort = QMessageBox.question(
-            self, "Workflow löschen", f"Workflow \"{name}\" löschen?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if antwort == QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Workflow löschen")
+        msg.setText(f"Workflow \"{name}\" löschen?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
+        btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_nein)
+        msg.exec()
+        
+        if msg.clickedButton() == btn_ja:
             self.workflow_engine.workflow_loeschen(name)
             self._panels_aktualisieren()
             self._log(f"Workflow gelöscht: {name}")

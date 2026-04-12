@@ -55,7 +55,14 @@ QLabel#status_label {
 
 /* Template-Panel Listen */
 QListWidget#template_liste {
-    font-weight: bold;
+    border: none;
+    padding: 0px;
+}
+
+QListWidget#template_liste::item {
+    padding: 0px;
+    margin: 0px;
+    border: none;
 }
 
 QListWidget#template_liste::item:selected {
@@ -65,7 +72,7 @@ QListWidget#template_liste::item:selected {
 
 /* Workflow-Panel Listen */
 QListWidget#master_liste {
-    font-weight: bold;
+    border: none;
 }
 
 QListWidget#master_liste::item:selected,
