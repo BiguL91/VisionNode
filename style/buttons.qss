@@ -49,8 +49,16 @@ QPushButton#btn_new:disabled {
 
 /* ── Löschen (roter Akzent) ── */
 QPushButton#btn_del {
+    background-color: #1e1e1e;
     color: #ff6b6b;
-    border-color: #c0392b;
+    border: 1px solid #c0392b;
+    border-radius: 0px;
+    padding: 0px;
+    margin: 0px;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
 }
 
 QPushButton#btn_del:hover {

@@ -376,12 +376,17 @@ class OCRKonfigDialog(QDialog):
         self._farbe_indicator.clicked.connect(self._farbe_waehlen)
         cl.addWidget(self._farbe_indicator)
 
-        self._sb_toleranz = QSpinBox()
-        self._sb_toleranz.setRange(5, 150)
-        self._sb_toleranz.setValue(30)
-        self._sb_toleranz.setPrefix("Tol: ")
-        self._sb_toleranz.valueChanged.connect(self._ocr_vorschau_starten)
-        cl.addWidget(self._sb_toleranz)
+        self._lbl_toleranz = QLabel("Tol: +/- 30")
+        self._lbl_toleranz.setFixedWidth(75)
+        cl.addWidget(self._lbl_toleranz)
+
+        self._sl_toleranz = ClickStepSlider(Qt.Orientation.Horizontal)
+        self._sl_toleranz.setRange(5, 150)
+        self._sl_toleranz.setValue(30)
+        self._sl_toleranz.setFixedWidth(100)
+        self._sl_toleranz.valueChanged.connect(self._on_toleranz_changed)
+        cl.addWidget(self._sl_toleranz)
+
         cl.addStretch()
         root.addWidget(color_frame)
 
@@ -433,6 +438,11 @@ class OCRKonfigDialog(QDialog):
         btn_close.clicked.connect(self.close)
         footer.addWidget(btn_close)
         root.addLayout(footer)
+
+    def _on_toleranz_changed(self, val):
+        self._lbl_toleranz.setText(f"Tol: +/- {val}")
+        self._ocr_vorschau_starten()
+
     def empfange_live_region(self, x0, y0, x1, y1):
         """Wird vom Hauptfenster aufgerufen, wenn dort ein Bereich gewählt wurde."""
         ss_pil = self._bot.app.current_screenshot_pil
@@ -527,7 +537,10 @@ class OCRKonfigDialog(QDialog):
             # pil_view wird nun sowohl für die Anzeige als auch für die Engine genutzt
             self._template_pil = pil_view
             self._tw, self._th = pil_view.size
-
+            
+            # WICHTIG: Original-Template-Größe merken für Prozent-Rechnung
+            self._orig_tw, self._orig_th = self._tw, self._th
+            
             # Anzeige-Pixmap erstellen (Zoom berücksichtigen)
             z = self._sl_zoom.value() / 100.0
             nw, nh = int(self._tw * z), int(self._th * z)
@@ -596,9 +609,7 @@ class OCRKonfigDialog(QDialog):
 
             # Löschen Button
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_del")
-            btn_del.setFixedSize(22, 22)
-            btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            btn_del.setObjectName("btn_del_sm")
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del.clicked.connect(lambda _, idx=i: self._loeschen(idx))
             zl.addWidget(btn_del)
@@ -622,7 +633,7 @@ class OCRKonfigDialog(QDialog):
         if len(e) > 11:
             self._target_color = list(e[11])
             self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
-        self._sb_toleranz.setValue(e[12] if len(e) > 12 else 30)
+        self._sl_toleranz.setValue(e[12] if len(e) > 12 else 30)
 
         # Restore auswahl from crop percentages
         tw_disp = self._canvas.width()
@@ -660,16 +671,35 @@ class OCRKonfigDialog(QDialog):
         return btn.text() if btn else "Zahl"
 
     def _crop_prozent(self) -> tuple[float, float, float, float]:
-        """Liefert (crop_links, crop_oben, crop_rechts, crop_unten) in % aus Auswahl."""
+        """Liefert (crop_links, crop_oben, crop_rechts, crop_unten) in % relativ zum Template."""
         if not self._auswahl:
             return 0.0, 0.0, 0.0, 0.0
         x0, y0, x1, y1 = self._auswahl[:4]
-        tw = self._canvas.width()
-        th = self._canvas.height()
-        cl = round(x0 / tw * 100, 1)
-        co = round(y0 / th * 100, 1)
-        cr = round((tw - x1) / tw * 100, 1)
-        cu = round((th - y1) / th * 100, 1)
+        
+        # Aktuelle Canvas-Größe (Zoomed)
+        cw = self._canvas.width()
+        ch = self._canvas.height()
+        
+        # Umrechnen in 1:1 Koordinaten des Hintergrund-Bildes (self._tw, self._th)
+        bg_x0 = x0 / cw * self._tw
+        bg_y0 = y0 / ch * self._th
+        bg_x1 = x1 / cw * self._tw
+        bg_y1 = y1 / ch * self._th
+        
+        # Relativ zum Template-Offset (wo fängt das Template im Hintergrund an?)
+        off_x, off_y = getattr(self, "_live_offset", (0, 0))
+        rel_x0 = bg_x0 - off_x
+        rel_y0 = bg_y0 - off_y
+        rel_x1 = bg_x1 - off_x
+        rel_y1 = bg_y1 - off_y
+        
+        # Prozentual zur ORIGINAL-TEMPLATE-GRÖSSE
+        # cl=0% bedeutet: Startet exakt am linken Rand des Templates
+        cl = round(rel_x0 / self._orig_tw * 100, 1)
+        co = round(rel_y0 / self._orig_th * 100, 1)
+        cr = round((self._orig_tw - rel_x1) / self._orig_tw * 100, 1)
+        cu = round((self._orig_th - rel_y1) / self._orig_th * 100, 1)
+        
         return cl, co, cr, cu
 
     def _hinzufuegen(self):
@@ -688,7 +718,7 @@ class OCRKonfigDialog(QDialog):
             self._sl_upscale.value() / self._f_u,
             self._cb_farbe.isChecked(),
             list(self._target_color),
-            self._sb_toleranz.value(),
+            self._sl_toleranz.value(),
             af
         ]
         for i, e in enumerate(self._eintraege):
@@ -786,6 +816,15 @@ class OCRKonfigDialog(QDialog):
         import json
         te = self._bot.template_engine
         
+        # Original-Größe aus Engine holen
+        tpl_data = te.templates.get(self._name)
+        if tpl_data:
+            self._orig_tw, self._orig_th = tpl_data["orig_size"]
+            if tpl_data.get("bbox"):
+                self._orig_tw, self._orig_th = tpl_data["bbox"][2], tpl_data["bbox"][3]
+        else:
+            self._orig_tw, self._orig_th = 1, 1 # Fallback
+
         # 1. PRÜFEN OB REFERENZ-BILD EXISTIERT
         ref_dir = os.path.join("templates", "_ocr_refs")
         img_p = os.path.join(ref_dir, f"{self._name}.png")
@@ -835,13 +874,13 @@ class OCRKonfigDialog(QDialog):
         cl, co, cr, cu = self._crop_prozent()
         af = self._auswahl[4] if len(self._auswahl) > 4 else "box"
         
-        # Offset berücksichtigen (Falls wir ein Captured Image haben)
+        # Offset berücksichtigen (Wo liegt das Template im aktuellen Hintergrund-Bild?)
         off_x, off_y = getattr(self, "_live_offset", (0, 0))
 
         region = {
             "name": f"Vorschau_{self._name}",
-            "x": -off_x, "y": -off_y, # Engine rechnet (x + crop)
-            "breite": self._tw, "hoehe": self._th,
+            "x": off_x, "y": off_y, # Startpunkt des Templates im Bild
+            "breite": self._orig_tw, "hoehe": self._orig_th, # Echte Maße des Templates
             "modus": self._get_modus(),
             "crop_oben": co, "crop_unten": cu,
             "crop_links": cl, "crop_rechts": cr,
@@ -851,7 +890,7 @@ class OCRKonfigDialog(QDialog):
             "upscale": self._sl_upscale.value() / self._f_u,
             "color_filter": self._cb_farbe.isChecked(),
             "target_color": list(self._target_color),
-            "color_tolerance": self._sb_toleranz.value(),
+            "color_tolerance": self._sl_toleranz.value(),
             "ausschnitt_form": af
         }
         pil_basis = self._template_pil
