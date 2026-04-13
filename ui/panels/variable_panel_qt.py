@@ -175,7 +175,21 @@ class VariablePanel(QWidget):
         grp: dict[str, list] = {}
         for en, k in ocr_konfig.items():
             tn = k.get("template", en)
-            grp.setdefault(tn, []).append((en, en, k.get("modus", "Text"), True))
+            # Nur den OCR-Namen anzeigen (Teil nach dem ersten Unterstrich)
+            display_name = en
+            if "_" in en:
+                # Falls der Key "TemplateName_OCRName" ist, nehmen wir nur "OCRName"
+                # Wir suchen den Präfix "TemplateName_"
+                prefix = f"{tn}_"
+                if en.startswith(prefix):
+                    display_name = en[len(prefix):]
+                else:
+                    # Fallback falls anders benannt
+                    teile = en.split("_", 1)
+                    if len(teile) > 1:
+                        display_name = teile[1]
+
+            grp.setdefault(tn, []).append((en, display_name, k.get("modus", "Text"), True))
 
         for tn, eintraege in grp.items():
             hat = True

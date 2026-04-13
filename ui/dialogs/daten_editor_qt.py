@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QHeaderView
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
     zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
@@ -144,18 +144,23 @@ class FormelBuilder(QWidget):
 class TransformBlock(QFrame):
     loeschen_requested = pyqtSignal(int)
 
-    def __init__(self, t: dict, ocr_vars: list[str], ocr_state_func, db_cache: dict, parent=None):
+    def __init__(self, t: dict, ocr_vars_struk: dict, ocr_state_func, db_cache: dict, parent=None):
+        """
+        ocr_vars_struk: { Kategorie: { Template: [ (Anzeige, Tech), ... ] } }
+        """
         super().__init__(parent)
         self._t = t
+        self._ocr_vars_struk = ocr_vars_struk
         self._ocr_state_func = ocr_state_func
         self._db_cache = db_cache
+        self._selected_tech = t.get("ocr_var", "")
         self.setObjectName("editor_block")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(4)
 
-        # Zeile 1: Name | OCR-Var | Typ | ✕
+        # Zeile 1: Name | OCR-Var (Button) | Typ | ✕
         z1 = QHBoxLayout()
 
         z1.addWidget(QLabel("Name:"))
@@ -165,12 +170,12 @@ class TransformBlock(QFrame):
         z1.addWidget(self._name_edit)
 
         z1.addWidget(QLabel("OCR-Var:"))
-        self._ocr_combo = QComboBox()
-        self._ocr_combo.addItems([""] + ocr_vars)
-        self._ocr_combo.setCurrentText(t.get("ocr_var", ""))
-        self._ocr_combo.setFixedWidth(150)
-        self._ocr_combo.currentTextChanged.connect(self._ocr_speichern)
-        z1.addWidget(self._ocr_combo)
+        self._ocr_btn = QPushButton("Wählen...")
+        self._ocr_btn.setFixedWidth(200)
+        self._ocr_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ocr_btn.clicked.connect(self._ocr_menue_zeigen)
+        self._ocr_btn_aktualisieren()
+        z1.addWidget(self._ocr_btn)
 
         z1.addWidget(QLabel("Typ:"))
         self._typ_combo = QComboBox()
@@ -202,11 +207,47 @@ class TransformBlock(QFrame):
         layout.addLayout(z2)
 
         self._live_update()
-        self._ocr_combo.currentTextChanged.connect(lambda _: self._live_update())
         self._typ_combo.currentTextChanged.connect(lambda _: self._live_update())
 
+    def _ocr_btn_aktualisieren(self):
+        """Sucht den Anzeige-Namen für den technischen Key."""
+        if not self._selected_tech:
+            self._ocr_btn.setText("(Keine)")
+            return
+        
+        # Einfach den technischen Key anzeigen, da dieser nun der "ganze Name" ist
+        self._ocr_btn.setText(self._selected_tech)
+
+    def _ocr_menue_zeigen(self):
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        
+        # "(Keine)" Option
+        a_none = menu.addAction("(Keine)")
+        a_none.triggered.connect(lambda: self._ocr_auswaehlen(""))
+        menu.addSeparator()
+
+        for kat, templates in self._ocr_vars_struk.items():
+            kat_menu = menu.addMenu(kat.upper())
+            for tn, vars in templates.items():
+                # Falls nur ein Template in der Liste (z.B. Global), direkt die Vars zeigen? 
+                # Nein, wir wollen Template-Submenus laut User-Wunsch.
+                tpl_menu = kat_menu.addMenu(tn)
+                for disp, tech in vars:
+                    a = tpl_menu.addAction(disp)
+                    # Closure-Fix: tech als Default-Argument binden
+                    a.triggered.connect(lambda _, t=tech: self._ocr_auswaehlen(t))
+
+        menu.exec(self._ocr_btn.mapToGlobal(self._ocr_btn.rect().bottomLeft()))
+
+    def _ocr_auswaehlen(self, tech_name):
+        self._selected_tech = tech_name
+        transformation_aktualisieren(self._t["id"], ocr_var=tech_name)
+        self._ocr_btn_aktualisieren()
+        self._live_update()
+
     def _live_update(self):
-        ocr_name = self._ocr_combo.currentText()
+        ocr_name = self._selected_tech
         rohwert = "—"
         if ocr_name and self._ocr_state_func:
             rohwert = self._ocr_state_func(ocr_name) or "—"
@@ -224,9 +265,6 @@ class TransformBlock(QFrame):
 
     def _name_speichern(self):
         transformation_aktualisieren(self._t["id"], name=self._name_edit.text().strip())
-
-    def _ocr_speichern(self, val: str):
-        transformation_aktualisieren(self._t["id"], ocr_var=val)
 
     def _typ_speichern(self, val: str):
         transformation_aktualisieren(self._t["id"], typ=val)
@@ -322,18 +360,20 @@ class DatenListeEditorQt(QDialog):
         self._berechnungen     = berechnungen_der_liste(liste["id"])
         self._zeilen           = zeilen_der_liste(liste["id"])
         self._spalten          = spalten_der_liste(liste["id"])
-        self._ocr_vars         = []              # wird in _setup_ui gesetzt
+        self._ocr_vars         = {}              # Struktur: { Kat: { Tpl: [ (Disp, Tech) ] } }
         self._db_cache         = cache_lesen(liste["id"])
 
         self._setup_ui()
 
     # ── OCR-Vars ───────────────────────────────────────────────────────────────
 
-    def _ocr_vars_laden(self) -> list[str]:
+    def _ocr_vars_laden(self) -> dict:
         return self._ocr_vars   # wird von außen gesetzt
 
-    def set_ocr_vars(self, namen: list[str]):
-        self._ocr_vars = sorted(namen)
+    def set_ocr_vars(self, vars_struk: dict):
+        """Erwartet Struktur: { Kategorie: { Template: [ (AnzeigeName, TechnischerName) ] } }."""
+        self._ocr_vars = vars_struk
+        self._transform_neu_aufbauen()
 
     # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -428,6 +468,9 @@ class DatenListeEditorQt(QDialog):
                 item.widget().deleteLater()
 
         self._transformationen = transformationen_der_liste(self._liste["id"])
+        # Nach OCR-Variable sortieren (gruppiert automatisch nach Template)
+        self._transformationen.sort(key=lambda x: x.get("ocr_var", ""))
+        
         self._db_cache = cache_lesen(self._liste["id"])
 
         if not self._transformationen:

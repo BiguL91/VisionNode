@@ -143,3 +143,33 @@ QToolTip {
     border-radius: 4px;
     padding: 4px 8px;
 }
+
+/* ── Kontext-Menüs ──────────────────────────────────────────────────────────── */
+QMenu {
+    background-color: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    padding: 4px;
+}
+
+QMenu::item {
+    background-color: transparent;
+    padding: 6px 32px 6px 24px; /* Rechts viel Platz für Pfeil, Links für Icon/Abstand */
+    border-radius: 2px;
+}
+
+QMenu::item:selected {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #3a3a3a;
+    margin: 4px 8px;
+}
+
+QMenu::right-arrow {
+    margin: 5px;
+    image: none; /* Wir könnten hier ein eigenes Icon setzen, Standard ist oft > */
+}
+

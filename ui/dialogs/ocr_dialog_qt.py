@@ -17,10 +17,11 @@ from ui.widgets.click_step_slider import ClickStepSlider
 
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageDraw
     import numpy as np
 except ImportError:
     Image = None
+    ImageDraw = None
     np = None
 
 
@@ -59,6 +60,14 @@ class OCRCanvas(QLabel):
         self._drag_start = None
         self._drag_cur   = None
         self._form: str = "box"
+        self._offset = (0, 0)
+        self._orig_size = (1, 1)
+
+    def set_template_info(self, offset: tuple, orig_size: tuple):
+        """Setzt die Position und Größe des Templates innerhalb des aktuellen Hintergrunds."""
+        self._offset = offset
+        self._orig_size = orig_size
+        self.update()
 
     def contextMenuEvent(self, event):
         from PyQt6.QtWidgets import QMenu
@@ -114,15 +123,40 @@ class OCRCanvas(QLabel):
             p.drawPixmap(0, 0, self._pixmap)
 
         # 3. Eingetragene Zonen
+        # Skalierung zwischen 1:1 Hintergrund und Canvas
+        # self._tw/th sind die 1:1 Größen des Hintergrunds (z.B. Captured Area)
+        # w/h sind die aktuellen Canvas Größen (inkl. Zoom)
+        sx = w / self._tw if self._tw > 0 else 1.0
+        sy = h / self._th if self._th > 0 else 1.0
+        
+        ox, oy = self._offset
+        otw, oth = self._orig_size
+
         for i, e in enumerate(self._eintraege):
             if len(e) < 6: continue
             farbe = QColor(ZONE_FARBEN[i % len(ZONE_FARBEN)])
             cl, co, cr, cu = e[4], e[2], e[5], e[3]
             f = e[13] if len(e) > 13 else (e[6] if len(e) > 6 and isinstance(e[6], str) else "box")
-            x0 = int(cl / 100 * w)
-            y0 = int(co / 100 * h)
-            x1 = int((1 - cr / 100) * w)
-            y1 = int((1 - cu / 100) * h)
+            
+            # cl/co/cr/cu sind % relativ zum TEMPLATE (orig_size)
+            # 1. Pixel-Koordinaten im 1:1 Template-Raum
+            rel_x0 = cl / 100 * otw
+            rel_y0 = co / 100 * oth
+            rel_x1 = otw - (cr / 100 * otw)
+            rel_y1 = oth - (cu / 100 * oth)
+            
+            # 2. Pixel-Koordinaten im 1:1 Hintergrund-Raum (Capture)
+            bg_x0 = rel_x0 + ox
+            bg_y0 = rel_y0 + oy
+            bg_x1 = rel_x1 + ox
+            bg_y1 = rel_y1 + oy
+            
+            # 3. Pixel-Koordinaten auf dem skalierten Canvas
+            x0 = int(bg_x0 * sx)
+            y0 = int(bg_y0 * sy)
+            x1 = int(bg_x1 * sx)
+            y1 = int(bg_y1 * sy)
+            
             p.setPen(QPen(farbe, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
             if f == "kreis":
@@ -256,6 +290,7 @@ class OCRKonfigDialog(QDialog):
         self._template_pil = None
         self._vorschau_basis_pil = None
         self._target_color = [255, 255, 255]
+        self._live_view_active = False
         
         # Separates Debug-Fenster für Binarisierung
         self._debug_window = OCRDebugWindow(self)
@@ -281,6 +316,11 @@ class OCRKonfigDialog(QDialog):
 
         # Header mit Bereichswahl, Reset und Zoom
         header = QHBoxLayout()
+        self._cb_live_view = QCheckBox("Live-Vorschau")
+        self._cb_live_view.setToolTip("Zeigt das aktuelle Live-Bild wenn das Template gefunden wird")
+        self._cb_live_view.stateChanged.connect(self._on_live_view_toggled)
+        header.addWidget(self._cb_live_view)
+
         self._btn_capture = QPushButton("📷 Bereich wählen")
         self._btn_capture.setToolTip("Wähle einen Bereich auf dem Hauptschirm.")
         self._btn_capture.clicked.connect(self._live_focus)
@@ -308,7 +348,7 @@ class OCRKonfigDialog(QDialog):
         self._scroll.setWidgetResizable(False)
         self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._canvas = OCRCanvas()
-        self._canvas.auswahl_geaendert.connect(self._on_auswahl)
+        self._canvas.auswahl_geaendert.connect(self._on_auswahl_canvas)
         self._canvas.form_geaendert.connect(self._on_form_changed)
         self._scroll.setWidget(self._canvas)
         self._scroll.setFixedHeight(VORSCHAU_GROESSE + 4)
@@ -486,6 +526,12 @@ class OCRKonfigDialog(QDialog):
         except Exception as e:
             print(f"[OCR-Capture] Fehler: {e}")
 
+    def _on_live_view_toggled(self, state):
+        self._live_view_active = (state == Qt.CheckState.Checked.value)
+        if not self._live_view_active:
+            # Zurück zum statischen Template/Capture
+            self._trigger_visual_refresh()
+
     def _trigger_visual_refresh(self):
         """Erzwingt ein Neu-Laden des Bildes (statisch oder captured) mit aktuellem Zoom."""
         if self._template_pil is None:
@@ -497,11 +543,52 @@ class OCRKonfigDialog(QDialog):
         nw, nh = int(self._tw * z), int(self._th * z)
         scaled = self._template_pil.resize((nw, nh), Image.LANCZOS)
         pm = _pil_to_qpixmap(scaled)
+        
+        # Canvas informieren über Offset und Original-Größe
+        self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), (self._orig_tw, self._orig_th))
         self._canvas.set_pixmap(pm)
 
     def _live_update_tick(self):
-        """Live-Update-Tick ist jetzt deaktiviert, da wir mit Captured Images arbeiten."""
-        pass
+        """Aktualisiert die Vorschau mit einem Live-Crop, falls gefunden."""
+        if not self._live_view_active or self._bot.app.current_screenshot_pil is None:
+            return
+
+        matches = self._bot.app.state.active_matches
+        found_match = None
+        for m in matches:
+            if m[0] == self._name or (len(m) > 6 and m[6] == self._name):
+                found_match = m
+                break
+        
+        if found_match:
+            # Crop aus dem aktuellen Screenshot
+            mx, my, mw, mh = found_match[1], found_match[2], found_match[3], found_match[4]
+            try:
+                # Da matches oft auf skalierten Bildern basieren oder Boxen haben:
+                # Wir nehmen den Bereich des Matches
+                pil_crop = self._bot.app.current_screenshot_pil.crop((mx, my, mx + mw, my + mh)).convert("RGB")
+                
+                # Wir müssen sicherstellen dass die Größe zum Canvas passt
+                # (Normalerweise sollte ein Match die gleiche Größe wie das Template-Bild haben)
+                # Falls das Template maskiert (bbox) ist, müssen wir das berücksichtigen
+                te = self._bot.template_engine
+                bbox = te.templates.get(self._name, {}).get("bbox")
+                
+                # Wenn wir hier ein Live-Bild haben, nutzen wir es für die Anzeige
+                z = self._sl_zoom.value() / 100.0
+                nw, nh = int(pil_crop.size[0] * z), int(pil_crop.size[1] * z)
+                scaled = pil_crop.resize((nw, nh), Image.LANCZOS)
+                pm = _pil_to_qpixmap(scaled)
+                
+                # Canvas informieren: Im Live-Crop ist das Template immer bei 0,0
+                self._canvas.set_template_info((0, 0), (pil_crop.size[0], pil_crop.size[1]))
+                self._canvas.set_pixmap(pm)
+                
+                # Auch für die Binarisierungsvorschau nutzen (optional, aber sinnvoll)
+                self._vorschau_basis_pil = pil_crop
+                self._ocr_vorschau_starten()
+            except Exception as e:
+                print(f"[OCR-Live] Fehler beim Croppen: {e}")
 
     def _farbe_waehlen(self):
         c = QColorDialog.getColor(QColor(*self._target_color), self, "Filter-Farbe wählen")
@@ -511,45 +598,6 @@ class OCRKonfigDialog(QDialog):
             self._ocr_vorschau_starten()
 
     # ── Laden ────────────────────────────────────────────────────────────────
-
-    def _lade_template(self):
-        if Image is None:
-            return
-        import os
-        te = self._bot.template_engine
-        pfad = te.templates.get(self._name, {}).get("pfad") or os.path.join(
-            "templates", f"{self._name}.png")
-        try:
-            # 1. ORIGINAL-PIXEL LADEN (RGBA)
-            pil_orig = Image.open(pfad).convert("RGBA")
-            
-            # 2. RAW-RGB EXTRAHIEREN (Alpha ignorieren)
-            # Wir nehmen die reinen Farbkanäle, damit Text in "unsichtbaren" Bereichen 
-            # für die OCR-Engine wieder sichtbar wird.
-            r, g, b, a = pil_orig.split()
-            pil_view = Image.merge("RGB", (r, g, b))
-            
-            bbox = te.templates.get(self._name, {}).get("bbox")
-            if bbox:
-                bx, by, bw, bh = bbox
-                pil_view = pil_view.crop((bx, by, bx + bw, by + bh))
-            
-            # pil_view wird nun sowohl für die Anzeige als auch für die Engine genutzt
-            self._template_pil = pil_view
-            self._tw, self._th = pil_view.size
-            
-            # WICHTIG: Original-Template-Größe merken für Prozent-Rechnung
-            self._orig_tw, self._orig_th = self._tw, self._th
-            
-            # Anzeige-Pixmap erstellen (Zoom berücksichtigen)
-            z = self._sl_zoom.value() / 100.0
-            nw, nh = int(self._tw * z), int(self._th * z)
-            scaled = pil_view.resize((nw, nh), Image.LANCZOS)
-            pm = _pil_to_qpixmap(scaled)
-            self._canvas.set_pixmap(pm)
-        except Exception:
-            self._template_pil = None
-            return
 
     def _lade_bestehende(self):
         prefix = f"{self._name}_"
@@ -619,6 +667,7 @@ class OCRKonfigDialog(QDialog):
         self._tabelle_layout.addStretch()
 
     def _laden(self, idx: int):
+        if idx >= len(self._eintraege): return
         e = self._eintraege[idx]
         self._name_edit.setText(e[0])
         # set modus
@@ -630,23 +679,14 @@ class OCRKonfigDialog(QDialog):
         self._sl_schaerfe.setValue(int(e[8] * self._f_s))
         self._sl_upscale.setValue(int(e[9] * self._f_u))
         self._cb_farbe.setChecked(e[10])
+        
         if len(e) > 11:
             self._target_color = list(e[11])
             self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
         self._sl_toleranz.setValue(e[12] if len(e) > 12 else 30)
-
-        # Restore auswahl from crop percentages
-        tw_disp = self._canvas.width()
-        th_disp = self._canvas.height()
-        cl, co, cr, cu = e[4], e[2], e[5], e[3]
-        f = e[13] if len(e) > 13 else "box"
-        x0 = int(cl / 100 * tw_disp)
-        y0 = int(co / 100 * th_disp)
-        x1 = int((1 - cr / 100) * tw_disp)
-        y1 = int((1 - cu / 100) * th_disp)
-        self._auswahl = (x0, y0, x1, y1, f)
-        self._canvas.set_auswahl(self._auswahl)
-        self._ocr_vorschau_starten()
+        
+        # Grafik-Update im Canvas & OCR-Vorschau
+        self._on_auswahl_tabelle(idx)
 
     def _loeschen(self, idx: int):
         self._eintraege.pop(idx)
@@ -654,8 +694,42 @@ class OCRKonfigDialog(QDialog):
 
     # ── Interaktion ──────────────────────────────────────────────────────────
 
-    def _on_auswahl(self, auswahl: tuple):
+    def _on_auswahl_canvas(self, auswahl: tuple):
+        """Wird vom Canvas emittiert bei Maus-Aktionen."""
         self._auswahl = auswahl
+        self._ocr_vorschau_starten()
+
+    def _on_auswahl_tabelle(self, idx: int):
+        """Wird aufgerufen, wenn ein Eintrag in der Tabelle angeklickt wird."""
+        if idx >= len(self._eintraege): return
+        e = self._eintraege[idx]
+        
+        # Prozentsätze: oben, unten, links, rechts
+        co, cu, cl, cr = e[2], e[3], e[4], e[5]
+        form = e[13] if len(e) > 13 else (e[6] if len(e) > 6 and isinstance(e[6], str) else "box")
+
+        # Umrechnen: Prozente -> 1:1 Pixel im Template-Raum
+        rel_x0 = cl / 100 * self._orig_tw
+        rel_y0 = co / 100 * self._orig_th
+        rel_x1 = self._orig_tw - (cr / 100 * self._orig_tw)
+        rel_y1 = self._orig_th - (cu / 100 * self._orig_th)
+        
+        # Pixel im Hintergrund-Raum (Capture)
+        ox, oy = getattr(self, "_live_offset", (0, 0))
+        bg_x0 = rel_x0 + ox
+        bg_y0 = rel_y0 + oy
+        bg_x1 = rel_x1 + ox
+        bg_y1 = rel_y1 + oy
+        
+        # Pixel auf dem Canvas (Zoom berücksichtigen)
+        z = self._sl_zoom.value() / 100.0
+        ax0 = int(bg_x0 * z)
+        ay0 = int(bg_y0 * z)
+        ax1 = int(bg_x1 * z)
+        ay1 = int(bg_y1 * z)
+
+        self._auswahl = (ax0, ay0, ax1, ay1, form)
+        self._canvas.set_auswahl(self._auswahl)
         self._ocr_vorschau_starten()
 
     def _on_form_changed(self, form: str):

@@ -211,6 +211,12 @@ class TemplatePanel(QWidget):
             render_node(root_name, tiefe=0)
 
 
+    def auswahl_aufheben(self):
+        """Hebt die aktuelle Auswahl in der Liste auf."""
+        self.liste.clearSelection()
+        self.liste.setCurrentRow(-1)
+        self._last_gruppe = None
+
     def get_auswahl_name(self) -> str | None:
         item = self.liste.currentItem()
         if not item:

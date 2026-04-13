@@ -15,6 +15,8 @@ SETTINGS_DATEI = os.path.join(SETTINGS_ORDNER, "template_settings.json")
 DELETED_ORDNER = os.path.join(TEMPLATES_ORDNER, "_deleted")
 
 class TemplateEngine:
+    SETTINGS_DATEI = SETTINGS_DATEI
+
     def __init__(self, matching_skalierung=0.5, referenz_groesse=None, log_func=None, log_enabled_func=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.log_func = log_func
@@ -143,6 +145,45 @@ class TemplateEngine:
             try:
                 with open(SETTINGS_DATEI, "r", encoding="utf-8") as f: self.settings = json.load(f)
             except Exception: self.settings = {}
+
+    def _settings_speichern(self, neu_laden=False):
+        """Speichert die aktuellen Template-Einstellungen."""
+        try:
+            with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+            if neu_laden:
+                self._templates_laden()
+        except Exception as e:
+            self._log(f"Fehler beim Speichern der Template-Settings: {e}")
+
+    def state_umbenennen_in_settings(self, alter_name, neuer_name):
+        """Aktualisiert alle Referenzen auf einen State-Namen in den Template-Einstellungen."""
+        for t_settings in self.settings.values():
+            if not isinstance(t_settings, dict):
+                continue
+            # Bedingungen aktualisieren
+            for cond in t_settings.get("condition_states", []):
+                if isinstance(cond, dict) and "states" in cond:
+                    if alter_name in cond["states"]:
+                        cond["states"][neuer_name] = cond["states"].pop(alter_name)
+            # Set-States aktualisieren
+            ss = t_settings.get("set_states", {})
+            if isinstance(ss, dict) and alter_name in ss:
+                ss[neuer_name] = ss.pop(alter_name)
+        self._settings_speichern()
+
+    def state_loeschen_in_settings(self, name):
+        """Entfernt alle Referenzen auf einen State-Namen aus den Template-Einstellungen."""
+        for t_settings in self.settings.values():
+            if not isinstance(t_settings, dict):
+                continue
+            # Bedingungen entfernen
+            for cond in t_settings.get("condition_states", []):
+                if isinstance(cond, dict) and "states" in cond:
+                    cond["states"].pop(name, None)
+            # Set-States entfernen
+            t_settings.get("set_states", {}).pop(name, None)
+        self._settings_speichern()
 
     def _templates_laden(self):
         self._settings_laden()
@@ -464,10 +505,7 @@ class TemplateEngine:
             "kategorie": kategorie,
             "ausschnitt_form": ausschnitt_form,
         }
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
-            
-        self._templates_laden()
+        self._settings_speichern(neu_laden=True)
 
     def template_umbenennen(self, alter_name, neuer_name, neue_gruppe=None):
         """Benennt ein Template und alle seine Varianten um oder verschiebt sie."""
@@ -518,9 +556,7 @@ class TemplateEngine:
                 suffix = g[len(alter_basis):]
                 self.settings[k]["gruppe"] = (neue_gruppe if neue_gruppe else neuer_basis) + suffix
 
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
-        self._templates_laden()
+        self._settings_speichern(neu_laden=True)
 
     def gruppe_umbenennen(self, alter_name, neuer_name, neue_uebergeordnete_gruppe=None):
         """Benennt eine Gruppe um oder verschiebt sie: verschiebt Ordner + cascadiert Vollpfade."""
@@ -601,9 +637,7 @@ class TemplateEngine:
             self.settings[neuer_name]["gruppe"] = neuer_vollpfad if parent else ""
             self._log(f"  Eintrag umbenannt: '{alter_name}' → '{neuer_name}'")
 
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
-        self._templates_laden()
+        self._settings_speichern(neu_laden=True)
 
     def _ordner_aufraumen(self, ordner):
         """Löscht leere Ordner rekursiv bis zum templates/-Wurzelordner."""
@@ -625,9 +659,7 @@ class TemplateEngine:
             
         self.templates.pop(name, None)
         self.settings.pop(name, None)
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
-        self._gpu_cache = {}
+        self._settings_speichern(neu_laden=True)
 
     def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None, scan_regions=None):
         """Speichert eine passive Gruppe (kein Bild, nur Bedingungen) und legt den Ordner an."""
@@ -649,9 +681,7 @@ class TemplateEngine:
         # Ordner nach Settings-Update bauen (Hierarchie wird über _gruppe_ordnerpfad aufgelöst)
         ordner = self._gruppe_ordnerpfad(gruppe_name)
         os.makedirs(ordner, exist_ok=True)
-        with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.settings, f, indent=2, ensure_ascii=False)
-        self._templates_laden()
+        self._settings_speichern(neu_laden=True)
 
     def gruppe_config_loeschen(self, gruppe_name, mit_inhalt=False):
         """Entfernt eine Gruppe und löscht optional alle enthaltenen Templates."""
@@ -675,8 +705,7 @@ class TemplateEngine:
                         self._backup_zu_deleted(master_pfad)
 
                 self.settings.pop(gruppe_name, None)
-                with open(SETTINGS_DATEI, "w", encoding="utf-8") as f:
-                    json.dump(self.settings, f, indent=2, ensure_ascii=False)
+                self._settings_speichern(neu_laden=False)
                 
                 if mit_inhalt and os.path.exists(ordner):
                     try: shutil.rmtree(ordner)

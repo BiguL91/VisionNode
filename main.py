@@ -412,16 +412,20 @@ class TilesBotWindow(QMainWindow):
         # Workflow-Templates
         wt_panel = CollapsiblePanel("WORKFLOW TEMPLATES", expanded=True, stretch=True)
         self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=False)
-        self.template_panel.liste.itemClicked.connect(
-            lambda: setattr(self, "_aktiver_template_panel", self.template_panel))
+        def select_workflow():
+            self._aktiver_template_panel = self.template_panel
+            self.state_template_panel.auswahl_aufheben()
+        self.template_panel.liste.itemClicked.connect(select_workflow)
         wt_panel.content_layout.addWidget(self.template_panel)
         l.addWidget(wt_panel, stretch=2)
 
         # State-Templates
         st_panel = CollapsiblePanel("STATE TEMPLATES", expanded=True)
         self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=False)
-        self.state_template_panel.liste.itemClicked.connect(
-            lambda: setattr(self, "_aktiver_template_panel", self.state_template_panel))
+        def select_state():
+            self._aktiver_template_panel = self.state_template_panel
+            self.template_panel.auswahl_aufheben()
+        self.state_template_panel.liste.itemClicked.connect(select_state)
         st_panel.content_layout.addWidget(self.state_template_panel)
         l.addWidget(st_panel)
 
@@ -1016,8 +1020,7 @@ class TilesBotWindow(QMainWindow):
             if name not in self.template_engine.settings:
                 self.template_engine.settings[name] = {}
             self.template_engine.settings[name]["condition_states"] = conditions
-            with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
-                json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self.template_engine._settings_speichern()
             self.app.reload_templates()
             self._panels_aktualisieren()
             self._log(f"Gruppen-Konfiguration gespeichert: {gruppe_name}")
@@ -1227,33 +1230,18 @@ class TilesBotWindow(QMainWindow):
             _, neuer_name = result
             alter_wert = self.app.state.game_states.pop(alter_name, False)
             self.app.state.game_states[neuer_name] = alter_wert
+            
             # Template-Settings aktualisieren
-            for t_settings in self.template_engine.settings.values():
-                if not isinstance(t_settings, dict):
-                    continue
-                for cond in t_settings.get("condition_states", []):
-                    if isinstance(cond, dict) and "states" in cond:
-                        if alter_name in cond["states"]:
-                            cond["states"][neuer_name] = cond["states"].pop(alter_name)
-                ss = t_settings.get("set_states", {})
-                if isinstance(ss, dict) and alter_name in ss:
-                    ss[neuer_name] = ss.pop(alter_name)
-            with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
-                json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+            self.template_engine.state_umbenennen_in_settings(alter_name, neuer_name)
+            
             self.state_panel.aktualisieren(dict(self.app.state.game_states))
             self._log(f"State umbenannt: {alter_name} → {neuer_name}")
 
     def _state_loeschen(self, name: str):
         self.app.state.game_states.pop(name, None)
-        for t_settings in self.template_engine.settings.values():
-            if not isinstance(t_settings, dict):
-                continue
-            for cond in t_settings.get("condition_states", []):
-                if isinstance(cond, dict) and "states" in cond:
-                    cond["states"].pop(name, None)
-            t_settings.get("set_states", {}).pop(name, None)
-        with open(self.template_engine.SETTINGS_DATEI, "w", encoding="utf-8") as f:
-            json.dump(self.template_engine.settings, f, indent=2, ensure_ascii=False)
+        # Template-Settings aktualisieren
+        self.template_engine.state_loeschen_in_settings(name)
+        
         self.state_panel.aktualisieren(dict(self.app.state.game_states))
         self._log(f"State-Variable gelöscht: {name}")
 
@@ -1284,7 +1272,42 @@ class TilesBotWindow(QMainWindow):
         dlg.exec()
 
     def _liste_bearbeiten_dialog(self, listen_dict: dict):
-        dlg = DatenListeEditorQt(listen_dict, parent=self)
+        ocr_func = lambda n: {**self.app.state.ocr_values, **self.app.state.template_ocr_values}.get(n)
+        dlg = DatenListeEditorQt(listen_dict, ocr_state_func=ocr_func, parent=self)
+        
+        # OCR-Variablen strukturiert sammeln: { Kategorie: { Template: [ (VarAnzeige, VarTech), ... ] } }
+        struk = {}
+
+        # 1. Feste Regionen
+        feste = sorted(self.ocr_engine.regionen.keys())
+        if feste:
+            struk["Global"] = {"Globale Regionen": [(f, f) for f in feste]}
+        
+        # 2. Template-OCR
+        t_ocr_konf = self.ocr_engine.template_ocr_konfigurationen()
+        for en, k in t_ocr_konf.items():
+            tn = k.get("template", "")
+            kat = self.template_engine.settings.get(tn, {}).get("kategorie", "workflow")
+            
+            if kat not in struk: struk[kat] = {}
+            if tn not in struk[kat]: struk[kat][tn] = []
+            
+            # Anzeige-Name für das Menü säubern (Präfix weg)
+            v_anzeige = en
+            prefix = f"{tn}_"
+            if en.startswith(prefix):
+                v_anzeige = en[len(prefix):]
+            
+            struk[kat][tn].append((v_anzeige, en))
+
+        # Sortieren innerhalb der Struktur
+        sorted_struk = {}
+        for kat in sorted(struk.keys()):
+            sorted_struk[kat] = {}
+            for tn in sorted(struk[kat].keys()):
+                sorted_struk[kat][tn] = sorted(struk[kat][tn])
+        
+        dlg.set_ocr_vars(sorted_struk)
         dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)
         dlg.show()
 
