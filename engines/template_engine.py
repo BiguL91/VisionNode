@@ -85,6 +85,30 @@ class TemplateEngine:
             for f in dateien:
                 if f.endswith(".png"): aktuelle_pngs.add(f[:-4])
 
+        settings_pfad = os.path.join(SETTINGS_ORDNER, "template_settings.json")
+        gueltige_keys = set(aktuelle_pngs)
+        
+        # Passive Gruppen validieren (Ordner muss existieren)
+        if os.path.exists(settings_pfad):
+            try:
+                with open(settings_pfad, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    
+                    def get_ordnerpfad(g_name, s):
+                        kat = s.get("kategorie", "workflow")
+                        parent = s.get("gruppe", "")
+                        if parent and parent != g_name:
+                            return os.path.join(TEMPLATES_ORDNER, kat, *parent.split("/"), g_name)
+                        return os.path.join(TEMPLATES_ORDNER, kat, g_name)
+
+                    for k, v in data.items():
+                        if isinstance(v, dict) and v.get("typ") == "passiv_gruppe":
+                            ordner = get_ordnerpfad(k, v)
+                            if os.path.isdir(ordner):
+                                gueltige_keys.add(k)
+            except Exception:
+                pass
+
         json_dateien = [
             os.path.join(SETTINGS_ORDNER, "template_settings.json"),
             os.path.join(SETTINGS_ORDNER, "template_farben.json"),
@@ -98,13 +122,7 @@ class TemplateEngine:
                     for k, v in data.items():
                         if k.startswith("_"): # Interne Keys behalten
                             neu[k] = v
-                            continue
-                        
-                        typ = v.get("typ") if isinstance(v, dict) else None
-                        if typ == "template":
-                            if k in aktuelle_pngs: neu[k] = v
-                        else:
-                            # Gruppen behalten wir erst mal (da sie kein eigenes Bild haben müssen)
+                        elif k in gueltige_keys:
                             neu[k] = v
                             
                     if len(neu) != len(data):

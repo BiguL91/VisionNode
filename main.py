@@ -865,14 +865,33 @@ class TilesBotWindow(QMainWindow):
         
         if msg.clickedButton() != btn_ja:
             return
+            
         typ = self.template_engine.settings.get(name, {}).get("typ", "template")
+        
+        # Alle betroffenen Elemente sammeln, um OCR und Klicks zu bereinigen
+        zu_loeschen = [name]
         if typ in ("passiv_gruppe", "aktiv_gruppe"):
-            self.template_engine.gruppe_config_loeschen(name, mit_inhalt=False)
+            zu_loeschen.extend(self.template_engine.get_kinder(name))
+            self.template_engine.gruppe_config_loeschen(name, mit_inhalt=True)
         else:
             self.template_engine.template_loeschen(name)
+
+        # OCR-Variablen und Klickzonen für alle betroffenen Elemente löschen
+        for element in zu_loeschen:
+            try:
+                self.ocr_engine.template_ocr_alle_loeschen(element)
+            except Exception:
+                pass
+            
+            try:
+                self.action_engine.klickzone_loeschen(element)
+            except Exception:
+                pass
+
         self.app.reload_templates()
         self._panels_aktualisieren()
-        self._log(f"Gelöscht: {name}")
+        info_text = f" (inkl. {len(zu_loeschen)-1} Unterelementen)" if len(zu_loeschen) > 1 else ""
+        self._log(f"Gelöscht: {name}{info_text}")
 
     def _template_neu_laden(self):
         self.app.reload_templates()
@@ -1003,7 +1022,29 @@ class TilesBotWindow(QMainWindow):
             self._panels_aktualisieren()
             self._log(f"Gruppen-Konfiguration gespeichert: {gruppe_name}")
 
+        def on_geloescht(gruppe_name):
+            zu_loeschen = [gruppe_name] + self.template_engine.get_kinder(gruppe_name)
+            self.template_engine.gruppe_config_loeschen(gruppe_name, mit_inhalt=True)
+            
+            # OCR-Variablen und Klickzonen für alle betroffenen Elemente löschen
+            for element in zu_loeschen:
+                try:
+                    self.ocr_engine.template_ocr_alle_loeschen(element)
+                except Exception:
+                    pass
+                
+                try:
+                    self.action_engine.klickzone_loeschen(element)
+                except Exception:
+                    pass
+
+            self.app.reload_templates()
+            self._panels_aktualisieren()
+            info_text = f" (inkl. {len(zu_loeschen)-1} Unterelementen)" if len(zu_loeschen) > 1 else ""
+            self._log(f"Gruppen-Konfiguration gelöscht: {gruppe_name}{info_text}")
+
         dlg.gespeichert.connect(on_gespeichert)
+        dlg.geloescht.connect(on_geloescht)
         dlg.exec()
 
     # ── Passiv-Gruppe ─────────────────────────────────────────────────────────
