@@ -175,6 +175,10 @@ QPushButton#btn_simulate {
     font-size: 11px;
     padding: 2px 10px;
     border: none;
+    min-width: 85px;
+    max-width: 85px;
+    min-height: 27px;
+    max-height: 27px;
 }
 
 QPushButton#btn_simulate:hover {
@@ -230,13 +234,6 @@ QPushButton#btn_live_select:hover {
 QComboBox#formula_operator {
     color: #ffca28;
     font-weight: bold;
-}
-
-QPushButton#btn_operand_delete {
-    background-color: #3a1a1a;
-    color: #da3633;
-    border: none;
-    border-radius: 2px;
 }
 
 QPushButton#btn_add_var {
@@ -322,6 +319,8 @@ QPushButton#btn_calculation_add {
     border-radius: 3px;
     font-size: 10px;
     padding: 2px 8px;
+    min-height: 24px;
+    max-height: 24px;
 }
 
 QPushButton#btn_calculation_add[type="zwischen"] {
@@ -338,16 +337,6 @@ QPushButton#btn_calculation_add[type="ausgabe"] {
 QFrame#structure_row {
     background-color: #1a1a1a;
     border-radius: 2px;
-}
-
-QPushButton#btn_structure_delete {
-    background-color: transparent;
-    color: #555555;
-    border: none;
-}
-
-QPushButton#btn_structure_delete:hover {
-    color: #da3633;
 }
 
 /* Mapping-Tab */
@@ -389,14 +378,6 @@ QLabel#unit_label_value {
     color: #aaaaaa;
     font-family: "Consolas";
     font-size: 13px;
-}
-
-QPushButton#btn_unit_delete {
-    background-color: transparent;
-    color: #da3633;
-    font-weight: bold;
-    font-size: 14px;
-    border: none;
 }
 
 QLabel#dialog_header_title_gold_small {
@@ -504,6 +485,8 @@ QPushButton#btn_logic_net {
     background-color: #333333;
     font-size: 11px;
     border: 1px solid #444444;
+    min-height: 27px;
+    max-height: 27px;
 }
 
 QPushButton#btn_logic_net:hover {

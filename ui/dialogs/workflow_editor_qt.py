@@ -843,11 +843,9 @@ class WorkflowEditorDialogQt(QDialog):
                 m_sp.setRange(0, 9999); m_sp.setValue(int(aus.get("max_runs", 0)))
                 m_sp.setFixedWidth(70); m_sp.setProperty("class", "input_dark")
 
-                btn_up = QPushButton("↑"); btn_up.setFixedWidth(28)
-                btn_dn = QPushButton("↓"); btn_dn.setFixedWidth(28)
-                btn_dl = QPushButton("✕"); btn_dl.setFixedWidth(28)
-                btn_dl.setObjectName("btn_del")
-                btn_dl.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                btn_up = QPushButton("↑"); btn_up.setObjectName("btn_sm")
+                btn_dn = QPushButton("↓"); btn_dn.setObjectName("btn_sm")
+                btn_dl = QPushButton("✕"); btn_dl.setObjectName("btn_del_sm")
 
                 def _up(idx=i):
                     if idx > 0:
@@ -924,7 +922,7 @@ class WorkflowEditorDialogQt(QDialog):
         lay.addWidget(edit)
 
         btn = QPushButton("▾")
-        btn.setFixedWidth(28)
+        btn.setObjectName("btn_sm")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         menu = self._build_template_menu(edit, parent)
         btn.setMenu(menu)
@@ -972,7 +970,7 @@ class WorkflowEditorDialogQt(QDialog):
         edit = QLineEdit(current)
         edit.setProperty("class", "input_dark")
         btn = QPushButton("▾")
-        btn.setFixedWidth(28)
+        btn.setObjectName("btn_sm")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         container = QWidget()

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHeaderView
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
     zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
@@ -70,8 +71,7 @@ class FormelBuilder(QWidget):
                     self._slot_widget(self._formel[i + 1], i + 1)
                     # Löschen-Button
                     btn_del = QPushButton("–")
-                    btn_del.setFixedSize(22, 22)
-                    btn_del.setObjectName("btn_operand_delete")
+                    btn_del.setObjectName("btn_del_sm")
                     btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_del.clicked.connect(lambda _, ix=i: self._operand_loeschen(ix))
                     self._layout.addWidget(btn_del)
@@ -181,9 +181,8 @@ class TransformBlock(QFrame):
 
         z1.addStretch()
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_del")
-        btn_del.setFixedSize(22, 22)
-        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+        btn_del.setObjectName("btn_del_sm")
+        btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(t["id"]))
         z1.addWidget(btn_del)
         layout.addLayout(z1)
@@ -265,9 +264,8 @@ class BerechnungsBlock(QFrame):
         kopf.addStretch()
 
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_del")
-        btn_del.setFixedSize(22, 22)
-        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+        btn_del.setObjectName("btn_del_sm")
+        btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(b["id"]))
         kopf.addWidget(btn_del)
         layout.addLayout(kopf)
@@ -380,7 +378,7 @@ class DatenListeEditorQt(QDialog):
 
         btn_row = QHBoxLayout()
         btn_del_liste = QPushButton("✕ Liste löschen")
-        btn_del_liste.setObjectName("btn_del")
+        btn_del_liste.setObjectName("btn_del_sm")
         btn_del_liste.clicked.connect(self._liste_loeschen)
         btn_row.addWidget(btn_del_liste)
         btn_row.addStretch()
@@ -619,9 +617,8 @@ class DatenListeEditorQt(QDialog):
         entry.editingFinished.connect(lambda zid=z["id"], e=entry: self._zeile_speichern(zid, e.text()))
         rl.addWidget(entry)
         btn = QPushButton("✕")
-        btn.setFixedSize(18, 18)
-        btn.setObjectName("btn_structure_delete")
-        btn.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        btn.setObjectName("btn_del_sm")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda _, zid=z["id"]: self._zeile_loeschen(zid))
         rl.addWidget(btn)
         return row
@@ -676,9 +673,8 @@ class DatenListeEditorQt(QDialog):
         rl.addWidget(fmt_c)
 
         btn = QPushButton("✕")
-        btn.setFixedSize(18, 18)
-        btn.setObjectName("btn_structure_delete")
-        btn.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+        btn.setObjectName("btn_del_sm")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda _, sid=sp["id"]: self._spalte_loeschen(sid))
         rl.addWidget(btn)
         return row

@@ -46,7 +46,6 @@ class WorkflowPanel(QWidget):
         self.btn_master_aktiv.setObjectName("btn_master_aktiv")
         self.btn_master_loeschen = QPushButton("✕")
         self.btn_master_loeschen.setObjectName("btn_del_sm")
-        self.btn_master_loeschen.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         for btn in [self.btn_master_neu, self.btn_master_bearbeiten,
                     self.btn_master_aktiv, self.btn_master_loeschen]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -82,7 +81,6 @@ class WorkflowPanel(QWidget):
         self.btn_wf_bearbeiten.setObjectName("btn_sm")
         self.btn_wf_loeschen  = QPushButton("✕")
         self.btn_wf_loeschen.setObjectName("btn_del_sm")
-        self.btn_wf_loeschen.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         for btn in [self.btn_wf_neu, self.btn_wf_bearbeiten, self.btn_wf_loeschen]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             wf_btns.addWidget(btn)

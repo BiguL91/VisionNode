@@ -438,7 +438,6 @@ class TemplateEditorQt(QDialog):
 
         self.btn_var_prev = QPushButton("◀")
         self.btn_var_prev.setObjectName("btn_sm")
-        self.btn_var_prev.setFixedWidth(26)
         self.btn_var_prev.clicked.connect(self._variante_prev)
 
         self.var_label = QLabel("")
@@ -448,12 +447,10 @@ class TemplateEditorQt(QDialog):
 
         self.btn_var_next = QPushButton("▶")
         self.btn_var_next.setObjectName("btn_sm")
-        self.btn_var_next.setFixedWidth(26)
         self.btn_var_next.clicked.connect(self._variante_next)
 
         self.btn_var_del = QPushButton("🗑")
-        self.btn_var_del.setObjectName("btn_del")
-        self.btn_var_del.setFixedWidth(26)
+        self.btn_var_del.setObjectName("btn_del_sm")
         self.btn_var_del.clicked.connect(self._variante_loeschen)
 
         for w in [self.btn_var_prev, self.var_label, self.btn_var_next, self.btn_var_del]:
@@ -966,9 +963,7 @@ class TemplateEditorQt(QDialog):
             chk.setChecked(state_val)
             chk.setProperty("class", "lbl_dim")
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_del")
-            btn_del.setFixedSize(22, 22)
-            btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            btn_del.setObjectName("btn_del_sm")
             z_lay.addWidget(combo)
             z_lay.addWidget(chk)
             z_lay.addStretch()
@@ -1030,8 +1025,7 @@ class TemplateEditorQt(QDialog):
             hdr_lay.addWidget(lbl_nr)
             hdr_lay.addStretch()
             btn_del_g = QPushButton("Gruppe löschen")
-            btn_del_g.setObjectName("btn_sm")
-            btn_del_g.setProperty("class", "lbl_error")
+            btn_del_g.setObjectName("btn_del_sm")
             btn_del_g.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del_g.clicked.connect(lambda _, ref=g: gruppe_loeschen(ref))
             hdr_lay.addWidget(btn_del_g)
@@ -1112,9 +1106,7 @@ class TemplateEditorQt(QDialog):
             chk.setChecked(state_val)
             chk.setProperty("class", "lbl_dim")
             btn_del = QPushButton("✕")
-            btn_del.setObjectName("btn_del")
-            btn_del.setFixedSize(22, 22)
-            btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+            btn_del.setObjectName("btn_del_sm")
             z_lay.addWidget(combo)
             z_lay.addWidget(chk)
             z_lay.addStretch()

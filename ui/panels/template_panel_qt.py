@@ -49,7 +49,6 @@ class TemplatePanel(QWidget):
             self.btn_bearbeiten.setObjectName("btn_sm")
             self.btn_loeschen   = QPushButton("✕ Löschen")
             self.btn_loeschen.setObjectName("btn_del_sm")
-            self.btn_loeschen.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             self.btn_ocr    = QPushButton(f"🔤 {lang.t('btn_ocr')}")
             self.btn_ocr.setObjectName("btn_ocr_action")
             self.btn_klick  = QPushButton(f"🖱 {lang.t('btn_click')}")

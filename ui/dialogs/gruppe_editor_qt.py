@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QButtonGroup, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont
 
 
 class BedingungsZeile(QFrame):
@@ -33,9 +34,7 @@ class BedingungsZeile(QFrame):
         layout.addStretch()
 
         btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_del")
-        btn_del.setFixedSize(24, 24)
-        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+        btn_del.setObjectName("btn_del_sm")
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(self))
         layout.addWidget(btn_del)
@@ -110,7 +109,7 @@ class BedingungsGruppe(QFrame):
         h_layout.addStretch()
 
         btn_del_gruppe = QPushButton("Gruppe löschen")
-        btn_del_gruppe.setObjectName("btn_del")
+        btn_del_gruppe.setObjectName("btn_del_sm")
         btn_del_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del_gruppe.clicked.connect(lambda: self.loeschen_requested.emit(self))
         h_layout.addWidget(btn_del_gruppe)
@@ -260,7 +259,7 @@ class GruppeEditorQt(QDialog):
         btn_row.addWidget(btn_save)
 
         btn_del_cfg = QPushButton("Konfiguration löschen")
-        btn_del_cfg.setObjectName("btn_del")
+        btn_del_cfg.setObjectName("btn_del_sm")
         btn_del_cfg.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del_cfg.clicked.connect(self._loeschen)
         btn_row.addWidget(btn_del_cfg)

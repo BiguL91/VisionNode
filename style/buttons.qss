@@ -47,26 +47,6 @@ QPushButton#btn_new:disabled {
     border-color: #2a2a2a;
 }
 
-/* ── Löschen (roter Akzent) ── */
-QPushButton#btn_del {
-    background-color: #1e1e1e;
-    color: #ff6b6b;
-    border: 1px solid #c0392b;
-    border-radius: 0px;
-    padding: 0px;
-    margin: 0px;
-    min-width: 22px;
-    max-width: 22px;
-    min-height: 22px;
-    max-height: 22px;
-}
-
-QPushButton#btn_del:hover {
-    background-color: #3a1a1a;
-    border-color: #da3633;
-    color: #ff8888;
-}
-
 /* ── Klein neutral ── */
 QPushButton#btn_sm,
 QPushButton#btn_ocr_action,
@@ -210,5 +190,5 @@ QPushButton#btn_ignorieren_action[active="true"] {
 }
 
 /* ── Master-Aktiv ── */
-QPushButton#btn_master_aktiv { color: #ffca28; }
+QPushButton#btn_master_aktiv { color: #ffca28; padding: 4px 8px; min-width: 0; }
 QPushButton#btn_master_aktiv:hover { background-color: #3a3a1a; color: #ffd54f; }

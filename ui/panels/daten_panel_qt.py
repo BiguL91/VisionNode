@@ -303,7 +303,6 @@ class DatenPanel(QWidget):
 
         self.btn_delete = QPushButton("✕")
         self.btn_delete.setObjectName("btn_del_sm")
-        self.btn_delete.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         self.btn_delete.setToolTip("Liste löschen")
         self.btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_delete.clicked.connect(self._liste_loeschen_dialog)
