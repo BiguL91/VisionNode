@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QLabel, QListWidget, QListWidgetItem, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QFont
 
 
 class TemplatePanel(QWidget):
@@ -47,8 +47,9 @@ class TemplatePanel(QWidget):
             self.btn_neu_laden.setObjectName("btn_new_sm")
             self.btn_bearbeiten = QPushButton("✎ Bearbeiten")
             self.btn_bearbeiten.setObjectName("btn_sm")
-            self.btn_loeschen   = QPushButton("✕ Lösch")
+            self.btn_loeschen   = QPushButton("✕ Löschen")
             self.btn_loeschen.setObjectName("btn_del_sm")
+            self.btn_loeschen.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             self.btn_ocr    = QPushButton(f"🔤 {lang.t('btn_ocr')}")
             self.btn_ocr.setObjectName("btn_ocr_action")
             self.btn_klick  = QPushButton(f"🖱 {lang.t('btn_click')}")

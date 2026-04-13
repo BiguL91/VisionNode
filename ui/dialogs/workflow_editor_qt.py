@@ -847,6 +847,7 @@ class WorkflowEditorDialogQt(QDialog):
                 btn_dn = QPushButton("↓"); btn_dn.setFixedWidth(28)
                 btn_dl = QPushButton("✕"); btn_dl.setFixedWidth(28)
                 btn_dl.setObjectName("btn_del")
+                btn_dl.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
 
                 def _up(idx=i):
                     if idx > 0:

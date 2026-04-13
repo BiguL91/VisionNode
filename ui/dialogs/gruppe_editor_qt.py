@@ -35,6 +35,7 @@ class BedingungsZeile(QFrame):
         btn_del = QPushButton("✕")
         btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(24, 24)
+        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(self))
         layout.addWidget(btn_del)

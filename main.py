@@ -68,18 +68,32 @@ def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float
     """BGR numpy → QPixmap, skaliert auf max_w × max_h.
     Gibt (pixmap, skala, offset_x, offset_y) zurück.
     """
-    if cv2 is None:
+    if cv2 is None or frame_bgr is None:
         return QPixmap(), 1.0, 0.0, 0.0
-    h, w = frame_bgr.shape[:2]
-    skala = min(max_w / w, max_h / h)
-    nw, nh = int(round(w * skala)), int(round(h * skala))
-    resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
-    pm = QPixmap.fromImage(qimg)
-    ox = (max_w - nw) / 2.0
-    oy = (max_h - nh) / 2.0
-    return pm, skala, ox, oy
+    
+    try:
+        h, w = frame_bgr.shape[:2]
+        skala = min(max_w / w, max_h / h)
+        nw, nh = int(round(w * skala)), int(round(h * skala))
+        if nw < 1 or nh < 1:
+            return QPixmap(), 1.0, 0.0, 0.0
+
+        resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        
+        # QImage direkt aus dem Buffer erstellen (ohne Kopie)
+        qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
+        # fromImage kopiert die Daten dann in den GPU-Speicher/Pixmap
+        pm = QPixmap.fromImage(qimg)
+        
+        ox = (max_w - nw) / 2.0
+        oy = (max_h - nh) / 2.0
+        return pm, skala, ox, oy
+    except (cv2.error, MemoryError, RuntimeError):
+        # Bei Speicher-Problemen kurz aufräumen
+        import gc
+        gc.collect()
+        return QPixmap(), 1.0, 0.0, 0.0
 
 
 # ── VorschauLabel ─────────────────────────────────────────────────────────────
@@ -307,6 +321,7 @@ class TilesBotWindow(QMainWindow):
         # UI State
         self.einlern_modus = False
         self.ocr_modus     = False
+        self._live_ocr_receiver = None
         self._geplanter_typ      = None
         self._geplante_kategorie = None
         self._aktueller_ausschnitt = None
@@ -471,6 +486,7 @@ class TilesBotWindow(QMainWindow):
         btn_bearb.setObjectName("btn_sm")
         btn_del      = QPushButton("✕ Löschen")
         btn_del.setObjectName("btn_del_sm")
+        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         for btn in [btn_neu, btn_bearb, btn_del]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             zeile1.addWidget(btn)
@@ -768,7 +784,18 @@ class TilesBotWindow(QMainWindow):
             else:
                 self._einlern_dialog_oeffnen()
 
+    def set_live_ocr_receiver(self, receiver):
+        self._live_ocr_receiver = receiver
+
     def _ocr_region_speichern(self, x0: int, y0: int, x1: int, y1: int):
+        # Wenn ein Dialog eine Live-Wahl angefordert hat, schicken wir sie dorthin
+        if hasattr(self, "_live_ocr_receiver") and self._live_ocr_receiver:
+            self._live_ocr_receiver.empfange_live_region(x0, y0, x1, y1)
+            self._live_ocr_receiver = None
+            if self.ocr_modus:
+                self._ocr_modus_umschalten() # Modus wieder aus
+            return
+
         name, ok = QInputDialog.getText(self, "OCR-Region", "Name der Region:")
         if not ok or not name:
             return

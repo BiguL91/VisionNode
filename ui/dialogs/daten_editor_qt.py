@@ -183,6 +183,7 @@ class TransformBlock(QFrame):
         btn_del = QPushButton("✕")
         btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(22, 22)
+        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(t["id"]))
         z1.addWidget(btn_del)
         layout.addLayout(z1)
@@ -266,6 +267,7 @@ class BerechnungsBlock(QFrame):
         btn_del = QPushButton("✕")
         btn_del.setObjectName("btn_del")
         btn_del.setFixedSize(22, 22)
+        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         btn_del.clicked.connect(lambda: self.loeschen_requested.emit(b["id"]))
         kopf.addWidget(btn_del)
         layout.addLayout(kopf)
@@ -619,6 +621,7 @@ class DatenListeEditorQt(QDialog):
         btn = QPushButton("✕")
         btn.setFixedSize(18, 18)
         btn.setObjectName("btn_structure_delete")
+        btn.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         btn.clicked.connect(lambda _, zid=z["id"]: self._zeile_loeschen(zid))
         rl.addWidget(btn)
         return row
@@ -675,6 +678,7 @@ class DatenListeEditorQt(QDialog):
         btn = QPushButton("✕")
         btn.setFixedSize(18, 18)
         btn.setObjectName("btn_structure_delete")
+        btn.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         btn.clicked.connect(lambda _, sid=sp["id"]: self._spalte_loeschen(sid))
         rl.addWidget(btn)
         return row

@@ -133,6 +133,7 @@ class EinheitenDialogQt(QDialog):
             btn_del = QPushButton("✕")
             btn_del.setFixedSize(24, 24)
             btn_del.setObjectName("btn_unit_delete")
+            btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_del.clicked.connect(lambda checked, key=k: self._loeschen(key))
             row_layout.addWidget(btn_del)

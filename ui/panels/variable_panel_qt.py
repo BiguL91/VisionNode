@@ -97,6 +97,7 @@ class VariableGruppe(QFrame):
             if kann_loeschen:
                 btn_del = QPushButton("✕")
                 btn_del.setObjectName("btn_del_sm")
+                btn_del.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
                 btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_del.clicked.connect(lambda _, n=entry_name: self.loeschen_requested.emit(n))
                 zeile.addWidget(btn_del)
