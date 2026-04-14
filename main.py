@@ -1215,7 +1215,7 @@ class TilesBotWindow(QMainWindow):
             self._log(f"Master-Workflow gelöscht: {name}")
 
     def _master_aktiv_setzen(self, name: str):
-        self.workflow_engine.aktiver_master = name
+        self.workflow_engine.master_aktiv_setzen(name)
         self._panels_aktualisieren()
         self._log(f"Aktiver Master-Workflow: {name}")
 

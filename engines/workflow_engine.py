@@ -68,10 +68,17 @@ class WorkflowEngine:
 
     # ── Workflows ────────────────────────────────────────────────────────────
 
-    def workflow_speichern(self, name, graph):
+    def workflow_speichern(self, name, graph, alter_name=None):
         """Speichert einen Workflow-Graphen.
         graph = {"nodes": [...], "connections": [...]}
         """
+        if alter_name and alter_name in self.workflows:
+            self.workflows.pop(alter_name)
+            # Falls im Schedule, dort auch anpassen
+            if alter_name in self.schedule:
+                self.schedule = [name if s == alter_name else s for s in self.schedule]
+                self._schedule_speichern()
+
         self.workflows[name] = graph
         self._workflows_speichern()
 
@@ -85,21 +92,29 @@ class WorkflowEngine:
         if alter_name not in self.workflows:
             return
         self.workflows[neuer_name] = self.workflows.pop(alter_name)
+        # Falls im Schedule, dort auch anpassen
+        if alter_name in self.schedule:
+            self.schedule = [neuer_name if s == alter_name else s for s in self.schedule]
+            self._schedule_speichern()
         self._workflows_speichern()
 
     # ── Master-Workflows ─────────────────────────────────────────────────────
 
-    def master_speichern(self, name, graph):
+    def master_workflow_speichern(self, name, graph, alter_name=None):
+        if alter_name and alter_name in self.master_workflows:
+            self.master_workflows.pop(alter_name)
+            if self.aktiver_master == alter_name:
+                self.aktiver_master = name
         self.master_workflows[name] = graph
         self._master_speichern()
 
-    def master_loeschen(self, name):
+    def master_workflow_loeschen(self, name):
         self.master_workflows.pop(name, None)
         if self.aktiver_master == name:
             self.aktiver_master = None
         self._master_speichern()
 
-    def master_umbenennen(self, alter_name, neuer_name):
+    def master_workflow_umbenennen(self, alter_name, neuer_name):
         if alter_name not in self.master_workflows:
             return
         self.master_workflows[neuer_name] = self.master_workflows.pop(alter_name)

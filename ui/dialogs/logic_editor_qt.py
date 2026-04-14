@@ -350,7 +350,7 @@ class LogicScene(QGraphicsScene):
 
 # ── Parameter-Dialog ──────────────────────────────────────────────────────────
 class NodeParamDialog(QDialog):
-    def __init__(self, node: NodeItem, game_states: dict, templates: list, ocr_vars: dict, parent=None):
+    def __init__(self, node: NodeItem, game_states: dict, templates: list, ocr_vars: dict, parent=None, bot=None):
         super().__init__(parent)
         self.setWindowTitle(f"Konfiguration: {node.data['typ'].upper()}")
         self.setObjectName("logic_param_dialog")
@@ -361,6 +361,7 @@ class NodeParamDialog(QDialog):
         self._game_states = game_states
         self._templates = templates
         self._ocr_vars = ocr_vars
+        self._bot = bot
         self._setup_ui()
 
     def _setup_ui(self):
@@ -401,6 +402,7 @@ class NodeParamDialog(QDialog):
             layout.addWidget(lbl)
 
             entry = QLineEdit(self._node.data.get("wert", "0"))
+            entry.setProperty("class", "input_dark")
             layout.addWidget(entry)
             self._felder["wert"] = entry
 
@@ -414,10 +416,12 @@ class NodeParamDialog(QDialog):
             combo.addItems(["=", "!=", ">", "<", ">=", "<="])
             combo.setCurrentText(self._node.data.get("operator", "="))
             combo.setFixedWidth(70)
+            combo.setProperty("class", "input_dark")
             row.addWidget(combo)
 
             entry = QLineEdit(self._node.data.get("wert", ""))
             entry.setPlaceholderText("Leer = Input 2 verwenden")
+            entry.setProperty("class", "input_dark")
             row.addWidget(entry)
             layout.addLayout(row)
             self._felder["operator"] = combo
@@ -438,7 +442,7 @@ class NodeParamDialog(QDialog):
     def _var_menu_zeigen(self):
         menu = QMenu(self)
         # Game States
-        s_menu = menu.addMenu("🔵 Game States")
+        s_menu = menu.addMenu("🚩 Game States")
         for s in sorted(self._game_states.keys()):
             act = QAction(s, self)
             act.triggered.connect(lambda _, x=s: self._var_btn.setText(f"state::{x}"))
@@ -453,14 +457,26 @@ class NodeParamDialog(QDialog):
             act = QAction(f"🖼 {t}", self)
             act.triggered.connect(lambda _, x=t: self._var_btn.setText(f"ocr::{x}"))
             o_menu.addAction(act)
+        
+        if menu.isEmpty():
+            menu.addAction("(keine Variablen)").setEnabled(False)
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
 
     def _tpl_menu_zeigen(self):
-        menu = QMenu(self)
-        for t in self._templates:
-            act = QAction(t, self)
-            act.triggered.connect(lambda _, x=t: self._tpl_btn.setText(x))
-            menu.addAction(act)
+        if self._bot:
+            from ui.dialogs.workflow_editor_qt import WorkflowEditorDialogQt
+            menu = WorkflowEditorDialogQt.build_template_menu(
+                self._bot, self, lambda n: self._tpl_btn.setText(n)
+            )
+        else:
+            menu = QMenu(self)
+            for t in sorted(self._templates):
+                act = QAction(t, self)
+                act.triggered.connect(lambda _, x=t: self._tpl_btn.setText(x))
+                menu.addAction(act)
+            if not self._templates:
+                menu.addAction("(keine Templates)").setEnabled(False)
+
         menu.exec(self._tpl_btn.mapToGlobal(self._tpl_btn.rect().bottomLeft()))
 
     def _speichern(self):
@@ -489,7 +505,8 @@ class LogicEditorDialogQt(QDialog):
                  game_states: dict | None = None,
                  templates: list | None = None,
                  ocr_vars: dict | None = None,
-                 parent=None):
+                 parent=None,
+                 bot=None):
         super().__init__(parent)
         self.setWindowTitle(f"Logik-Netzwerk: {name}")
         self.setModal(True)
@@ -499,6 +516,7 @@ class LogicEditorDialogQt(QDialog):
         self._game_states = game_states or {}
         self._templates = templates or []
         self._ocr_vars = ocr_vars or {}
+        self._bot = bot
 
         nodes = [dict(n) for n in graph.get("nodes", [])]
         connections = [dict(c) for c in graph.get("connections", [])]
@@ -570,7 +588,7 @@ class LogicEditorDialogQt(QDialog):
     def _edit_node(self, node: NodeItem):
         if node.data["typ"] in ("l_and", "l_or", "l_not", "l_result"):
             return
-        dlg = NodeParamDialog(node, self._game_states, self._templates, self._ocr_vars, self)
+        dlg = NodeParamDialog(node, self._game_states, self._templates, self._ocr_vars, self, bot=self._bot)
         dlg.exec()
 
     def _speichern(self):
@@ -583,9 +601,10 @@ class LogicEditorDialogQt(QDialog):
                    game_states: dict | None = None,
                    templates: list | None = None,
                    ocr_vars: dict | None = None,
-                   parent=None) -> dict | None:
+                   parent=None,
+                   bot=None) -> dict | None:
         result = {}
-        dlg = LogicEditorDialogQt(name, graph, game_states, templates, ocr_vars, parent)
+        dlg = LogicEditorDialogQt(name, graph, game_states, templates, ocr_vars, parent, bot=bot)
         dlg.gespeichert.connect(lambda g: result.update(g))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return result

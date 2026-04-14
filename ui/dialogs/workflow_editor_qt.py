@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QTimer, QPointF, QRectF, QPoint, QSizeF,
-    QMetaObject, Q_ARG,
+    QMetaObject, Q_ARG, pyqtSlot,
 )
 from PyQt6.QtGui import (
     QPainter, QPen, QColor, QFont, QBrush, QPainterPath,
@@ -29,7 +29,7 @@ from PyQt6.QtGui import (
 NODE_BREITE  = 170
 NODE_HOEHE   = 64
 TITEL_HOEHE  = 22
-PORT_RADIUS  = 7
+PORT_RADIUS  = 8
 CANVAS_BG    = "#1a1a1a"
 NODE_BG      = "#2a2a2a"
 
@@ -81,10 +81,7 @@ def _neue_id():
 # ── Node-Canvas ────────────────────────────────────────────────────────────────
 
 class NodeCanvas(QWidget):
-    """Custom-Paint-Widget für den Workflow-Graphen.
-    Signals: node_double_clicked, node_right_clicked, conn_right_clicked,
-             connection_added
-    """
+    """Custom-Paint-Widget für den Workflow-Graphen."""
     node_double_clicked  = pyqtSignal(dict)
     node_right_clicked   = pyqtSignal(dict, QPoint)
     conn_right_clicked   = pyqtSignal(dict, QPoint)
@@ -106,22 +103,18 @@ class NodeCanvas(QWidget):
         self._sim_zustand:  dict = {}
         self._sim_progress: dict = {}
 
-        # Hit-Test-Cache (aktualisiert in paintEvent)
-        self._port_rects: dict[tuple, QRectF] = {}   # (nid, port) → QRectF
-        self._node_rects: dict[str, QRectF]   = {}   # nid → QRectF
-        self._conn_paths: dict[str, tuple]    = {}   # conn_key → (QPainterPath, conn)
+        self._port_rects: dict[tuple, QRectF] = {}
+        self._node_rects: dict[str, QRectF]   = {}
+        self._conn_paths: dict[str, tuple]    = {}
 
-        # Drag-Zustand
         self._drag_node   = None
         self._drag_start  = QPointF()
         self._drag_origin = (0.0, 0.0)
         self._pan_aktiv   = False
         self._pan_last    = QPoint()
         self._conn_drag_aktiv = False
-        self._conn_drag_von   = None   # {"node": …, "port": …}
-        self._conn_drag_pos   = None   # QPointF
-
-    # ── Transform ──────────────────────────────────────────────────────────────
+        self._conn_drag_von   = None
+        self._conn_drag_pos   = None
 
     def _cx(self, wx): return wx * self._scale + self._tx
     def _cy(self, wy): return wy * self._scale + self._ty
@@ -154,8 +147,6 @@ class NodeCanvas(QWidget):
         path.cubicTo(x1 + offset, y1, x2 - offset, y2, x2, y2)
         return path
 
-    # ── Paint ──────────────────────────────────────────────────────────────────
-
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -169,7 +160,6 @@ class NodeCanvas(QWidget):
         self._zeichne_verbindungen(painter)
         self._zeichne_temp_conn(painter)
         self._zeichne_nodes(painter)
-
         painter.end()
 
     def _zeichne_gitter(self, p: QPainter):
@@ -198,100 +188,85 @@ class NodeCanvas(QWidget):
             p2 = self._port_pos(nz, conn["port_ein"])
             farbe = QColor(PORT_FARBEN.get(conn["port_aus"], "#aaaaaa"))
             path  = self._bezier_path(p1.x(), p1.y(), p2.x(), p2.y())
-
-            pen = QPen(farbe, max(1, 2 * self._scale))
-            p.setPen(pen)
+            p.setPen(QPen(farbe, max(1, 2 * self._scale)))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
-
             # Endpunkt-Kreis
-            r = 4
             p.setBrush(QBrush(farbe))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(p2.x(), p2.y()), r, r)
-
+            p.drawEllipse(QPointF(p2.x(), p2.y()), 4, 4)
             key = f"{conn['von']}_{conn['port_aus']}_{conn['zu']}"
             self._conn_paths[key] = (path, conn)
 
     def _zeichne_temp_conn(self, p: QPainter):
         if not (self._conn_drag_aktiv and self._conn_drag_von and self._conn_drag_pos):
             return
-        von_node = self._conn_drag_von["node"]
-        von_port = self._conn_drag_von["port"]
-        p1 = self._port_pos(von_node, von_port)
-        p2 = self._conn_drag_pos
-        farbe = QColor(PORT_FARBEN.get(von_port, "#aaaaaa"))
-        pen = QPen(farbe, 2, Qt.PenStyle.DashLine)
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawLine(p1, p2)
+        p1 = self._port_pos(self._conn_drag_von["node"], self._conn_drag_von["port"])
+        farbe = QColor(PORT_FARBEN.get(self._conn_drag_von["port"], "#aaaaaa"))
+        p.setPen(QPen(farbe, 2, Qt.PenStyle.DashLine))
+        p.drawLine(p1, self._conn_drag_pos)
 
     def _zeichne_nodes(self, p: QPainter):
         for node in self.nodes:
             self._zeichne_node(p, node)
 
     def _zeichne_node(self, p: QPainter, node: dict):
-        s   = self._scale
-        x   = self._cx(node["x"])
-        y   = self._cy(node["y"])
-        w   = NODE_BREITE * s
-        h   = NODE_HOEHE  * s
-        th  = TITEL_HOEHE * s
-        r   = max(3.0, PORT_RADIUS * s)
-        typ  = node["typ"]
-        nid  = node["id"]
+        s = self._scale
+        x = self._cx(node["x"])
+        y = self._cy(node["y"])
+        w = NODE_BREITE * s
+        h = NODE_HOEHE * s
+        th = TITEL_HOEHE * s
+        r = max(3.0, PORT_RADIUS * s)
+        typ = node["typ"]
+        nid = node["id"]
         farbe = QColor(NODE_FARBEN.get(typ, "#555555"))
-
         if typ == "priority_selector":
             aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
-            hat_ein   = True
+            hat_ein = True
         else:
             hat_ein, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
-
+        
         sim = self._sim_zustand.get(nid)
         if sim == "aktiv":
-            rahmen = QColor("#f9a825"); rw = max(3, 3*s); koerper = QColor("#2e2a1a")
+            rahmen = QColor("#f9a825")
+            rw = max(3, 3*s)
+            koerper = QColor("#2e2a1a")
         elif sim == "success":
-            rahmen = QColor("#4caf50"); rw = max(2, 2*s); koerper = QColor("#1a2e1a")
+            rahmen = QColor("#4caf50")
+            rw = max(2, 2*s)
+            koerper = QColor("#1a2e1a")
         elif sim == "failure":
-            rahmen = QColor("#ef5350"); rw = max(2, 2*s); koerper = QColor("#2e1a1a")
+            rahmen = QColor("#ef5350")
+            rw = max(2, 2*s)
+            koerper = QColor("#2e1a1a")
         else:
-            rahmen = farbe; rw = max(1, 2*s); koerper = QColor(NODE_BG)
+            rahmen = farbe
+            rw = max(1, 2*s)
+            koerper = QColor(NODE_BG)
 
         rect = QRectF(x, y, w, h)
         self._node_rects[nid] = rect
-
-        # Schatten
         p.setBrush(QBrush(QColor("#111111")))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(x+3, y+3, w, h), 3, 3)
-
-        # Körper
         p.setBrush(QBrush(koerper))
         p.setPen(QPen(rahmen, rw))
         p.drawRoundedRect(rect, 3, 3)
-
-        # Titelstreifen
         p.setBrush(QBrush(farbe))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(QRectF(x+2, y+2, w-4, th), 2, 2)
-
-        # Titel-Text
-        fs = max(6, int(8 * s))
         p.setPen(QPen(QColor("white")))
-        p.setFont(QFont("Segoe UI", fs, QFont.Weight.Bold))
+        p.setFont(QFont("Segoe UI", max(6, int(8*s)), QFont.Weight.Bold))
         p.drawText(QRectF(x, y, w, th), Qt.AlignmentFlag.AlignCenter, typ.upper())
 
-        # Parameter-Text
         if s > 0.4:
             detail = self._node_detail(node)
             if detail:
                 p.setPen(QPen(QColor("#cccccc")))
                 p.setFont(QFont("Segoe UI", max(5, int(8*s))))
-                p.drawText(QRectF(x+4, y+th, w-8, h-th),
-                           Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, detail)
+                p.drawText(QRectF(x+4, y+th, w-8, h-th), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, detail)
 
-        # Eingangs-Port links
         if hat_ein:
             pp = self._port_pos(node, "in")
             rect_p = QRectF(pp.x()-r, pp.y()-r, 2*r, 2*r)
@@ -300,16 +275,14 @@ class NodeCanvas(QWidget):
             p.drawEllipse(rect_p)
             self._port_rects[(nid, "in")] = rect_p
 
-        # Ausgangs-Ports rechts
         for port in aus_ports:
-            pp    = self._port_pos(node, port)
+            pp = self._port_pos(node, port)
             pfarbe = QColor(PORT_FARBEN.get(port, "#aaaaaa"))
             rect_p = QRectF(pp.x()-r, pp.y()-r, 2*r, 2*r)
             p.setBrush(QBrush(pfarbe))
             p.setPen(QPen(QColor("white"), max(1, s)))
             p.drawEllipse(rect_p)
             self._port_rects[(nid, port)] = rect_p
-
             if len(aus_ports) > 1 and s > 0.5:
                 p.setPen(QPen(pfarbe))
                 p.setFont(QFont("Segoe UI", max(5, int(7*s))))
@@ -322,8 +295,8 @@ class NodeCanvas(QWidget):
             return self._sim_progress[nid]
         if typ in ("suche", "suche_optional", "klick"):
             tpl = node.get("template", "–")
-            to  = node.get("timeout")
-            return tpl + (f"  [{to}s]" if to else "")
+            to = node.get("timeout")
+            return tpl + (f" [{to}s]" if to else "")
         elif typ == "warten":
             return f"{node.get('sekunden', 1.0)} s"
         elif typ == "bedingung":
@@ -332,53 +305,68 @@ class NodeCanvas(QWidget):
             return f"➔ {node.get('workflow', '–')}"
         return ""
 
-    # ── Mouse Events ───────────────────────────────────────────────────────────
+    def _get_port_at(self, pos: QPointF) -> tuple[dict, str, bool] | tuple[None, None, None]:
+        fang_radius_sq = 25 * 25
+        for node in reversed(self.nodes):
+            typ = node["typ"]
+            if typ == "priority_selector":
+                aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
+            else:
+                _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
+            for p_name in aus_ports:
+                pp = self._port_pos(node, p_name)
+                dx = pos.x()-pp.x()
+                dy = pos.y()-pp.y()
+                if (dx*dx + dy*dy) <= fang_radius_sq:
+                    return node, p_name, False
+            if typ != "start":
+                pp = self._port_pos(node, "in")
+                dx = pos.x()-pp.x()
+                dy = pos.y()-pp.y()
+                if (dx*dx + dy*dy) <= fang_radius_sq:
+                    return node, "in", True
+        return None, None, None
 
     def mousePressEvent(self, event):
-        pos = event.position()
-
+        pos_global = event.globalPosition().toPoint()
+        pos_local = self.mapFromGlobal(pos_global)
+        pos_f = QPointF(pos_local)
         if event.button() == Qt.MouseButton.RightButton:
-            self._rechtsklick(pos.toPoint(), event.globalPosition().toPoint())
+            self._rechtsklick(pos_local, pos_global)
             return
-
         if event.button() == Qt.MouseButton.LeftButton:
-            # Ausgangs-Port → Verbindung starten
-            r = max(PORT_RADIUS, PORT_RADIUS * self._scale) + 4
-            hit_rect = QRectF(pos.x()-r, pos.y()-r, 2*r, 2*r)
-            for (nid, port), prect in self._port_rects.items():
-                if port != "in" and prect.intersects(hit_rect):
-                    node = next((n for n in self.nodes if n["id"] == nid), None)
-                    if node:
-                        self._conn_drag_aktiv = True
-                        self._conn_drag_von   = {"node": node, "port": port}
-                        self._conn_drag_pos   = pos
-                        self.setCursor(Qt.CursorShape.CrossCursor)
-                        return
-
-            # Node → Drag starten
-            for nid, nrect in self._node_rects.items():
-                if nrect.contains(pos):
-                    node = next((n for n in self.nodes if n["id"] == nid), None)
-                    if node:
-                        self._drag_node   = node
-                        self._drag_start  = QPointF(self._wx(pos.x()), self._wy(pos.y()))
-                        self._drag_origin = (node["x"], node["y"])
-                        self.setCursor(Qt.CursorShape.ClosedHandCursor)
-                        return
-
-            # Fläche → Pan
+            node, p_name, ist_in = self._get_port_at(pos_f)
+            if node and not ist_in:
+                self._conn_drag_aktiv = True
+                self._conn_drag_von = {"node": node, "port": p_name}
+                self._conn_drag_pos = pos_f
+                self.setCursor(Qt.CursorShape.CrossCursor)
+                self.update()
+                return
+            for node in reversed(self.nodes):
+                nx = self._cx(node["x"])
+                ny = self._cy(node["y"])
+                nw = NODE_BREITE * self._scale
+                nh = NODE_HOEHE * self._scale
+                if QRectF(nx, ny, nw, nh).contains(pos_f):
+                    self._drag_node = node
+                    self._drag_start = QPointF(self._wx(pos_f.x()), self._wy(pos_f.y()))
+                    self._drag_origin = (node["x"], node["y"])
+                    self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                    self.nodes.remove(node)
+                    self.nodes.append(node)
+                    self.update()
+                    return
             self._pan_aktiv = True
-            self._pan_last  = event.position().toPoint()
+            self._pan_last = pos_local
             self.setCursor(Qt.CursorShape.OpenHandCursor)
 
     def mouseMoveEvent(self, event):
         pos = event.position()
-
         if self._conn_drag_aktiv:
             self._conn_drag_pos = pos
             self.update()
             return
-
         if self._drag_node is not None:
             wx = self._wx(pos.x())
             wy = self._wy(pos.y())
@@ -386,25 +374,22 @@ class NodeCanvas(QWidget):
             self._drag_node["y"] = self._drag_origin[1] + (wy - self._drag_start.y())
             self.update()
             return
-
         if self._pan_aktiv:
             cur = event.position().toPoint()
-            dx = cur.x() - self._pan_last.x()
-            dy = cur.y() - self._pan_last.y()
+            self._tx += cur.x() - self._pan_last.x()
+            self._ty += cur.y() - self._pan_last.y()
             self._pan_last = cur
-            self._tx += dx
-            self._ty += dy
             self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._conn_drag_aktiv:
-                self._conn_drag_abschliessen(event.position())
-            self._drag_node   = None
+                self._conn_drag_abschliessen(QPointF(self.mapFromGlobal(event.globalPosition().toPoint())))
+            self._drag_node = None
             self._conn_drag_aktiv = False
-            self._conn_drag_von   = None
-            self._conn_drag_pos   = None
-            self._pan_aktiv       = False
+            self._conn_drag_von = None
+            self._conn_drag_pos = None
+            self._pan_aktiv = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
 
@@ -418,9 +403,9 @@ class NodeCanvas(QWidget):
                     return
 
     def wheelEvent(self, event):
-        delta  = event.angleDelta().y()
+        delta = event.angleDelta().y()
         faktor = 1.12 if delta > 0 else (1 / 1.12)
-        neuer  = max(SCALE_MIN, min(SCALE_MAX, self._scale * faktor))
+        neuer = max(SCALE_MIN, min(SCALE_MAX, self._scale * faktor))
         if neuer == self._scale:
             return
         cx, cy = event.position().x(), event.position().y()
@@ -437,7 +422,6 @@ class NodeCanvas(QWidget):
                 if node:
                     self.node_right_clicked.emit(node, global_pos)
                     return
-        # Verbindung treffen (Toleranz 8px)
         hit_rect = QRectF(pf.x()-5, pf.y()-5, 10, 10)
         stroker = QPainterPathStroker()
         stroker.setWidth(8)
@@ -447,233 +431,160 @@ class NodeCanvas(QWidget):
                 return
 
     def _conn_drag_abschliessen(self, pos: QPointF):
-        von = self._conn_drag_von
-        if von is None:
+        if self._conn_drag_von is None:
             return
-        r = max(PORT_RADIUS, PORT_RADIUS * self._scale) + 5
-        hit_rect = QRectF(pos.x()-r, pos.y()-r, 2*r, 2*r)
-        for (nid, port), prect in self._port_rects.items():
-            if port == "in" and prect.intersects(hit_rect):
-                ziel = next((n for n in self.nodes if n["id"] == nid), None)
-                if ziel and ziel["id"] != von["node"]["id"]:
-                    # Bestehende Verbindung von selben Port entfernen
-                    self.connections = [
-                        c for c in self.connections
-                        if not (c["von"] == von["node"]["id"] and c["port_aus"] == von["port"])
-                    ]
-                    self.connections.append({
-                        "von":      von["node"]["id"],
-                        "port_aus": von["port"],
-                        "zu":       nid,
-                        "port_ein": "in",
-                    })
-                    self._template_vererben(von["node"], ziel)
-                    self.connection_added.emit()
-                return
+        node, p_name, ist_in = self._get_port_at(pos)
+        if node and ist_in and node["id"] != self._conn_drag_von["node"]["id"]:
+            self.connections[:] = [c for c in self.connections if not (c["von"] == self._conn_drag_von["node"]["id"] and c["port_aus"] == self._conn_drag_von["port"])]
+            self.connections.append({"von": self._conn_drag_von["node"]["id"], "port_aus": self._conn_drag_von["port"], "zu": node["id"], "port_ein": "in"})
+            self._template_vererben(self._conn_drag_von["node"], node)
+            self.connection_added.emit()
 
     def _template_vererben(self, von_node, zu_node):
-        if von_node.get("typ") not in ("suche", "suche_optional"):
-            return
-        if zu_node.get("typ") != "klick":
-            return
-        if zu_node.get("template"):
-            return
-        tpl = von_node.get("template", "")
-        if tpl:
-            zu_node["template"] = tpl
+        if von_node.get("typ") in ("suche", "suche_optional") and zu_node.get("typ") == "klick" and not zu_node.get("template"):
+            tpl = von_node.get("template", "")
+            if tpl:
+                zu_node["template"] = tpl
 
 
 # ── Haupt-Dialog ───────────────────────────────────────────────────────────────
 
 class WorkflowEditorDialogQt(QDialog):
-    """Visueller Workflow-Editor (Qt). Ersetzt WorkflowEditorDialog (tkinter).
-
-    Signals:
-        gespeichert(str, dict)  — name, graph
-        abgebrochen()
-    """
     gespeichert = pyqtSignal(str, dict)
     abgebrochen = pyqtSignal()
 
     def __init__(self, parent, bot, name: str, graph: dict, callback=None):
         super().__init__(parent)
-        self.bot      = bot
-        self._callback = callback  # Legacy: callback(name, graph) | callback(None, None)
-
-        self.nodes       = [dict(n) for n in graph.get("nodes", [])]
+        self.bot = bot
+        self._callback = callback
+        self.nodes = [dict(n) for n in graph.get("nodes", [])]
         self.connections = [dict(c) for c in graph.get("connections", [])]
         if not self.nodes:
             self.nodes.append({"id": _neue_id(), "typ": "start", "x": 80, "y": 240})
-
-        self._sim_aktiv    = False
-        self._sim_zustand  = {}
+        self._sim_aktiv = False
+        self._sim_zustand = {}
         self._sim_progress = {}
-
         self.setWindowTitle("Workflow Editor")
         self.resize(960, 640)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
-
         self._setup_ui(name)
         self._sync_canvas()
-
-    # ── UI Aufbau ──────────────────────────────────────────────────────────────
 
     def _setup_ui(self, name: str):
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
-
-        # ── Toolbar ────────────────────────────────────────────────────────────
         tb = QFrame()
         tb.setObjectName("workflow_editor_toolbar")
         tb_lay = QHBoxLayout(tb)
         tb_lay.setContentsMargins(4, 4, 4, 4)
         tb_lay.setSpacing(6)
-
         tb_lay.addWidget(QLabel("Name:"))
         self._name_edit = QLineEdit(name)
         self._name_edit.setFixedWidth(160)
         tb_lay.addWidget(self._name_edit)
-
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
         sep1.setProperty("class", "separator")
         tb_lay.addWidget(sep1)
-
         lbl = QLabel("+ Node:")
         lbl.setProperty("class", "lbl_dim")
         tb_lay.addWidget(lbl)
-
-        typen = [
-            ("Start",    "start"),
-            ("Suche",    "suche"),
-            ("Optional", "suche_optional"),
-            ("Klick",    "klick"),
-            ("Warten",   "warten"),
-            ("Zurück",   "zurueck"),
-            ("Home",     "home"),
-            ("Bedingung","bedingung"),
-            ("Workflow", "call_workflow"),
-            ("Selector", "priority_selector"),
-        ]
+        typen = [("Start","start"),("Suche","suche"),("Optional","suche_optional"),("Klick","klick"),("Warten","warten"),("Zurück","zurueck"),("Home","home"),("Bedingung","bedingung"),("Workflow","call_workflow"),("Selector","priority_selector")]
         for label, typ in typen:
-            farbe = NODE_FARBEN.get(typ, "#555555")
             btn = QPushButton(label)
             btn.setObjectName("btn_add_node")
-            btn.setStyleSheet(f"background-color: {farbe};") # Dynamische Node-Farbe
+            btn.setStyleSheet(f"background-color: {NODE_FARBEN.get(typ, '#555555')};")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, t=typ: self._node_hinzufuegen(t))
             tb_lay.addWidget(btn)
-
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
         sep2.setProperty("class", "separator")
         tb_lay.addWidget(sep2)
-
         self._sim_btn = QPushButton("▶ Simulieren")
         self._sim_btn.setObjectName("btn_simulate")
         self._sim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sim_btn.clicked.connect(self._simulation_toggle)
         tb_lay.addWidget(self._sim_btn)
-
         tb_lay.addStretch()
         root.addWidget(tb)
-
-        # ── Canvas ─────────────────────────────────────────────────────────────
         self._canvas = NodeCanvas()
         self._canvas.node_double_clicked.connect(self._node_parameter_editieren)
         self._canvas.node_right_clicked.connect(self._node_kontext_menu)
         self._canvas.conn_right_clicked.connect(self._verbindung_kontext_menu)
         self._canvas.connection_added.connect(self._sync_canvas)
         root.addWidget(self._canvas, stretch=1)
-
-        # ── Log-Panel ──────────────────────────────────────────────────────────
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setFixedHeight(90)
         self._log.setObjectName("workflow_editor_log")
         root.addWidget(self._log)
-
-        # ── Status + Buttons ───────────────────────────────────────────────────
         bar = QFrame()
         bar.setObjectName("workflow_editor_statusbar")
         bar_lay = QHBoxLayout(bar)
         bar_lay.setContentsMargins(4, 4, 4, 4)
-
         self._status_lbl = QLabel("")
         self._status_lbl.setProperty("class", "lbl_info")
         bar_lay.addWidget(self._status_lbl)
         bar_lay.addStretch()
-
         btn_ab = QPushButton("Abbrechen")
         btn_ab.setObjectName("btn_sm")
         btn_ab.clicked.connect(self._abbrechen)
         bar_lay.addWidget(btn_ab)
-
         btn_sp = QPushButton("Speichern")
         btn_sp.setObjectName("btn_new")
         btn_sp.clicked.connect(self._speichern)
         bar_lay.addWidget(btn_sp)
-
         root.addWidget(bar)
         self._status_aktualisieren()
 
-    # ── Sync ───────────────────────────────────────────────────────────────────
-
+    @pyqtSlot()
     def _sync_canvas(self):
-        self._canvas.nodes       = self.nodes
+        self._canvas.nodes = self.nodes
         self._canvas.connections = self.connections
-        self._canvas._sim_zustand  = self._sim_zustand
+        self._canvas._sim_zustand = self._sim_zustand
         self._canvas._sim_progress = self._sim_progress
         self._canvas.update()
         self._status_aktualisieren()
 
-    # ── Node-Verwaltung ────────────────────────────────────────────────────────
-
     def _node_hinzufuegen(self, typ: str):
-        w  = max(self._canvas.width(), 300)
-        h  = max(self._canvas.height(), 200)
         off = (len(self.nodes) % 8) * 22
-        wx = self._canvas._wx(w / 2) - NODE_BREITE / 2 + off
-        wy = self._canvas._wy(h / 2) - NODE_HOEHE  / 2 + off
+        wx = self._canvas._wx(max(self._canvas.width(),300)/2) - NODE_BREITE/2 + off
+        wy = self._canvas._wy(max(self._canvas.height(),200)/2) - NODE_HOEHE/2 + off
         node = {"id": _neue_id(), "typ": typ, "x": wx, "y": wy}
         if typ in ("suche", "suche_optional"):
-            node["template"] = ""; node["timeout"] = 10
+            node["template"] = ""
+            node["timeout"] = 10
         elif typ == "klick":
             node["template"] = ""
         elif typ == "warten":
             node["sekunden"] = 2.0
         elif typ == "bedingung":
-            node["variable"] = ""; node["operator"] = ">"; node["wert"] = "0"
+            node["variable"] = ""
+            node["operator"] = ">"
+            node["wert"] = "0"
         elif typ == "priority_selector":
-            node["ausgaenge"] = [
-                {"port": "Prio 1", "variable": "", "operator": "=",
-                 "wert": "true", "cooldown": 0, "max_runs": 0}
-            ]
+            node["ausgaenge"] = [{"port": "Prio 1", "variable": "", "operator": "=", "wert": "true", "cooldown": 0, "max_runs": 0}]
         self.nodes.append(node)
         self._sync_canvas()
 
     def _node_loeschen(self, node: dict):
         nid = node["id"]
-        self.nodes       = [n for n in self.nodes if n["id"] != nid]
-        self.connections = [c for c in self.connections
-                            if c["von"] != nid and c["zu"] != nid]
+        self.nodes = [n for n in self.nodes if n["id"] != nid]
+        self.connections = [c for c in self.connections if c["von"] != nid and c["zu"] != nid]
         self._sync_canvas()
 
     def _verbindung_loeschen(self, conn: dict):
         if conn in self.connections:
             self.connections.remove(conn)
-        self._sync_canvas()
+            self._sync_canvas()
 
     def _node_kontext_menu(self, node: dict, global_pos: QPoint):
         menu = QMenu(self)
-        menu.addAction(
-            f"Node löschen ({node['typ']})",
-            lambda: self._node_loeschen(node))
+        menu.addAction(f"Node löschen ({node['typ']})", lambda: self._node_loeschen(node))
         menu.addSeparator()
-        menu.addAction(
-            "Parameter bearbeiten",
-            lambda: self._node_parameter_editieren(node))
+        menu.addAction("Parameter bearbeiten", lambda: self._node_parameter_editieren(node))
         menu.exec(global_pos)
 
     def _verbindung_kontext_menu(self, conn: dict, global_pos: QPoint):
@@ -681,51 +592,43 @@ class WorkflowEditorDialogQt(QDialog):
         menu.addAction("Verbindung löschen", lambda: self._verbindung_loeschen(conn))
         menu.exec(global_pos)
 
-    # ── Parameter-Editor ───────────────────────────────────────────────────────
-
     def _node_parameter_editieren(self, node: dict):
         typ = node.get("typ")
         if typ in ("start", "zurueck", "home"):
             return
-
         dlg = QDialog(self)
         dlg.setWindowTitle(f"{typ.upper()} – Parameter")
         dlg.setObjectName("workflow_param_dialog")
         dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         dlg.setMinimumWidth(420)
-
         lay = QVBoxLayout(dlg)
         lay.setContentsMargins(16, 12, 16, 12)
         lay.setSpacing(8)
-
         form = QFormLayout()
         form.setSpacing(6)
-        felder: dict = {}
-
+        felder = {}
         def add_row(label, key, widget):
             form.addRow(QLabel(label), widget)
             felder[key] = widget
-
         if typ in ("suche", "suche_optional", "klick"):
             tpl_btn = self._template_picker_btn(node.get("template", ""), dlg)
             add_row("Template:", "template", tpl_btn)
             if typ in ("suche", "suche_optional"):
                 sp = QSpinBox()
-                sp.setRange(1, 300); sp.setValue(int(node.get("timeout", 10)))
+                sp.setRange(1, 300)
+                sp.setValue(int(node.get("timeout", 10)))
                 sp.setProperty("class", "input_dark")
                 add_row("Timeout (s):", "timeout", sp)
-
         elif typ == "warten":
             sp = QDoubleSpinBox()
-            sp.setRange(0.1, 300.0); sp.setSingleStep(0.5)
+            sp.setRange(0.1, 300.0)
+            sp.setSingleStep(0.5)
             sp.setValue(float(node.get("sekunden", 2.0)))
             sp.setProperty("class", "input_dark")
             add_row("Sekunden:", "sekunden", sp)
-
         elif typ == "bedingung":
             var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg)
             add_row("Variable:", "variable", var_btn)
-
             op_widget = QWidget()
             op_lay = QHBoxLayout(op_widget)
             op_lay.setContentsMargins(0,0,0,0)
@@ -740,72 +643,55 @@ class WorkflowEditorDialogQt(QDialog):
                 op_lay.addWidget(rb)
             felder["operator"] = op_selected
             add_row("Operator:", "operator_widget", op_widget)
-
             wert_edit = QLineEdit(str(node.get("wert", "0")))
             wert_edit.setProperty("class", "input_dark")
             add_row("Wert:", "wert", wert_edit)
-
         elif typ == "call_workflow":
             wf_btn = self._workflow_picker_btn(node.get("workflow", ""), dlg)
             add_row("Workflow:", "workflow", wf_btn)
-
         elif typ == "priority_selector":
             self._selector_editor(dlg, lay, node)
-            return  # Eigene Button-Leiste
-
+            return
         lay.addLayout(form)
-
-        # Buttons
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-
         def anwenden():
             for key, w in felder.items():
                 if key == "operator":
                     node["operator"] = w[0]
-                elif key == "template":
-                    node["template"] = w.text()
-                elif key == "variable":
-                    node["variable"] = w.text()
-                elif key == "workflow":
-                    node["workflow"] = w.text()
-                elif isinstance(w, QSpinBox):
-                    node[key] = w.value()
-                elif isinstance(w, QDoubleSpinBox):
+                elif key in ("template", "variable", "workflow"):
+                    val = w.text()
+                    node[key] = "" if val == "Bitte wählen..." else val
+                elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
                     node[key] = w.value()
                 elif isinstance(w, QLineEdit):
                     node[key] = w.text().strip()
             dlg.accept()
             self._sync_canvas()
-
-        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_sm")
-        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_new")
+        btn_ab = QPushButton("Abbrechen")
+        btn_ab.setObjectName("btn_sm")
+        btn_ok = QPushButton("Anwenden")
+        btn_ok.setObjectName("btn_new")
         btn_ab.clicked.connect(dlg.reject)
         btn_ok.clicked.connect(anwenden)
-        btn_row.addWidget(btn_ab); btn_row.addWidget(btn_ok)
+        btn_row.addWidget(btn_ab)
+        btn_row.addWidget(btn_ok)
         lay.addLayout(btn_row)
         dlg.exec()
 
     def _selector_editor(self, parent_dlg: QDialog, lay: QVBoxLayout, node: dict):
-        """Spezieller Editor für priority_selector."""
         ausgaenge_liste = [dict(a) for a in node.get("ausgaenge", [])]
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setObjectName("selector_scroll")
         scroll.setMinimumHeight(200)
         container = QWidget()
-        container.setObjectName("selector_container")
         c_lay = QVBoxLayout(container)
         scroll.setWidget(container)
         lay.addWidget(scroll)
-
         rows_widgets = []
-
         def rebuild():
             for w in container.findChildren(QWidget):
                 w.deleteLater()
-            # Need fresh layout items
             while c_lay.count():
                 c_lay.takeAt(0)
             rows_widgets.clear()
@@ -814,227 +700,198 @@ class WorkflowEditorDialogQt(QDialog):
                 row.setObjectName("selector_row")
                 rl = QHBoxLayout(row)
                 rl.setContentsMargins(4, 2, 4, 2)
-
                 p_edit = QLineEdit(aus.get("port", f"Prio {i+1}"))
                 p_edit.setFixedWidth(100)
                 p_edit.setProperty("class", "input_dark")
-
                 has_logic = aus.get("logic_graph")
                 btn_logic = QPushButton("★ Netzwerk" if has_logic else "🛠 Netzwerk")
                 btn_logic.setObjectName("btn_logic_net")
                 def _edit_logic(a_obj=aus, b=btn_logic):
                     from ui.dialogs.logic_editor_qt import LogicEditorDialogQt
                     g = a_obj.get("logic_graph") or {"nodes": [], "connections": []}
-                    def on_save(new_g):
-                        a_obj["logic_graph"] = new_g
-                        b.setText("★ Netzwerk")
                     dlg2 = LogicEditorDialogQt(
                         name=a_obj.get("port", "Port"), graph=g,
-                        game_states={}, templates=[], ocr_vars={}, parent=parent_dlg)
-                    dlg2.gespeichert.connect(on_save)
+                        game_states=self.bot.app.state.game_states,
+                        templates=list(self.bot.template_engine.templates.keys()),
+                        ocr_vars={"global": self.bot.app.state.ocr_values, "template": self.bot.app.state.template_ocr_values},
+                        parent=parent_dlg, bot=self.bot)
+                    dlg2.gespeichert.connect(lambda ng: (a_obj.__setitem__("logic_graph", ng), b.setText("★ Netzwerk")))
                     dlg2.exec()
                 btn_logic.clicked.connect(_edit_logic)
-
                 c_sp = QDoubleSpinBox()
-                c_sp.setRange(0, 3600); c_sp.setValue(float(aus.get("cooldown", 0)))
-                c_sp.setFixedWidth(70); c_sp.setProperty("class", "input_dark")
-
+                c_sp.setRange(0, 3600)
+                c_sp.setValue(float(aus.get("cooldown", 0)))
+                c_sp.setFixedWidth(70)
+                c_sp.setProperty("class", "input_dark")
                 m_sp = QSpinBox()
-                m_sp.setRange(0, 9999); m_sp.setValue(int(aus.get("max_runs", 0)))
-                m_sp.setFixedWidth(70); m_sp.setProperty("class", "input_dark")
-
-                btn_up = QPushButton("↑"); btn_up.setObjectName("btn_sm")
-                btn_dn = QPushButton("↓"); btn_dn.setObjectName("btn_sm")
-                btn_dl = QPushButton("✕"); btn_dl.setObjectName("btn_del_sm")
-
-                def _up(idx=i):
-                    if idx > 0:
-                        ausgaenge_liste[idx], ausgaenge_liste[idx-1] = ausgaenge_liste[idx-1], ausgaenge_liste[idx]
-                        rebuild()
-                def _dn(idx=i):
-                    if idx < len(ausgaenge_liste)-1:
-                        ausgaenge_liste[idx], ausgaenge_liste[idx+1] = ausgaenge_liste[idx+1], ausgaenge_liste[idx]
-                        rebuild()
-                def _dl(idx=i):
-                    if len(ausgaenge_liste) > 1:
-                        ausgaenge_liste.pop(idx); rebuild()
-
-                btn_up.clicked.connect(_up); btn_dn.clicked.connect(_dn); btn_dl.clicked.connect(_dl)
-
-                rl.addWidget(p_edit); rl.addWidget(btn_logic)
-                rl.addWidget(QLabel("Wait:")); rl.addWidget(c_sp)
-                rl.addWidget(QLabel("Limit:")); rl.addWidget(m_sp)
-                rl.addWidget(btn_up); rl.addWidget(btn_dn); rl.addWidget(btn_dl)
+                m_sp.setRange(0, 9999)
+                m_sp.setValue(int(aus.get("max_runs", 0)))
+                m_sp.setFixedWidth(70)
+                m_sp.setProperty("class", "input_dark")
+                btn_up = QPushButton("↑")
+                btn_dn = QPushButton("↓")
+                btn_dl = QPushButton("✕")
+                btn_dl.setObjectName("btn_del_sm")
+                
+                # Verwende capture-local variables in lambdas
+                btn_up.clicked.connect(lambda _, x=i: (ausgaenge_liste.insert(x-1, ausgaenge_liste.pop(x)), rebuild()) if x>0 else None)
+                btn_dn.clicked.connect(lambda _, x=i: (ausgaenge_liste.insert(x+1, ausgaenge_liste.pop(x)), rebuild()) if x<len(ausgaenge_liste)-1 else None)
+                btn_dl.clicked.connect(lambda _, x=i: (ausgaenge_liste.pop(x), rebuild()) if len(ausgaenge_liste)>1 else None)
+                
+                rl.addWidget(p_edit)
+                rl.addWidget(btn_logic)
+                rl.addWidget(QLabel("Wait:"))
+                rl.addWidget(c_sp)
+                rl.addWidget(QLabel("Limit:"))
+                rl.addWidget(m_sp)
+                rl.addWidget(btn_up)
+                rl.addWidget(btn_dn)
+                rl.addWidget(btn_dl)
                 c_lay.addWidget(row)
                 rows_widgets.append((p_edit, c_sp, m_sp, aus))
-
+        
         rebuild()
-
         btn_add = QPushButton("+ Ausgang hinzufügen")
         btn_add.setObjectName("btn_new_sm")
-        def _add():
-            ausgaenge_liste.append({"port": f"Prio {len(ausgaenge_liste)+1}",
-                                    "cooldown": 0, "max_runs": 0, "logic_graph": None})
-            rebuild()
-        btn_add.clicked.connect(_add)
+        btn_add.clicked.connect(lambda: (ausgaenge_liste.append({"port": f"Prio {len(ausgaenge_liste)+1}", "cooldown": 0, "max_runs": 0, "logic_graph": None}), rebuild()))
         lay.addWidget(btn_add)
-
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-
         def anwenden():
-            neue_aus = []
-            for (p_edit, c_sp, m_sp, a_obj) in rows_widgets:
-                neue_aus.append({
-                    "port":       p_edit.text(),
-                    "cooldown":   c_sp.value(),
-                    "max_runs":   m_sp.value(),
-                    "logic_graph": a_obj.get("logic_graph"),
-                })
-            node["ausgaenge"] = neue_aus
-            gültige = [a["port"] for a in neue_aus] + ["else"]
-            self.connections = [
-                c for c in self.connections
-                if not (c["von"] == node["id"] and c["port_aus"] not in gültige)
-            ]
+            node["ausgaenge"] = [{"port": p.text(), "cooldown": c.value(), "max_runs": m.value(), "logic_graph": a.get("logic_graph")} for (p,c,m,a) in rows_widgets]
+            gültige = [a["port"] for a in node["ausgaenge"]] + ["else"]
+            self.connections = [c for c in self.connections if not (c["von"] == node["id"] and c["port_aus"] not in gültige)]
             parent_dlg.accept()
             self._sync_canvas()
-
-        btn_ab = QPushButton("Abbrechen"); btn_ab.setObjectName("btn_sm")
-        btn_ok = QPushButton("Anwenden");  btn_ok.setObjectName("btn_new")
+        btn_ab = QPushButton("Abbrechen")
+        btn_ok = QPushButton("Anwenden")
+        btn_ok.setObjectName("btn_new")
         btn_ab.clicked.connect(parent_dlg.reject)
         btn_ok.clicked.connect(anwenden)
-        btn_row.addWidget(btn_ab); btn_row.addWidget(btn_ok)
+        btn_row.addWidget(btn_ab)
+        btn_row.addWidget(btn_ok)
         lay.addLayout(btn_row)
 
-    # ── Picker-Buttons ─────────────────────────────────────────────────────────
-
-    def _template_picker_btn(self, current: str, parent) -> QLineEdit:
-        """Gibt ein QLineEdit+Button-Composite zurück (einfachste sichere Lösung)."""
-        # In Qt: QPushButton mit QMenu als Dropdown
-        container = QWidget()
-        lay = QHBoxLayout(container)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(2)
-
-        edit = QLineEdit(current)
-        edit.setProperty("class", "input_dark")
-        lay.addWidget(edit)
-
-        btn = QPushButton("▾")
-        btn.setObjectName("btn_sm")
+    def _template_picker_btn(self, current: str, parent) -> QPushButton:
+        btn = QPushButton(current or "Bitte wählen...")
+        btn.setObjectName("btn_logic_net")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        menu = self._build_template_menu(edit, parent)
-        btn.setMenu(menu)
-        lay.addWidget(btn)
+        btn.clicked.connect(lambda: self.build_template_menu(self.bot, parent, lambda n: btn.setText(n)).exec(QCursor.pos()))
+        return btn
 
-        # Trick: return the QLineEdit but embed it in a container via a proxy
-        # Simpler: just return the edit directly (user can also type manually)
-        edit._container = container  # keep ref
-        return edit
-
-    def _build_template_menu(self, edit: QLineEdit, parent) -> QMenu:
+    @staticmethod
+    def build_template_menu(bot, parent, on_selected_callback) -> QMenu:
         menu = QMenu(parent)
-        if not self.bot:
-            menu.addAction("(kein Bot)").setEnabled(False)
-            return menu
-        engine   = self.bot.template_engine
+        engine = bot.template_engine
         settings = engine.settings
-
         def _fill_kat(submenu: QMenu, kat: str):
-            nach_gruppen: dict = defaultdict(list)
+            baum = defaultdict(list)
+            alle_keys = set()
             for name, t in engine.templates.items():
                 if name.startswith("_") or "__" in name:
                     continue
-                if settings.get(name, {}).get("kategorie", "workflow") != kat:
+                s = settings.get(name, {})
+                if s.get("kategorie", "workflow") != kat:
                     continue
-                g = (t["gruppe"] or "").strip().replace("\\", "/")
-                nach_gruppen[g].append(name)
-            if not nach_gruppen:
-                submenu.addAction("(keine Templates)").setEnabled(False)
+                alle_keys.add(name)
+                p = s.get("gruppe", "")
+                baum["" if p == name else p].append(name)
+            for s_name, s in settings.items():
+                if s.get("typ") not in ("aktiv_gruppe", "passiv_gruppe") or s.get("kategorie", "workflow") != kat:
+                    continue
+                alle_keys.add(s_name)
+                p = s.get("gruppe", "")
+                if s_name not in baum["" if p == s_name else p]:
+                    baum["" if p == s_name else p].append(s_name)
+            if not alle_keys:
+                submenu.addAction("(keine Einträge)").setEnabled(False)
                 return
-            for name in sorted(nach_gruppen.get("", [])):
-                submenu.addAction(name, lambda n=name: edit.setText(n))
-            for gruppe in sorted(set(nach_gruppen.keys()) - {""}, key=str.lower):
-                sub = submenu.addMenu(f"📁 {gruppe.split('/')[-1]}")
-                for name in sorted(nach_gruppen[gruppe]):
-                    sub.addAction(name, lambda n=name: edit.setText(n))
-
-        wf_menu = menu.addMenu("🔄 Workflow")
-        _fill_kat(wf_menu, "workflow")
-        st_menu = menu.addMenu("🚩 State")
-        _fill_kat(st_menu, "state")
+            ex_gr = {k for k in alle_keys if settings.get(k, {}).get("typ") in ("aktiv_gruppe", "passiv_gruppe")}
+            for p in list(baum.keys()):
+                if p != "" and p not in ex_gr:
+                    baum[""].extend(baum.pop(p))
+            def render(pfad, m: QMenu):
+                items = sorted(baum.get(pfad, []), key=lambda x: (settings.get(x, {}).get("typ") not in ("aktiv_gruppe", "passiv_gruppe"), x.lower()))
+                for name in items:
+                    s = settings.get(name, {})
+                    typ = s.get("typ", "template")
+                    if typ == "aktiv_gruppe":
+                        sub = m.addMenu(f"★ {name}")
+                        sub.addAction(f"Auswählen: {name}", lambda n=name: on_selected_callback(n))
+                        sub.addSeparator()
+                        render(name, sub)
+                    elif typ == "passiv_gruppe":
+                        sub = m.addMenu(f"📦 {name}")
+                        render(name, sub)
+                        if sub.isEmpty():
+                            sub.addAction("(leer)").setEnabled(False)
+                    else:
+                        m.addAction(name, lambda n=name: on_selected_callback(n))
+            render("", submenu)
+        wf = menu.addMenu("🔄 Workflow")
+        _fill_kat(wf, "workflow")
+        st = menu.addMenu("🚩 State")
+        _fill_kat(st, "state")
         return menu
 
-    def _variablen_picker_btn(self, current: str, parent) -> QLineEdit:
-        edit = QLineEdit(current)
-        edit.setProperty("class", "input_dark")
-        btn = QPushButton("▾")
-        btn.setObjectName("btn_sm")
+    def _variablen_picker_btn(self, current: str, parent) -> QPushButton:
+        btn = QPushButton(current or "Bitte wählen...")
+        btn.setObjectName("btn_logic_net")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        def show():
+            menu = QMenu(parent)
+            st_sub = menu.addMenu("🚩 State")
+            try:
+                for n in sorted(self.bot.app.state.game_states.keys()):
+                    st_sub.addAction(n, lambda x=n: btn.setText(f"state::{x}"))
+            except:
+                st_sub.addAction("(keine)").setEnabled(False)
+            
+            ocr_sub = menu.addMenu("🔤 OCR")
+            if hasattr(self.bot.app.state, "get_all_ocr"):
+                ocr_vars = self.bot.app.state.get_all_ocr()
+            else:
+                ocr_vars = {**self.bot.app.state.ocr_values, **self.bot.app.state.template_ocr_values}
+            try:
+                for n in sorted(ocr_vars.keys()):
+                    ocr_sub.addAction(n, lambda x=n: btn.setText(f"ocr::{x}"))
+            except:
+                ocr_sub.addAction("(keine)").setEnabled(False)
+            
+            db_sub = menu.addMenu("📊 Daten")
+            try:
+                from core import daten_manager as dm
+                for l in dm.alle_listen():
+                    ls = db_sub.addMenu(l["name"])
+                    for t in dm.transformationen_der_liste(l["id"]):
+                        ls.addAction(t["name"], lambda ln=l["name"], tn=t["name"]: btn.setText(f"db::{ln}::{tn}"))
+                    for b in dm.berechnungen_der_liste(l["id"]):
+                        ls.addAction(b["name"], lambda ln=l["name"], bn=b["name"]: btn.setText(f"db::{ln}::{bn}"))
+            except:
+                db_sub.addAction("(DB Fehler)").setEnabled(False)
+            menu.exec(QCursor.pos())
+        btn.clicked.connect(show)
+        return btn
 
-        container = QWidget()
-        lay = QHBoxLayout(container)
-        lay.setContentsMargins(0,0,0,0); lay.setSpacing(2)
-        lay.addWidget(edit); lay.addWidget(btn)
-        edit._container = container
-
-        menu = QMenu(parent)
-        st_sub = menu.addMenu("🔵 State")
-        try:
-            for name in sorted(self.bot.app.state.game_states.keys()):
-                st_sub.addAction(name, lambda n=name: edit.setText(f"state::{n}"))
-        except Exception:
-            st_sub.addAction("(keine)").setEnabled(False)
-
-        ocr_sub = menu.addMenu("🔤 OCR")
-        try:
-            for name in sorted(self.bot.app.state.get_all_ocr().keys()):
-                ocr_sub.addAction(name, lambda n=name: edit.setText(f"ocr::{n}"))
-        except Exception:
-            ocr_sub.addAction("(keine)").setEnabled(False)
-
-        db_sub = menu.addMenu("📊 Daten-Listen")
-        try:
-            from core import daten_manager as dm
-            for liste in dm.alle_listen():
-                lsub = db_sub.addMenu(liste["name"])
-                for t in dm.transformationen_der_liste(liste["id"]):
-                    lsub.addAction(t["name"],
-                        lambda ln=liste["name"], tn=t["name"]: edit.setText(f"db::{ln}::{tn}"))
-                for b in dm.berechnungen_der_liste(liste["id"]):
-                    lsub.addAction(b["name"],
-                        lambda ln=liste["name"], bn=b["name"]: edit.setText(f"db::{ln}::{bn}"))
-        except Exception:
-            db_sub.addAction("(DB nicht verfügbar)").setEnabled(False)
-
-        btn.setMenu(menu)
-        return edit
-
-    def _workflow_picker_btn(self, current: str, parent) -> QLineEdit:
-        edit = QLineEdit(current)
-        edit.setProperty("class", "input_dark")
-        btn = QPushButton("▾")
-        btn.setFixedWidth(28)
-        menu = QMenu(parent)
-        try:
-            workflows = sorted(self.bot.workflow_engine.workflows.keys())
-            eigener = self._name_edit.text().strip()
-            workflows = [w for w in workflows if w != eigener]
-            for w in workflows:
-                menu.addAction(f"🔄 {w}", lambda n=w: edit.setText(n))
-            if not workflows:
-                menu.addAction("(keine anderen Workflows)").setEnabled(False)
-        except Exception:
-            menu.addAction("(nicht verfügbar)").setEnabled(False)
-        btn.setMenu(menu)
-
-        container = QWidget()
-        lay = QHBoxLayout(container)
-        lay.setContentsMargins(0,0,0,0); lay.setSpacing(2)
-        lay.addWidget(edit); lay.addWidget(btn)
-        edit._container = container
-        return edit
+    def _workflow_picker_btn(self, current: str, parent) -> QPushButton:
+        btn = QPushButton(current or "Bitte wählen...")
+        btn.setObjectName("btn_logic_net")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        def show():
+            menu = QMenu(parent)
+            try:
+                wfs = sorted(self.bot.workflow_engine.workflows.keys())
+                eig = self._name_edit.text().strip()
+                wfs = [w for w in wfs if w != eig]
+                if not wfs:
+                    menu.addAction("(keine anderen)").setEnabled(False)
+                for w in wfs:
+                    menu.addAction(f"🔄 {w}", lambda x=w: btn.setText(x))
+            except:
+                menu.addAction("(Fehler)").setEnabled(False)
+            menu.exec(QCursor.pos())
+        btn.clicked.connect(show)
+        return btn
 
     # ── Simulation ─────────────────────────────────────────────────────────────
 
@@ -1047,91 +904,100 @@ class WorkflowEditorDialogQt(QDialog):
     def _simulation_starten(self):
         start = next((n for n in self.nodes if n.get("typ") == "start"), None)
         if not start:
-            self._sim_log("Kein Start-Node vorhanden.", "failure")
+            self._sim_log("Kein Start-Node!", "failure")
             return
-        self._sim_aktiv    = True
-        self._sim_zustand  = {}
+        self._sim_aktiv = True
+        self._sim_zustand = {}
         self._sim_progress = {}
         self._sim_btn.setText("⏹ Stopp")
         self._sim_btn.setProperty("state", "active")
-        self._sim_btn.setStyle(self._sim_btn.style())
+        self._sim_btn.style().unpolish(self._sim_btn)
+        self._sim_btn.style().polish(self._sim_btn)
         self._log.clear()
-        self._sim_log("▶ Live-Simulation gestartet", "info")
-
+        self._sim_log("▶ Simulation gestartet", "info")
         self._sim_engine = self.SimulatedActionEngine(self, self.bot.action_engine, self._sim_log)
-        nodes_index = {n["id"]: n for n in self.nodes}
-        self._simulation_schritt(start, nodes_index, 0)
+        self._sim_nodes_index = {n["id"]: n for n in self.nodes}
+        self._sim_aktueller_schritt = 0
+        self._simulation_schritt_gui(start)
 
     def _simulation_stoppen(self):
-        self._sim_aktiv    = False
-        self._sim_zustand  = {}
+        self._sim_aktiv = False
+        self._sim_zustand = {}
         self._sim_progress = {}
         self._sim_btn.setText("▶ Simulieren")
         self._sim_btn.setProperty("state", "stopped")
-        self._sim_btn.setStyle(self._sim_btn.style())
+        self._sim_btn.style().unpolish(self._sim_btn)
+        self._sim_btn.style().polish(self._sim_btn)
         self._sync_canvas()
 
-    def _simulation_schritt(self, node, nodes_index, schritt):
-        if not self._sim_aktiv or node is None or schritt > 200:
-            self._simulation_fertig(); return
+    @pyqtSlot(dict)
+    def _simulation_schritt_gui(self, node):
+        if not self._sim_aktiv or node is None or self._sim_aktueller_schritt > 200:
+            QMetaObject.invokeMethod(self, "_simulation_fertig", Qt.ConnectionType.QueuedConnection)
+            return
+        self._sim_aktueller_schritt += 1
         nid = node["id"]
         typ = node.get("typ", "?")
         self._sim_zustand[nid] = "aktiv"
-        self._sim_progress.pop(nid, None)
+        if nid in self._sim_progress:
+            self._sim_progress.pop(nid)
         self._sync_canvas()
-
-        detail = self._canvas._node_detail(node)
-        self._sim_log(f"► {typ.upper()}" + (f":  {detail}" if detail else ""), "aktiv")
-
-        def _ausfuehren():
-            if not self._sim_aktiv: return
-            def m_func(): return self.bot.app.state.active_matches
+        self._sim_log(f"► {typ.upper()}: {self._canvas._node_detail(node)}", "aktiv")
+        
+        def run():
+            if not self._sim_aktiv:
+                return
+            def m_func():
+                return self.bot.app.state.active_matches
             def o_func():
                 data = dict(self.bot.app.state.ocr_values)
                 for sn, sv in self.bot.app.state.game_states.items():
                     data[f"__state__{sn}"] = "true" if sv else "false"
                 data.update(self.bot.app.state.template_ocr_values)
                 return data
-
+            
             port = self.bot.workflow_engine._node_ausfuehren(
                 node, self._sim_engine, m_func, ocr_func=o_func,
                 log_func=self._sim_log, laeuft_func=lambda: self._sim_aktiv)
-
+            
             if port is None:
-                self._sim_log(f"  !! Unbekannter Node-Typ: {typ}", "failure")
+                self._sim_log(f"!! Unbekannter Typ: {typ}", "failure")
                 self._sim_zustand[nid] = "failure"
-                QTimer.singleShot(0, self._simulation_fertig); return
-
+                QMetaObject.invokeMethod(self, "_simulation_fertig", Qt.ConnectionType.QueuedConnection)
+                return
+            
             self._sim_zustand[nid] = "success" if port in ("success", "true", "out") else "failure"
-            self._sim_progress.pop(nid, None)
+            if nid in self._sim_progress:
+                self._sim_progress.pop(nid)
             QMetaObject.invokeMethod(self, "_sync_canvas", Qt.ConnectionType.QueuedConnection)
-
-            self._sim_log(
-                f"  → Port: {port}",
-                "success" if self._sim_zustand[nid] == "success" else "failure")
-
-            naechster = None
-            for conn in self.connections:
-                if conn["von"] == nid and conn["port_aus"] == port:
-                    naechster = nodes_index.get(conn["zu"]); break
-
-            if naechster is None:
-                self._sim_log("  (kein Folge-Node → Ende)", "done")
-                QTimer.singleShot(400, self._simulation_fertig)
+            self._sim_log(f"→ Port: {port}", "success" if self._sim_zustand[nid] == "success" else "failure")
+            
+            next_n = None
+            for c in self.connections:
+                if c["von"] == nid and c["port_aus"] == port:
+                    next_n = self._sim_nodes_index.get(c["zu"])
+                    break
+            
+            if next_n is None:
+                self._sim_log("(Ende)", "done")
+                QTimer.singleShot(400, lambda: QMetaObject.invokeMethod(self, "_simulation_fertig", Qt.ConnectionType.QueuedConnection))
             else:
-                QTimer.singleShot(
-                    300, lambda: self._simulation_schritt(naechster, nodes_index, schritt + 1))
+                QTimer.singleShot(300, lambda: QMetaObject.invokeMethod(self, "_simulation_schritt_gui", Qt.ConnectionType.QueuedConnection, Q_ARG(dict, next_n)))
+        
+        threading.Thread(target=run, daemon=True).start()
 
-        threading.Thread(target=_ausfuehren, daemon=True).start()
-
+    @pyqtSlot()
     def _simulation_fertig(self):
-        if not self._sim_aktiv: return
-        self._sim_log("✓ Simulation abgeschlossen", "done")
+        if not self._sim_aktiv:
+            return
+        self._sim_log("✓ Simulation beendet", "done")
         self._sim_aktiv = False
         self._sim_btn.setText("▶ Simulieren")
         self._sim_btn.setProperty("state", "stopped")
-        self._sim_btn.setStyle(self._sim_btn.style())
+        self._sim_btn.style().unpolish(self._sim_btn)
+        self._sim_btn.style().polish(self._sim_btn)
         self._status_aktualisieren()
+        self._sync_canvas()
 
     def _sim_log(self, text: str, tag: str = "done"):
         if text.startswith("__timer__"):
@@ -1141,51 +1007,41 @@ class WorkflowEditorDialogQt(QDialog):
                     node = next((n for n in self.nodes if n["id"] == nid), None)
                     if node and node.get("typ") in ("suche", "suche_optional", "warten"):
                         self._sim_progress[nid] = f"⏳ {val}s"
-                        QMetaObject.invokeMethod(
-                            self, "_sync_canvas", Qt.ConnectionType.QueuedConnection)
+                        QMetaObject.invokeMethod(self, "_sync_canvas", Qt.ConnectionType.QueuedConnection)
                     break
             return
+        farbe = {"aktiv":"#f9a825","success":"#4caf50","failure":"#ef5350","info":"#90caf9","done":"#aaaaaa"}.get(tag, "#cccccc")
+        QMetaObject.invokeMethod(self, "_append_to_log", Qt.ConnectionType.QueuedConnection, Q_ARG(str, text), Q_ARG(str, farbe))
 
-        FARBEN = {
-            "aktiv":   "#f9a825", "success": "#4caf50",
-            "failure": "#ef5350", "info":    "#90caf9", "done": "#aaaaaa",
-        }
-        farbe = FARBEN.get(tag, "#cccccc")
-
-        def _append():
-            cursor = self._log.textCursor()
-            from PyQt6.QtGui import QTextCharFormat, QColor as _C
-            fmt = QTextCharFormat()
-            fmt.setForeground(_C(farbe))
-            cursor.movePosition(cursor.MoveOperation.End)
-            cursor.insertText(text + "\n", fmt)
-            self._log.setTextCursor(cursor)
-            self._log.ensureCursorVisible()
-
-        QTimer.singleShot(0, _append)
-
-    # ── Status / Speichern ─────────────────────────────────────────────────────
+    @pyqtSlot(str, str)
+    def _append_to_log(self, text, farbe):
+        cursor = self._log.textCursor()
+        from PyQt6.QtGui import QTextCharFormat, QColor as _C
+        fmt = QTextCharFormat()
+        fmt.setForeground(_C(farbe))
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertText(text + "\n", fmt)
+        self._log.setTextCursor(cursor)
+        self._log.ensureCursorVisible()
 
     def _status_aktualisieren(self):
         z = int(self._canvas._scale * 100)
         if self._sim_aktiv:
-            self._status_lbl.setText(
-                f"▶ Simulation läuft …  ·  {len(self.nodes)} Nodes  ·  Zoom {z}%")
+            self._status_lbl.setText(f"▶ Simulation läuft …  ·  Zoom {z}%")
             self._status_lbl.setProperty("class", "lbl_warning")
         else:
-            self._status_lbl.setText(
-                f"{len(self.nodes)} Nodes  ·  {len(self.connections)} Verbindungen"
-                f"  ·  Zoom {z}%  ·  Port ziehen = Verbindung  ·  Scrollen = Zoom")
+            self._status_lbl.setText(f"{len(self.nodes)} Nodes  ·  {len(self.connections)} Verbindungen  ·  Zoom {z}%")
             self._status_lbl.setProperty("class", "lbl_dim")
-        self._status_lbl.setStyle(self._status_lbl.style())
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
 
     def _speichern(self):
         name = self._name_edit.text().strip()
-        if not name: return
-        graph = {"nodes": self.nodes, "connections": self.connections}
-        self.gespeichert.emit(name, graph)
+        if not name:
+            return
+        self.gespeichert.emit(name, {"nodes": self.nodes, "connections": self.connections})
         if self._callback:
-            self._callback(name, graph)
+            self._callback(name, {"nodes": self.nodes, "connections": self.connections})
         self.accept()
 
     def _abbrechen(self):
@@ -1198,68 +1054,65 @@ class WorkflowEditorDialogQt(QDialog):
         self._abbrechen()
         super().closeEvent(event)
 
-    # ── SimulatedActionEngine ──────────────────────────────────────────────────
-
     class SimulatedActionEngine:
-        def __init__(self, parent_dialog, real_engine, log_func):
-            self.parent = parent_dialog
-            self.real   = real_engine
-            self.log    = log_func
-
-        def _fragen(self, titel: str, msg: str) -> str:
-            result = {"wahl": "sim"}
+        def __init__(self, parent, real, log):
+            self.parent = parent
+            self.real = real
+            self.log = log
+        
+        def _fragen(self, titel, msg):
             dlg = QMessageBox(self.parent)
             dlg.setWindowTitle(titel)
             dlg.setText(msg)
-            btn_sim = dlg.addButton("Simulieren",     QMessageBox.ButtonRole.NoRole)
-            btn_adb = dlg.addButton("ADB Ausführen",  QMessageBox.ButtonRole.YesRole)
-            btn_ab  = dlg.addButton("Abbrechen",      QMessageBox.ButtonRole.RejectRole)
+            b_sim = dlg.addButton("Simulieren", QMessageBox.ButtonRole.NoRole)
+            b_adb = dlg.addButton("ADB", QMessageBox.ButtonRole.YesRole)
+            b_ab = dlg.addButton("Stop", QMessageBox.ButtonRole.RejectRole)
             dlg.exec()
-            clicked = dlg.clickedButton()
-            if clicked == btn_adb: return "adb"
-            if clicked == btn_ab:  return "stop"
+            c = dlg.clickedButton()
+            if c == b_adb:
+                return "adb"
+            elif c == b_ab:
+                return "stop"
             return "sim"
-
-        def auf_template_warten(self, template, matches_func, timeout=10,
-                                intervall=0.3, log_func=None, laeuft_func=None):
-            return self.real.auf_template_warten(
-                template, matches_func, timeout, intervall,
-                log_func=log_func, laeuft_func=laeuft_func)
-
-        def template_tippen(self, template, matches, log_func=None):
-            for m in matches:
-                if m[0] == template:
-                    _, mx, my, mw, mh = m[:5]
-                    kx, ky = self.real.klickpunkt_berechnen(template, mx, my, mw, mh)
-                    wahl = self._fragen("KLICK-AKTION",
-                        f"Soll auf '{template}' an ({kx}, {ky}) geklickt werden?")
-                    if wahl == "stop":
-                        self.parent._simulation_stoppen(); return False
-                    if wahl == "adb":
-                        self.log(f"[ADB] Klick auf {template} ({kx}, {ky})", "success")
-                        return self.real.template_tippen(template, matches, log_func=None)
-                    self.log(f"[SIM] Klick auf {template} ({kx}, {ky}) (simuliert)", "info")
+        
+        def auf_template_warten(self, t, mf, to=10, iv=0.3, lf=None, laf=None):
+            return self.real.auf_template_warten(t, mf, to, iv, log_func=lf, laeuft_func=laf)
+        
+        def template_tippen(self, t, m, lf=None):
+            for i in m:
+                if i[0] == t:
+                    _, mx, my, mw, mh = i[:5]
+                    kx, ky = self.real.klickpunkt_berechnen(t, mx, my, mw, mh)
+                    w = self._fragen("KLICK", f"Auf '{t}' ({kx}, {ky}) klicken?")
+                    if w == "stop":
+                        self.parent._simulation_stoppen()
+                        return False
+                    if w == "adb":
+                        self.log(f"[ADB] {t}", "success")
+                        return self.real.template_tippen(t, m, log_func=None)
+                    self.log(f"[SIM] {t}", "info")
                     return True
             return False
-
-        def warten(self, sekunden):
-            time.sleep(min(sekunden, 2.0))
-
+        
+        def warten(self, s):
+            time.sleep(min(s, 2.0))
+        
         def zurueck(self):
-            wahl = self._fragen("ZURÜCK", "Soll der Zurück-Button gedrückt werden?")
-            if wahl == "adb":
-                self.log("[ADB] Zurück-Button", "success"); self.real.zurueck()
-            elif wahl == "stop":
+            w = self._fragen("ZURÜCK", "Zurück?")
+            if w == "adb":
+                self.log("[ADB] Back", "success")
+                self.real.zurueck()
+            elif w == "stop":
                 self.parent._simulation_stoppen()
             else:
-                self.log("[SIM] Zurück-Button (simuliert)", "info")
-
+                self.log("[SIM] Back", "info")
+        
         def home(self):
-            wahl = self._fragen("HOME", "Soll der Home-Button gedrückt werden?")
-            if wahl == "adb":
-                self.log("[ADB] Home-Button", "success"); self.real.home()
-            elif wahl == "stop":
+            w = self._fragen("HOME", "Home?")
+            if w == "adb":
+                self.log("[ADB] Home", "success")
+                self.real.home()
+            elif w == "stop":
                 self.parent._simulation_stoppen()
             else:
-                self.log("[SIM] Home-Button (simuliert)", "info")
-
+                self.log("[SIM] Home", "info")
