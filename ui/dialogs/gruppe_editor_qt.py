@@ -5,336 +5,330 @@ from PyQt6.QtWidgets import (
     QWidget, QButtonGroup, QMessageBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
-
-
-class BedingungsZeile(QFrame):
-    """Eine einzelne State-Bedingung: [ComboBox Name] [Checkbox True] [✕]"""
-    loeschen_requested = pyqtSignal(object)  # self
-
-    def __init__(self, bekannte: list[str], state_name: str = "", state_val: bool = True, parent=None):
-        super().__init__(parent)
-        self.setObjectName("condition_row")
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(6)
-
-        self.combo = QComboBox()
-        self.combo.setEditable(True)
-        self.combo.addItems(bekannte)
-        self.combo.setCurrentText(state_name)
-        self.combo.setMinimumWidth(180)
-        layout.addWidget(self.combo)
-
-        self.check = QCheckBox("True")
-        self.check.setChecked(state_val)
-        layout.addWidget(self.check)
-
-        layout.addStretch()
-
-        btn_del = QPushButton("✕")
-        btn_del.setObjectName("btn_del_sm")
-        btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_del.clicked.connect(lambda: self.loeschen_requested.emit(self))
-        layout.addWidget(btn_del)
-
-    def get_name(self) -> str:
-        return self.combo.currentText().strip()
-
-    def get_wert(self) -> bool:
-        return self.check.isChecked()
-
-
-class BedingungsGruppe(QFrame):
-    """Eine AND-Gruppe mit Connector (AND/OR) zum Vorgänger."""
-    loeschen_requested = pyqtSignal(object)  # self
-
-    def __init__(self, nr: int, gruppe_data: dict, bekannte: list[str], parent=None):
-        super().__init__(parent)
-        self.setObjectName("condition_group")
-
-        self._bekannte = bekannte
-        self._zeilen: list[BedingungsZeile] = []
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # ── Connector (AND/OR) — nur für Gruppen nr > 1 ──────────────────────
-        self._conn_frame = QFrame()
-        conn_layout = QHBoxLayout(self._conn_frame)
-        conn_layout.setContentsMargins(0, 6, 0, 4)
-        conn_layout.setSpacing(6)
-
-        lbl = QLabel("Verknüpfung:")
-        lbl.setProperty("class", "lbl_info")
-        conn_layout.addWidget(lbl)
-
-        self._btn_and = QPushButton("AND")
-        self._btn_or = QPushButton("OR")
-        for btn in (self._btn_and, self._btn_or):
-            btn.setCheckable(True)
-            btn.setFixedWidth(50)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        self._btn_and.setObjectName("btn_connector_and")
-        self._btn_or.setObjectName("btn_connector_or")
-
-        self._btn_grp = QButtonGroup(self)
-        self._btn_grp.setExclusive(True)
-        self._btn_grp.addButton(self._btn_and)
-        self._btn_grp.addButton(self._btn_or)
-
-        conn_val = gruppe_data.get("connector") or "OR"
-        if conn_val == "AND":
-            self._btn_and.setChecked(True)
-        else:
-            self._btn_or.setChecked(True)
-
-        conn_layout.addWidget(self._btn_and)
-        conn_layout.addWidget(self._btn_or)
-        conn_layout.addStretch()
-        outer.addWidget(self._conn_frame)
-
-        # ── Header ────────────────────────────────────────────────────────────
-        header = QFrame()
-        header.setObjectName("condition_group_header")
-        h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(8, 4, 8, 4)
-
-        lbl_nr = QLabel(f"  Gruppe {nr}")
-        lbl_nr.setProperty("class", "lbl_header_dim")
-        h_layout.addWidget(lbl_nr)
-        h_layout.addStretch()
-
-        btn_del_gruppe = QPushButton("Gruppe löschen")
-        btn_del_gruppe.setObjectName("btn_del_sm")
-        btn_del_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_del_gruppe.clicked.connect(lambda: self.loeschen_requested.emit(self))
-        h_layout.addWidget(btn_del_gruppe)
-
-        outer.addWidget(header)
-
-        # ── Zeilen-Container ─────────────────────────────────────────────────
-        self._zeilen_container = QWidget()
-        self._zeilen_container.setObjectName("condition_rows_container")
-        self._zeilen_layout = QVBoxLayout(self._zeilen_container)
-        self._zeilen_layout.setContentsMargins(4, 4, 4, 0)
-        self._zeilen_layout.setSpacing(2)
-        outer.addWidget(self._zeilen_container)
-
-        for sn, sv in gruppe_data.get("states", {}).items():
-            self._zeile_hinzufuegen(sn, sv)
-
-        # ── "+ Bedingung" Button ──────────────────────────────────────────────
-        btn_add = QPushButton("+ Bedingung hinzufügen")
-        btn_add.setObjectName("btn_add_condition")
-        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.clicked.connect(lambda: self._zeile_hinzufuegen())
-        outer.addWidget(btn_add)
-
-    def _zeile_hinzufuegen(self, state_name: str = "", state_val: bool = True):
-        zeile = BedingungsZeile(self._bekannte, state_name, state_val)
-        zeile.loeschen_requested.connect(self._zeile_entfernen)
-        self._zeilen_layout.addWidget(zeile)
-        self._zeilen.append(zeile)
-
-    def _zeile_entfernen(self, zeile: BedingungsZeile):
-        if zeile in self._zeilen:
-            self._zeilen.remove(zeile)
-        zeile.setParent(None)
-        zeile.deleteLater()
-
-    def set_connector_sichtbar(self, sichtbar: bool):
-        self._conn_frame.setVisible(sichtbar)
-
-    def get_connector(self) -> str | None:
-        if self._btn_and.isChecked():
-            return "AND"
-        return "OR"
-
-    def get_states(self) -> dict:
-        result = {}
-        for z in self._zeilen:
-            n = z.get_name()
-            if n:
-                result[n] = z.get_wert()
-        return result
 
 
 class GruppeEditorQt(QDialog):
     """
-    Konfiguriert Bedingungen (condition_states) für eine passive Gruppe.
-    Ersetzt GruppeEditor (tkinter).
+    Zentraler Editor für Zustands-Bedingungen (condition_states) 
+    und zu setzende Zustände (set_states).
+    Wird sowohl für Gruppen (main.py) als auch für einzelne Templates (template_editor_qt.py) genutzt.
 
     Signals:
-        gespeichert(gruppe_name, conditions)  — nach erfolgreichem Speichern
-        geloescht(gruppe_name)               — nach Löschen der Konfiguration
+        gespeichert(gruppe_name, conditions, set_states)  — nach erfolgreichem Speichern
+        geloescht(gruppe_name)                            — nach Löschen der Konfiguration
     """
-    gespeichert = pyqtSignal(str, list)
+    gespeichert = pyqtSignal(str, list, dict)
     geloescht = pyqtSignal(str)
 
-    def __init__(self, gruppe_name: str, bekannte_states: list[str],
-                 condition_states: list | None = None, parent=None):
+    def __init__(self, name: str, bekannte_states: list[str],
+                 condition_states: list | None = None, 
+                 set_states: dict | None = None,
+                 parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Gruppe konfigurieren: {gruppe_name}")
+        self.setWindowTitle(f"Zustände & Bedingungen: {name}")
         self.setModal(True)
-        self.setMinimumSize(520, 420)
+        self.setMinimumSize(550, 650)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
-        self._gruppe_name = gruppe_name
+        self._name = name
         self._bekannte = sorted(bekannte_states)
-        self._condition_states = self._migrate(condition_states or [])
-        self._gruppen: list[BedingungsGruppe] = []
+        self._condition_states = self._migrate_condition_states(condition_states or [])
+        self._set_states_data = set_states or {}
+        
+        # UI-Referenzen für das Sammeln
+        self._gruppen_ui = []
+        self._set_zeilen_ui = []
 
         self._setup_ui()
 
     @staticmethod
-    def _migrate(raw) -> list:
-        if not raw:
-            return []
-        if isinstance(raw, dict):
-            return [{"connector": None, "states": raw}]
+    def _migrate_condition_states(raw) -> list:
+        if not raw: return []
+        if isinstance(raw, dict): return [{"connector": None, "states": raw}]
         if raw and isinstance(raw[0], dict) and ("states" in raw[0] or "connector" in raw[0]):
             return list(raw)
         return []
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 16)
-        root.setSpacing(8)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
 
         # ── Header ────────────────────────────────────────────────────────────
-        lbl_titel = QLabel(f'Bedingungen für Gruppe "{self._gruppe_name}"')
+        lbl_titel = QLabel(f'Konfiguration für "{self._name}"')
         lbl_titel.setObjectName("dialog_header_title_gold_small")
         root.addWidget(lbl_titel)
 
-        lbl_info = QLabel(
-            "Alle Templates in dieser Gruppe sind nur aktiv wenn diese Bedingungen erfüllt sind.\n"
-            "AND innerhalb einer Gruppe, Gruppen können AND oder OR verknüpft werden."
-        )
-        lbl_info.setProperty("class", "lbl_dim")
-        lbl_info.setWordWrap(True)
-        root.addWidget(lbl_info)
+        # ── Bereich 1: Bedingungen (Wann ist es aktiv?) ──────────────────────
+        lbl_cond_header = QLabel("Bedingungen (Wann ist dieses Element aktiv?):")
+        lbl_cond_header.setProperty("class", "lbl_header_dim")
+        root.addWidget(lbl_cond_header)
 
-        # ── Scroll-Bereich für Gruppen ────────────────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setProperty("class", "bg_dark")
 
-        self._gruppen_widget = QWidget()
-        self._gruppen_layout = QVBoxLayout(self._gruppen_widget)
+        self._gruppen_container = QWidget()
+        self._gruppen_layout = QVBoxLayout(self._gruppen_container)
         self._gruppen_layout.setContentsMargins(0, 0, 0, 0)
-        self._gruppen_layout.setSpacing(4)
-        self._gruppen_layout.addStretch()
-
-        scroll.setWidget(self._gruppen_widget)
-        root.addWidget(scroll, stretch=1)
+        self._gruppen_layout.setSpacing(10)
+        
+        scroll.setWidget(self._gruppen_container)
+        root.addWidget(scroll, stretch=3)
 
         # Gruppen laden
         daten = self._condition_states if self._condition_states else [{"connector": None, "states": {}}]
         for gd in daten:
-            self._gruppe_hinzufuegen(gd)
+            self._gruppe_bauen(gd)
 
-        # ── "+ Neue Gruppe" ───────────────────────────────────────────────────
-        btn_neue_gruppe = QPushButton("＋ Neue Gruppe hinzufügen")
+        btn_neue_gruppe = QPushButton("＋ Neue Bedingungsgruppe hinzufügen")
         btn_neue_gruppe.setObjectName("btn_variant_save")
         btn_neue_gruppe.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_neue_gruppe.clicked.connect(lambda: self._gruppe_hinzufuegen({"connector": "OR", "states": {}}))
-        root.addWidget(btn_neue_gruppe)
+        btn_neue_gruppe.clicked.connect(lambda: self._gruppe_bauen({"connector": "OR", "states": {}}))
+        root.addWidget(btn_neue_gruppe, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        # ── Trennlinie + Buttons ──────────────────────────────────────────────
+        # ── Trenner ──────────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setProperty("class", "separator")
         root.addWidget(sep)
 
-        btn_row = QHBoxLayout()
+        # ── Bereich 2: Set-States (Was wird bei Erkennung gesetzt?) ───────────
+        lbl_set_header = QLabel("Zustände setzen (Was passiert bei Erkennung?):")
+        lbl_set_header.setProperty("class", "lbl_header_dim")
+        root.addWidget(lbl_set_header)
 
+        self._set_container = QWidget()
+        self._set_layout = QVBoxLayout(self._set_container)
+        self._set_layout.setContentsMargins(0, 0, 0, 0)
+        self._set_layout.setSpacing(4)
+        root.addWidget(self._set_container)
+
+        # Bestehende Set-States laden
+        for sn, sv in self._set_states_data.items():
+            self._set_zeile_bauen(sn, sv)
+
+        btn_add_set = QPushButton("+ Zustandsänderung hinzufügen")
+        btn_add_set.setObjectName("btn_add_condition")
+        btn_add_set.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_add_set.clicked.connect(lambda: self._set_zeile_bauen())
+        root.addWidget(btn_add_set, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        root.addStretch(1)
+
+        # ── Footer-Buttons ───────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
         btn_save = QPushButton(lang.t("btn_save"))
         btn_save.setObjectName("btn_new")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._speichern)
-        btn_row.addWidget(btn_save)
-
+        
         btn_del_cfg = QPushButton("Konfiguration löschen")
         btn_del_cfg.setObjectName("btn_del_sm")
-        btn_del_cfg.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_del_cfg.clicked.connect(self._loeschen)
-        btn_row.addWidget(btn_del_cfg)
 
-        btn_row.addStretch()
-
-        btn_close = QPushButton(lang.t("btn_close"))
-        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close = QPushButton("Abbrechen")
         btn_close.clicked.connect(self.reject)
-        btn_row.addWidget(btn_close)
 
+        btn_row.addWidget(btn_save)
+        btn_row.addWidget(btn_del_cfg)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_close)
         root.addLayout(btn_row)
 
-    def _gruppe_hinzufuegen(self, gruppe_data: dict):
-        nr = len(self._gruppen) + 1
-        gruppe = BedingungsGruppe(nr, gruppe_data, self._bekannte)
-        gruppe.loeschen_requested.connect(self._gruppe_entfernen)
-        gruppe.set_connector_sichtbar(nr > 1)
+    # ── Bedingungs-Logik (AND/OR Gruppen) ────────────────────────────────────
 
+    def _gruppe_bauen(self, gruppe_data: dict):
+        wrapper = QFrame()
+        wrapper.setObjectName("condition_group_wrapper")
+        w_lay = QVBoxLayout(wrapper)
+        w_lay.setContentsMargins(0, 0, 0, 0)
+        w_lay.setSpacing(0)
+
+        g = {"wrapper": wrapper, "zeilen": [], "connector_var": [gruppe_data.get("connector") or "OR"]}
+
+        # Connector (AND/OR) - nur für Gruppen > 1
+        conn_frame = QFrame()
+        conn_lay = QHBoxLayout(conn_frame)
+        conn_lay.setContentsMargins(0, 8, 0, 4)
+        
+        lbl = QLabel("Verknüpfung:")
+        lbl.setProperty("class", "lbl_info")
+        conn_lay.addWidget(lbl)
+
+        btn_grp = QButtonGroup(self)
+        for txt in ["AND", "OR"]:
+            btn = QPushButton(txt)
+            btn.setCheckable(True)
+            btn.setFixedWidth(50)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setObjectName(f"btn_connector_{txt.lower()}")
+            if txt == g["connector_var"][0]: btn.setChecked(True)
+            btn.clicked.connect(lambda checked, t=txt, ref=g: ref["connector_var"].__setitem__(0, t))
+            btn_grp.addButton(btn)
+            conn_lay.addWidget(btn)
+        conn_lay.addStretch()
+        w_lay.addWidget(conn_frame)
+        g["conn_frame"] = conn_frame
+
+        # Haupt-Box
+        box = QFrame()
+        box.setObjectName("condition_group")
+        box_lay = QVBoxLayout(box)
+        box_lay.setContentsMargins(8, 8, 8, 8)
+        box_lay.setSpacing(4)
+
+        header = QHBoxLayout()
+        nr = len(self._gruppen_ui) + 1
+        lbl_nr = QLabel(f"Gruppe {nr}")
+        lbl_nr.setProperty("class", "lbl_header_dim")
+        header.addWidget(lbl_nr)
+        header.addStretch()
+        btn_del_g = QPushButton("Gruppe löschen")
+        btn_del_g.setObjectName("btn_del_sm")
+        btn_del_g.clicked.connect(lambda: self._gruppe_loeschen(g))
+        header.addWidget(btn_del_g)
+        box_lay.addLayout(header)
+
+        zeilen_container = QWidget()
+        zeilen_lay = QVBoxLayout(zeilen_container)
+        zeilen_lay.setContentsMargins(0, 4, 0, 4)
+        zeilen_lay.setSpacing(2)
+        box_lay.addWidget(zeilen_container)
+        g["zeilen_lay"] = zeilen_lay
+
+        for sn, sv in gruppe_data.get("states", {}).items():
+            self._zeile_bauen(g, sn, sv)
+
+        btn_add_z = QPushButton("+ Bedingung")
+        btn_add_z.setObjectName("btn_add_condition")
+        btn_add_z.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_add_z.clicked.connect(lambda: self._zeile_bauen(g))
+        box_lay.addWidget(btn_add_z, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        w_lay.addWidget(box)
+        
         # Vor dem Stretch einfügen
-        idx = self._gruppen_layout.count() - 1
-        self._gruppen_layout.insertWidget(idx, gruppe)
-        self._gruppen.append(gruppe)
+        idx = max(0, self._gruppen_layout.count() - 1)
+        self._gruppen_layout.insertWidget(idx, wrapper)
+        self._gruppen_ui.append(g)
+        self._refresh_connectors()
 
-    def _gruppe_entfernen(self, gruppe: BedingungsGruppe):
-        if gruppe in self._gruppen:
-            self._gruppen.remove(gruppe)
-        gruppe.setParent(None)
-        gruppe.deleteLater()
-        # Ersten Connector ausblenden
-        if self._gruppen:
-            self._gruppen[0].set_connector_sichtbar(False)
+    def _zeile_bauen(self, g, name="", val=True):
+        z = QWidget()
+        z_lay = QHBoxLayout(z)
+        z_lay.setContentsMargins(4, 2, 4, 2)
+        z_lay.setSpacing(6)
 
-    def _sammeln(self) -> list[dict]:
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.addItems(self._bekannte)
+        combo.setCurrentText(name)
+        combo.setMinimumWidth(180)
+        
+        chk = QCheckBox("True")
+        chk.setChecked(val)
+        
+        btn_del = QPushButton("✕")
+        btn_del.setObjectName("btn_del_sm")
+
+        z_lay.addWidget(combo)
+        z_lay.addWidget(chk)
+        z_lay.addStretch()
+        z_lay.addWidget(btn_del)
+        g["zeilen_lay"].addWidget(z)
+        
+        entry = (z, combo, chk)
+        g["zeilen"].append(entry)
+        btn_del.clicked.connect(lambda: (g["zeilen"].remove(entry), z.deleteLater()))
+
+    def _gruppe_loeschen(self, g):
+        if g in self._gruppen_ui:
+            self._gruppen_ui.remove(g)
+        g["wrapper"].deleteLater()
+        self._refresh_connectors()
+
+    def _refresh_connectors(self):
+        for i, g in enumerate(self._gruppen_ui):
+            g["conn_frame"].setVisible(i > 0)
+
+    # ── Set-States Logik (Aktionen) ──────────────────────────────────────────
+
+    def _set_zeile_bauen(self, name="", val=True):
+        z = QWidget()
+        z.setObjectName("condition_row")
+        z_lay = QHBoxLayout(z)
+        z_lay.setContentsMargins(8, 4, 8, 4)
+        z_lay.setSpacing(6)
+
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.addItems(self._bekannte)
+        combo.setCurrentText(name)
+        combo.setMinimumWidth(180)
+        
+        chk = QCheckBox("True")
+        chk.setChecked(val)
+        
+        btn_del = QPushButton("✕")
+        btn_del.setObjectName("btn_del_sm")
+
+        z_lay.addWidget(combo)
+        z_lay.addWidget(chk)
+        z_lay.addStretch()
+        z_lay.addWidget(btn_del)
+        self._set_layout.addWidget(z)
+        
+        entry = (z, combo, chk)
+        self._set_zeilen_ui.append(entry)
+        btn_del.clicked.connect(lambda: (self._set_zeilen_ui.remove(entry), z.deleteLater()))
+
+    # ── Speichern / Löschen ──────────────────────────────────────────────────
+
+    def _speichern(self):
         conditions = []
-        for g in self._gruppen:
-            states = g.get_states()
+        for g in self._gruppen_ui:
+            states = {}
+            for (_, combo, chk) in g["zeilen"]:
+                n = combo.currentText().strip()
+                if n: states[n] = chk.isChecked()
             if states:
                 conditions.append({
-                    "connector": g.get_connector(),
+                    "connector": g["connector_var"][0],
                     "states": states,
                 })
         if conditions:
             conditions[0]["connector"] = None
-        return conditions
 
-    def _speichern(self):
-        conditions = self._sammeln()
-        self.gespeichert.emit(self._gruppe_name, conditions)
+        set_states = {}
+        for (_, combo, chk) in self._set_zeilen_ui:
+            n = combo.currentText().strip()
+            if n: set_states[n] = chk.isChecked()
+
+        self.gespeichert.emit(self._name, conditions, set_states)
         self.accept()
 
     def _loeschen(self):
         msg = QMessageBox(self)
         msg.setWindowTitle("Konfiguration löschen")
-        msg.setText(f'Gruppen-Konfiguration für "{self._gruppe_name}" wirklich löschen?')
+        msg.setText(f'Zustands-Konfiguration für "{self._name}" wirklich löschen?')
         msg.setIcon(QMessageBox.Icon.Question)
         btn_ja = msg.addButton(lang.t("dialog_yes"), QMessageBox.ButtonRole.YesRole)
         btn_nein = msg.addButton(lang.t("dialog_no"), QMessageBox.ButtonRole.NoRole)
         msg.setDefaultButton(btn_nein)
         msg.exec()
-        
         if msg.clickedButton() == btn_ja:
-            self.geloescht.emit(self._gruppe_name)
+            self.geloescht.emit(self._name)
             self.accept()
 
     @staticmethod
-    def ausfuehren(gruppe_name: str, bekannte_states: list[str],
-                   condition_states: list | None = None, parent=None):
-        """
-        Convenience-Methode. Öffnet Dialog und gibt (conditions, geloescht) zurück
-        oder None bei Abbruch.
-        """
-        dlg = GruppeEditorQt(gruppe_name, bekannte_states, condition_states, parent)
-        result = {"conditions": None, "geloescht": False}
-        dlg.gespeichert.connect(lambda n, c: result.update(conditions=c))
+    def ausfuehren(name: str, bekannte_states: list[str],
+                   condition_states: list | None = None, 
+                   set_states: dict | None = None,
+                   parent=None):
+        dlg = GruppeEditorQt(name, bekannte_states, condition_states, set_states, parent)
+        result = {"conditions": None, "set_states": None, "geloescht": False}
+        dlg.gespeichert.connect(lambda n, c, s: result.update(conditions=c, set_states=s))
         dlg.geloescht.connect(lambda n: result.update(geloescht=True))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return result

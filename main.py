@@ -1041,12 +1041,25 @@ class TilesBotWindow(QMainWindow):
         settings = self.template_engine.settings.get(name, {})
         bekannte = sorted(self.app.state.game_states.keys())
         raw = settings.get("condition_states", [])
-        dlg = GruppeEditorQt(name, bekannte, raw, parent=self)
+        
+        # Früher gab es 'target_state' (string), jetzt 'set_states' (dict)
+        # Wir migrieren beim Laden falls nötig
+        set_states = settings.get("set_states", {})
+        if not set_states and settings.get("target_state"):
+            set_states = {settings["target_state"]: True}
+            
+        dlg = GruppeEditorQt(name, bekannte, raw, set_states=set_states, parent=self)
 
-        def on_gespeichert(gruppe_name, conditions):
+        def on_gespeichert(gruppe_name, conditions, new_set_states):
             if name not in self.template_engine.settings:
                 self.template_engine.settings[name] = {}
             self.template_engine.settings[name]["condition_states"] = conditions
+            self.template_engine.settings[name]["set_states"] = new_set_states
+            
+            # Altes Feld aufräumen
+            if "target_state" in self.template_engine.settings[name]:
+                del self.template_engine.settings[name]["target_state"]
+                
             self.template_engine._settings_speichern()
             self.app.reload_templates()
             self._panels_aktualisieren()
