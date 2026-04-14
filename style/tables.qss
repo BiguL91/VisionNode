@@ -100,3 +100,40 @@ QListWidget::item:selected {
 QListWidget::item:hover {
     background-color: #202020;
 }
+
+/* ── Daten-Listen Panel (Spezifisch) ────────────────────────────────────────── */
+
+QLabel#daten_tab_header,
+.daten_tab_header {
+    color: #888888;
+    font-size: 18px !important;
+    font-weight: bold;
+    padding: 10px 8px;
+    background-color: #1e1e1e;
+    border-bottom: 2px solid #2a2a2a;
+}
+
+QLabel#daten_tab_cell,
+.daten_tab_cell {
+    color: #cccccc;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 16px !important;
+    padding: 10px 12px;
+    min-height: 35px;
+}
+
+QLabel#daten_tab_cell[alt="true"],
+.daten_tab_cell[alt="true"] {
+    background-color: #1a1a1a;
+}
+
+QLabel#daten_tab_cell[highlight="true"],
+.daten_tab_cell[highlight="true"] {
+    color: #4fc3f7;
+}
+
+/* Trennlinie in der Tabelle */
+QFrame.separator {
+    background-color: #2a2a2a;
+    max-height: 1px;
+}

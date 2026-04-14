@@ -402,10 +402,10 @@ class TilesBotWindow(QMainWindow):
 
         # Rechte Spalte 2 (Daten-Listen)
         self._spalte_rechts2 = self._setup_rechte_spalte2()
-        self._spalte_rechts2.setMinimumWidth(360)
+        self._spalte_rechts2.setMinimumWidth(450)
         splitter.addWidget(self._spalte_rechts2)
 
-        splitter.setSizes([320, 800, 320, 360])
+        splitter.setSizes([320, 800, 320, 450])
         splitter.setStretchFactor(1, 1)  # Vorschau nimmt restlichen Platz
 
         # ── Toolbar ───────────────────────────────────────────────────────────

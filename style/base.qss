@@ -4,7 +4,11 @@ QWidget {
     background-color: #1a1a1a;
     color: #cccccc;
     font-family: "Segoe UI";
-    font-size: 13px;
+    font-size: 13px !important;
+}
+
+QAbstractItemView {
+    font-size: 13px !important;
 }
 
 QMainWindow {

@@ -179,7 +179,7 @@ class TransformBlock(QFrame):
 
         z1.addWidget(QLabel("Typ:"))
         self._typ_combo = QComboBox()
-        self._typ_combo.addItems(["einheit_zu_zahl", "timer"])
+        self._typ_combo.addItems(["einheit_zu_zahl", "timer", "text"])
         self._typ_combo.setCurrentText(t.get("typ", "einheit_zu_zahl"))
         self._typ_combo.currentTextChanged.connect(self._typ_speichern)
         z1.addWidget(self._typ_combo)
@@ -408,6 +408,7 @@ class DatenListeEditorQt(QDialog):
         self._tabs.addTab(self._berechnung_tab(), "Berechnung")
         self._tabs.addTab(self._struktur_tab(), "Struktur")
         self._tabs.addTab(self._mapping_tab(), "Mapping")
+        self._tabs.currentChanged.connect(self._tab_gewechselt)
         root.addWidget(self._tabs, stretch=1)
 
         # ── Buttons ───────────────────────────────────────────────────────────
@@ -433,6 +434,13 @@ class DatenListeEditorQt(QDialog):
         btn_row.addWidget(btn_save)
 
         root.addLayout(btn_row)
+
+    def _tab_gewechselt(self, index):
+        """Aktualisiert Tab-Inhalte beim Wechsel."""
+        if index == 1:  # Berechnung
+            self._berech_neu_aufbauen()
+        elif index == 3:  # Mapping
+            self._mapping_neu_aufbauen()
 
     # ── Tab: OCR Transform ─────────────────────────────────────────────────────
 
@@ -794,18 +802,21 @@ class DatenListeEditorQt(QDialog):
         neuer_name = self._name_edit.text().strip()
         if neuer_name and neuer_name != self._liste["name"]:
             liste_umbenennen(self._liste["id"], neuer_name)
+            self._liste["name"] = neuer_name
+            self.setWindowTitle(f"Liste bearbeiten: {neuer_name}")
 
         try:
             intervall = int(self._intervall_edit.text())
             if intervall > 0:
                 liste_intervall_setzen(self._liste["id"], intervall)
+                self._liste["update_intervall"] = intervall
         except ValueError:
             pass
 
         self.gespeichert.emit()
         if self._on_gespeichert:
             self._on_gespeichert()
-        self.accept()
+        # Dialog bleibt offen (nur Schließen-Button oder X beendet)
 
     def _liste_loeschen(self):
         msg = QMessageBox(self)

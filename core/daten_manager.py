@@ -233,13 +233,6 @@ def zeile_umbenennen(zeile_id, neuer_name):
 
 def zeile_loeschen(zeile_id):
     with _verbinden() as conn:
-        # Zugehörige Einträge werden über zeile_name referenziert → manuell löschen
-        zeile = conn.execute("SELECT listen_id, name FROM zeilen WHERE id=?", (zeile_id,)).fetchone()
-        if zeile:
-            conn.execute(
-                "DELETE FROM eintraege WHERE listen_id=? AND zeile_name=?",
-                (zeile["listen_id"], zeile["name"])
-            )
         conn.execute("DELETE FROM zeilen WHERE id=?", (zeile_id,))
         conn.commit()
 
@@ -598,6 +591,9 @@ def transformation_anwenden(rohwert, typ):
 
     if typ == "timer":
         return _timer_zu_sekunden(rohwert)
+
+    if typ == "text":
+        return rohwert
 
     return rohwert
 
