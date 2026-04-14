@@ -43,13 +43,6 @@ def _pil_to_qpixmap(pil_img) -> QPixmap:
 
 # ── Vorschau-Canvas ──────────────────────────────────────────────────────────
 
-class OCRCanvas(QLabel):
-    """Zeigt Template-Vorschau + eingetragene Zonen-Rechtecke.
-    Maus-Drag erzeugt neue Auswahl.
-    """
-    auswahl_geaendert = pyqtSignal(tuple)  # (x0,y0,x1,y1, form) in canvas-koordinaten
-    form_geaendert = pyqtSignal(str)       # "box" | "kreis"
-
 # ── Lupe (Magnifier) ─────────────────────────────────────────────────────────
 
 class OCRMagnifier(QLabel):
@@ -112,6 +105,7 @@ class OCRCanvas(QLabel):
         self._orig_size = (1, 1)
         self._mouse_pos = QPoint(-100, -100)
         self._magnifier = OCRMagnifier(size=160, zoom=4)
+        self._ergebnis = "" # Aktuelles OCR-Ergebnis für die Auswahl
 
     def set_template_info(self, offset: tuple, orig_size: tuple):
         """Setzt die Position und Größe des Templates innerhalb des aktuellen Hintergrunds."""
@@ -149,6 +143,11 @@ class OCRCanvas(QLabel):
 
     def set_auswahl(self, auswahl: tuple | None):
         self._auswahl = auswahl
+        self._ergebnis = "" # Reset bei neuer Auswahl
+        self.update()
+
+    def set_ergebnis(self, text: str):
+        self._ergebnis = text
         self.update()
 
     def _draw_checkerboard(self, painter, w, h):
@@ -181,7 +180,6 @@ class OCRCanvas(QLabel):
             cl, co, cr, cu = e[4], e[2], e[5], e[3]
             f = e[13] if len(e) > 13 else (e[6] if len(e) > 6 and isinstance(e[6], str) else "box")
             
-            # cl/co/cr/cu sind % relativ zum TEMPLATE (orig_size)
             # 1. Pixel-Koordinaten im 1:1 Template-Raum
             rel_x0 = cl / 100 * otw
             rel_y0 = co / 100 * oth
@@ -200,11 +198,17 @@ class OCRCanvas(QLabel):
                 p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
             else:
                 p.drawRect(x0, y0, x1 - x0, y1 - y0)
-            p.setPen(farbe)
-            p.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
-            p.drawText(x0 + 2, y0 + 12, e[0])
 
-        # 4. Aktuelle Auswahl
+            # Label Hintergrund & Text (Zonen-Name)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 180))
+            p.drawRect(x0, y0 - 15, max(30, len(e[0]) * 7), 15)
+            
+            p.setPen(QColor(200, 200, 200)) # Dezentes Grau für Namen
+            p.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+            p.drawText(x0 + 2, y0 - 3, e[0])
+
+        # 4. Aktuelle Auswahl + OCR Ergebnis
         if self._auswahl:
             ax0, ay0, ax1, ay1, af = self._auswahl
             p.setPen(QPen(QColor("#ffffff"), 1, Qt.PenStyle.DashLine))
@@ -212,6 +216,18 @@ class OCRCanvas(QLabel):
                 p.drawEllipse(ax0, ay0, ax1 - ax0, ay1 - ay0)
             else:
                 p.drawRect(ax0, ay0, ax1 - ax0, ay1 - ay0)
+
+            # OCR-Ergebnis (Live) direkt an der Auswahl anzeigen
+            if self._ergebnis:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(0, 0, 0, 220))
+                # Text-Abmessungen grob schätzen
+                tw = len(self._ergebnis) * 8 + 20
+                p.drawRect(ax0, ay1 + 5, tw, 25)
+                
+                p.setPen(QColor("#55ff88")) # Helles Grün (Synchron mit Label)
+                p.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
+                p.drawText(ax0 + 5, ay1 + 22, self._ergebnis)
 
         # 5. Live Drag
         if self._drag_start and self._drag_cur:
@@ -353,6 +369,8 @@ class OCRKonfigDialog(QDialog):
         self._target_color = [255, 255, 255]
         self._is_loading = False
         self._ocr_request_id = 0
+        self._ocr_running = False # Flag gegen Thread-Stau
+        self._ocr_pending = False # Neuer Request kam während OCR lief
         
         # Live-Update Timer
         self._live_timer = QTimer(self)
@@ -602,36 +620,31 @@ class OCRKonfigDialog(QDialog):
             if m[0] == self._name or (len(m) > 6 and m[6] == self._name):
                 found_match = m
                 break
-        
+
         if found_match:
-            # mx, my ist die Position des Templates im MEMU-Stream
             mx, my = found_match[1], found_match[2]
-            
-            # 2. Wir wollen den gleichen Ausschnitt sehen wie im "separaten Screenshot"
-            # Wir kennen den Offset (wo das Template im Screenshot liegt)
             ox, oy = getattr(self, "_live_offset", (0, 0))
-            sw, sh = self._tw, self._th # Größe des Screenshots
-            
-            # Berechne den Startpunkt des Live-Crops (mx,my minus Offset)
+            sw, sh = self._tw, self._th
+
             crop_x = mx - ox
             crop_y = my - oy
-            
+
             try:
-                # Live-Ausschnitt in der Größe des Screenshots grabben
-                pil_crop = self._bot.app.current_screenshot_pil.crop((crop_x, crop_y, crop_x + sw, crop_y + sh)).convert("RGB")
-                
-                # Pixmap für Canvas aktualisieren
+                pil_crop = self._bot.app.current_screenshot_pil.crop(
+                    (crop_x, crop_y, crop_x + sw, crop_y + sh)
+                ).convert("RGB")
+
+                # Canvas-Bild immer aktualisieren (kein OCR-Overhead, kein Flackern)
                 pm = _pil_to_qpixmap(pil_crop)
-                # Offset und Original-Größe wiederherstellen, da wir den Kontext-Crop haben
                 self._canvas.set_template_info((ox, oy), (self._orig_tw, self._orig_th))
                 self._canvas.set_pixmap(pm)
                 self._canvas.setFixedSize(sw, sh)
-                
-                # Basis für Binarisierung setzen und Scan triggern
+
+                # OCR-Basis aktualisieren und OCR nur starten wenn kein Lauf aktiv
                 self._vorschau_basis_pil = pil_crop
-                self._ocr_vorschau_starten()
-            except Exception as e:
-                # Falls das Template zu nah am Rand ist und der Crop fehlschlägt
+                if not self._ocr_running:
+                    self._ocr_vorschau_starten()
+            except Exception:
                 pass
 
     def _farbe_waehlen(self):
@@ -993,14 +1006,24 @@ class OCRKonfigDialog(QDialog):
             return
         if not self._auswahl or (self._template_pil is None and self._vorschau_basis_pil is None):
             return
-        
+        if self._ocr_running:
+            self._ocr_pending = True  # Merken: nach aktuellem Run nochmal starten
+            return
+
         self._ocr_request_id += 1
         rid = self._ocr_request_id
+        self._ocr_running = True
+        self._ocr_pending = False
 
         # Fire OCR in background thread
         cl, co, cr, cu = self._crop_prozent()
         af = self._auswahl[4] if len(self._auswahl) > 4 else "box"
         
+        # Upscale-Sicherheit für Texte (Vermeidung von RAM-Explosion)
+        upscale = self._sl_upscale.value() / self._f_u
+        if self._get_modus() == "Text" and upscale > 3.0:
+            upscale = 3.0 # Deckelung für Text, da EasyOCR sonst ewig braucht
+
         # Offset berücksichtigen (Wo liegt das Template im aktuellen Hintergrund-Bild?)
         off_x, off_y = getattr(self, "_live_offset", (0, 0))
 
@@ -1014,7 +1037,7 @@ class OCRKonfigDialog(QDialog):
             "contrast": self._sl_kontrast.value() / self._f_k,
             "brightness": self._sl_helligkeit.value() / self._f_h,
             "sharpness": self._sl_schaerfe.value() / self._f_s,
-            "upscale": self._sl_upscale.value() / self._f_u,
+            "upscale": upscale,
             "color_filter": self._cb_farbe.isChecked(),
             "target_color": list(self._target_color),
             "color_tolerance": self._sl_toleranz.value(),
@@ -1037,23 +1060,37 @@ class OCRKonfigDialog(QDialog):
 
     def _on_ocr_fertig(self, res, d_info, rid):
         """Wird im Haupt-Thread aufgerufen, wenn die OCR-Vorschau fertig ist."""
-        if rid != self._ocr_request_id:
-            return
-            
-        self._ocr_label.setText(res if res else "—")
-        
-        if d_info and len(d_info) >= 5 and d_info[4] is not None:
-            # Wir müssen das NumPy-Array kopieren, bevor es im Thread gelöscht wird
-            bin_img_np = d_info[4].copy()
-            self._debug_window.update_image(bin_img_np)
-        else:
-            self._debug_window.update_image(None)
+        self._ocr_running = False  # Sperre aufheben
+
+        if rid == self._ocr_request_id:
+            ergebnis = res if res else "—"
+            self._ocr_label.setText(ergebnis)
+            self._canvas.set_ergebnis(ergebnis)
+
+            if d_info and len(d_info) >= 5 and d_info[4] is not None:
+                bin_img_np = d_info[4].copy()
+                self._debug_window.update_image(bin_img_np)
+            else:
+                self._debug_window.update_image(None)
+
+        # Wenn während des Laufs eine neue Anfrage kam, sofort nochmal starten
+        if self._ocr_pending:
+            self._ocr_vorschau_starten()
 
     def closeEvent(self, event):
         """Wird aufgerufen, wenn der Dialog geschlossen wird."""
+        self._live_timer.stop()
+        # Signal trennen bevor wir schließen — sonst öffnet ein laufender OCR-Thread
+        # das Debug-Fenster via update_image()/show() nach dem Schließen wieder.
+        try:
+            self.ocr_fertig.disconnect(self._on_ocr_fertig)
+        except RuntimeError:
+            pass
         if hasattr(self, "_debug_window"):
+            self._debug_window.hide()
             self._debug_window.close()
         if hasattr(self, "_canvas") and hasattr(self._canvas, "_magnifier"):
+            self._canvas._magnifier.hide()
             self._canvas._magnifier.close()
         super().closeEvent(event)
 
