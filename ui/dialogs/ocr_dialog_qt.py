@@ -10,8 +10,8 @@ from PyQt6.QtWidgets import (
     QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox, QSpinBox,
     QSlider, QFrame, QWidget, QScrollArea, QSizePolicy, QColorDialog
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QImage, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRectF, QPoint
+from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QImage, QFont, QPainterPath, QRegion
 
 from ui.widgets.click_step_slider import ClickStepSlider
 
@@ -50,9 +50,57 @@ class OCRCanvas(QLabel):
     auswahl_geaendert = pyqtSignal(tuple)  # (x0,y0,x1,y1, form) in canvas-koordinaten
     form_geaendert = pyqtSignal(str)       # "box" | "kreis"
 
+# ── Lupe (Magnifier) ─────────────────────────────────────────────────────────
+
+class OCRMagnifier(QLabel):
+    """Eine Lupe als separates, rahmenloses Fenster."""
+    def __init__(self, size=160, zoom=4):
+        super().__init__(None) # Top-Level
+        self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._size = size
+        self._zoom = zoom
+        self.setFixedSize(size, size)
+        self.setObjectName("ocr_magnifier")
+        self.setStyleSheet("border: 2px solid #1e88e5; background: #000;")
+        
+        # Kreis-Maske
+        reg = QRegion(0, 0, size, size, QRegion.RegionType.Ellipse)
+        self.setMask(reg)
+        self._pm = QPixmap()
+
+    def update_view(self, pixmap, global_pos):
+        self._pm = pixmap
+        self.update()
+        # Offset damit der Cursor nicht verdeckt wird
+        self.move(global_pos.x() + 25, global_pos.y() + 25)
+        if not self.isVisible():
+            self.show()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if not self._pm.isNull():
+            p.drawPixmap(self.rect(), self._pm)
+        
+        m = self._size // 2
+        p.setPen(QPen(QColor(255, 255, 255, 120), 1))
+        p.drawLine(0, m, self._size, m)
+        p.drawLine(m, 0, m, self._size)
+        p.end()
+
+# ── Canvas ──────────────────────────────────────────────────────────────────
+
+class OCRCanvas(QLabel):
+    """Widget zur Anzeige des Template-Bildes und Auswahl von Bereichen."""
+    auswahl_geaendert = pyqtSignal(tuple)  # (x0,y0,x1,y1, form) in canvas-koordinaten
+    form_geaendert = pyqtSignal(str)       # "box" | "kreis"
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ocr_canvas")
+        self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self._pixmap: QPixmap = QPixmap()
         self._eintraege: list = []        # [(name,modus,co,cu,cl,cr, form), ...]
@@ -62,6 +110,8 @@ class OCRCanvas(QLabel):
         self._form: str = "box"
         self._offset = (0, 0)
         self._orig_size = (1, 1)
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier = OCRMagnifier(size=160, zoom=4)
 
     def set_template_info(self, offset: tuple, orig_size: tuple):
         """Setzt die Position und Größe des Templates innerhalb des aktuellen Hintergrunds."""
@@ -89,7 +139,6 @@ class OCRCanvas(QLabel):
 
     def set_pixmap(self, pm: QPixmap):
         self._pixmap = pm
-        self.setFixedSize(pm.width(), pm.height())
         self.update()
 
     def set_eintraege(self, eintraege: list, tw: int, th: int):
@@ -123,12 +172,6 @@ class OCRCanvas(QLabel):
             p.drawPixmap(0, 0, self._pixmap)
 
         # 3. Eingetragene Zonen
-        # Skalierung zwischen 1:1 Hintergrund und Canvas
-        # self._tw/th sind die 1:1 Größen des Hintergrunds (z.B. Captured Area)
-        # w/h sind die aktuellen Canvas Größen (inkl. Zoom)
-        sx = w / self._tw if self._tw > 0 else 1.0
-        sy = h / self._th if self._th > 0 else 1.0
-        
         ox, oy = self._offset
         otw, oth = self._orig_size
 
@@ -146,16 +189,10 @@ class OCRCanvas(QLabel):
             rel_y1 = oth - (cu / 100 * oth)
             
             # 2. Pixel-Koordinaten im 1:1 Hintergrund-Raum (Capture)
-            bg_x0 = rel_x0 + ox
-            bg_y0 = rel_y0 + oy
-            bg_x1 = rel_x1 + ox
-            bg_y1 = rel_y1 + oy
-            
-            # 3. Pixel-Koordinaten auf dem skalierten Canvas
-            x0 = int(bg_x0 * sx)
-            y0 = int(bg_y0 * sy)
-            x1 = int(bg_x1 * sx)
-            y1 = int(bg_y1 * sy)
+            x0 = int(rel_x0 + ox)
+            y0 = int(rel_y0 + oy)
+            x1 = int(rel_x1 + ox)
+            y1 = int(rel_y1 + oy)
             
             p.setPen(QPen(farbe, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -193,14 +230,34 @@ class OCRCanvas(QLabel):
     def mousePressEvent(self, e):
         self._drag_start = (e.pos().x(), e.pos().y())
         self._drag_cur = self._drag_start
+        self._mouse_pos = e.pos()
         self.update()
 
     def mouseMoveEvent(self, e):
+        self._mouse_pos = e.pos()
         if self._drag_start:
             self._drag_cur = (e.pos().x(), e.pos().y())
-            self.update()
+        
+        # Lupe aktualisieren
+        if not self._pixmap.isNull():
+            m_zoom = self._magnifier._zoom
+            m_size = self._magnifier._size
+            src_size = m_size // m_zoom
+            
+            sx = e.pos().x() - src_size // 2
+            sy = e.pos().y() - src_size // 2
+            crop = self._pixmap.copy(sx, sy, src_size, src_size)
+            self._magnifier.update_view(crop, self.mapToGlobal(e.pos()))
+            
+        self.update()
+
+    def leaveEvent(self, event):
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier.hide()
+        self.update()
 
     def mouseReleaseEvent(self, e):
+        self._mouse_pos = e.pos()
         if not self._drag_start:
             return
         x0 = min(self._drag_start[0], e.pos().x())
@@ -234,7 +291,10 @@ class OCRDebugWindow(QDialog):
         self._last_img = None
 
     def update_image(self, bin_img_np):
-        if bin_img_np is None: return
+        if bin_img_np is None:
+            self.label.setText("Keine Bilddaten")
+            self.label.setPixmap(QPixmap())
+            return
         try:
             # Sicherheits-Kopie und Konvertierung
             # Wir stellen sicher, dass das Array im Speicher zusammenhängend ist
@@ -268,16 +328,16 @@ class OCRKonfigDialog(QDialog):
 
     Signals:
         gespeichert() — nach erfolgreichem Speichern
-        ocr_fertig(str, object) — (Ergebnis, Debug-Bild-Array)
+        ocr_fertig(str, object, int) — (Ergebnis, Debug-Bild-Array, request_id)
     """
     gespeichert = pyqtSignal()
-    ocr_fertig = pyqtSignal(str, object)
+    ocr_fertig = pyqtSignal(str, object, int)
 
     def __init__(self, template_name: str, bot, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"OCR-Bereiche: {template_name}")
         self.setModal(False)
-        self.resize(460, 640)
+        self.resize(600, 800)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         self._name = template_name
@@ -289,20 +349,21 @@ class OCRKonfigDialog(QDialog):
         self._th = 1
         self._template_pil = None
         self._vorschau_basis_pil = None
-        self._target_color = [255, 255, 255]
         self._live_view_active = False
+        self._target_color = [255, 255, 255]
+        self._is_loading = False
+        self._ocr_request_id = 0
         
+        # Live-Update Timer
+        self._live_timer = QTimer(self)
+        self._live_timer.timeout.connect(self._live_update_tick)
+
         # Separates Debug-Fenster für Binarisierung
         self._debug_window = OCRDebugWindow(self)
 
         self._setup_ui()
         self._lade_template()
         self._lade_bestehende()
-        
-        # Live-Update Timer (10 FPS für die Vorschau)
-        self._live_timer = QTimer(self)
-        self._live_timer.timeout.connect(self._live_update_tick)
-        self._live_timer.start(100)
         
         # Signal verbinden
         self.ocr_fertig.connect(self._on_ocr_fertig)
@@ -314,10 +375,11 @@ class OCRKonfigDialog(QDialog):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
 
-        # Header mit Bereichswahl, Reset und Zoom
+        # Header mit Bereichswahl, Reset
         header = QHBoxLayout()
+
         self._cb_live_view = QCheckBox("Live-Vorschau")
-        self._cb_live_view.setToolTip("Zeigt das aktuelle Live-Bild wenn das Template gefunden wird")
+        self._cb_live_view.setToolTip("Nutzt das Live-Bild vom Bot für die OCR-Vorschau (Template muss im Bild gefunden werden)")
         self._cb_live_view.stateChanged.connect(self._on_live_view_toggled)
         header.addWidget(self._cb_live_view)
 
@@ -333,14 +395,6 @@ class OCRKonfigDialog(QDialog):
         header.addWidget(self._btn_reset_bg)
 
         header.addStretch()
-
-        header.addWidget(QLabel("Zoom:"))
-        self._sl_zoom = QSlider(Qt.Orientation.Horizontal)
-        self._sl_zoom.setRange(100, 400)
-        self._sl_zoom.setValue(150)
-        self._sl_zoom.setFixedWidth(80)
-        self._sl_zoom.valueChanged.connect(lambda _: self._trigger_visual_refresh())
-        header.addWidget(self._sl_zoom)
         root.addLayout(header)
 
         # Canvas in ScrollArea
@@ -351,8 +405,8 @@ class OCRKonfigDialog(QDialog):
         self._canvas.auswahl_geaendert.connect(self._on_auswahl_canvas)
         self._canvas.form_geaendert.connect(self._on_form_changed)
         self._scroll.setWidget(self._canvas)
-        self._scroll.setFixedHeight(VORSCHAU_GROESSE + 4)
-        root.addWidget(self._scroll)
+        # self._scroll.setFixedHeight(VORSCHAU_GROESSE + 4) # FESTE HÖHE ENTFERNT
+        root.addWidget(self._scroll, 1) # Streckt sich nun
         # OCR-Ergebnis Vorschau
         self._ocr_label = QLabel("—")
         self._ocr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -528,31 +582,20 @@ class OCRKonfigDialog(QDialog):
 
     def _on_live_view_toggled(self, state):
         self._live_view_active = (state == Qt.CheckState.Checked.value)
-        if not self._live_view_active:
-            # Zurück zum statischen Template/Capture
+        if self._live_view_active:
+            self._live_timer.start(100) # 10 FPS
+        else:
+            self._live_timer.stop()
+            self._vorschau_basis_pil = None
             self._trigger_visual_refresh()
-
-    def _trigger_visual_refresh(self):
-        """Erzwingt ein Neu-Laden des Bildes (statisch oder captured) mit aktuellem Zoom."""
-        if self._template_pil is None:
-            self._lade_template()
-            return
-
-        # Anzeige-Pixmap erstellen (Zoom berücksichtigen)
-        z = self._sl_zoom.value() / 100.0
-        nw, nh = int(self._tw * z), int(self._th * z)
-        scaled = self._template_pil.resize((nw, nh), Image.LANCZOS)
-        pm = _pil_to_qpixmap(scaled)
-        
-        # Canvas informieren über Offset und Original-Größe
-        self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), (self._orig_tw, self._orig_th))
-        self._canvas.set_pixmap(pm)
+            self._ocr_vorschau_starten() # OCR auf statischem Bild aktualisieren
 
     def _live_update_tick(self):
-        """Aktualisiert die Vorschau mit einem Live-Crop, falls gefunden."""
+        """Aktualisiert die Vorschau mit einem Live-Bildausschnitt basierend auf dem Screenshot-Kontext."""
         if not self._live_view_active or self._bot.app.current_screenshot_pil is None:
             return
 
+        # 1. Wo liegt das Template aktuell im Live-Bild?
         matches = self._bot.app.state.active_matches
         found_match = None
         for m in matches:
@@ -561,34 +604,35 @@ class OCRKonfigDialog(QDialog):
                 break
         
         if found_match:
-            # Crop aus dem aktuellen Screenshot
-            mx, my, mw, mh = found_match[1], found_match[2], found_match[3], found_match[4]
+            # mx, my ist die Position des Templates im MEMU-Stream
+            mx, my = found_match[1], found_match[2]
+            
+            # 2. Wir wollen den gleichen Ausschnitt sehen wie im "separaten Screenshot"
+            # Wir kennen den Offset (wo das Template im Screenshot liegt)
+            ox, oy = getattr(self, "_live_offset", (0, 0))
+            sw, sh = self._tw, self._th # Größe des Screenshots
+            
+            # Berechne den Startpunkt des Live-Crops (mx,my minus Offset)
+            crop_x = mx - ox
+            crop_y = my - oy
+            
             try:
-                # Da matches oft auf skalierten Bildern basieren oder Boxen haben:
-                # Wir nehmen den Bereich des Matches
-                pil_crop = self._bot.app.current_screenshot_pil.crop((mx, my, mx + mw, my + mh)).convert("RGB")
+                # Live-Ausschnitt in der Größe des Screenshots grabben
+                pil_crop = self._bot.app.current_screenshot_pil.crop((crop_x, crop_y, crop_x + sw, crop_y + sh)).convert("RGB")
                 
-                # Wir müssen sicherstellen dass die Größe zum Canvas passt
-                # (Normalerweise sollte ein Match die gleiche Größe wie das Template-Bild haben)
-                # Falls das Template maskiert (bbox) ist, müssen wir das berücksichtigen
-                te = self._bot.template_engine
-                bbox = te.templates.get(self._name, {}).get("bbox")
-                
-                # Wenn wir hier ein Live-Bild haben, nutzen wir es für die Anzeige
-                z = self._sl_zoom.value() / 100.0
-                nw, nh = int(pil_crop.size[0] * z), int(pil_crop.size[1] * z)
-                scaled = pil_crop.resize((nw, nh), Image.LANCZOS)
-                pm = _pil_to_qpixmap(scaled)
-                
-                # Canvas informieren: Im Live-Crop ist das Template immer bei 0,0
-                self._canvas.set_template_info((0, 0), (pil_crop.size[0], pil_crop.size[1]))
+                # Pixmap für Canvas aktualisieren
+                pm = _pil_to_qpixmap(pil_crop)
+                # Offset und Original-Größe wiederherstellen, da wir den Kontext-Crop haben
+                self._canvas.set_template_info((ox, oy), (self._orig_tw, self._orig_th))
                 self._canvas.set_pixmap(pm)
+                self._canvas.setFixedSize(sw, sh)
                 
-                # Auch für die Binarisierungsvorschau nutzen (optional, aber sinnvoll)
+                # Basis für Binarisierung setzen und Scan triggern
                 self._vorschau_basis_pil = pil_crop
                 self._ocr_vorschau_starten()
             except Exception as e:
-                print(f"[OCR-Live] Fehler beim Croppen: {e}")
+                # Falls das Template zu nah am Rand ist und der Crop fehlschlägt
+                pass
 
     def _farbe_waehlen(self):
         c = QColorDialog.getColor(QColor(*self._target_color), self, "Filter-Farbe wählen")
@@ -669,21 +713,26 @@ class OCRKonfigDialog(QDialog):
     def _laden(self, idx: int):
         if idx >= len(self._eintraege): return
         e = self._eintraege[idx]
-        self._name_edit.setText(e[0])
-        # set modus
-        for btn in self._modus_grp.buttons():
-            if btn.text() == e[1]:
-                btn.setChecked(True)
-        self._sl_kontrast.setValue(int(e[6] * self._f_k))
-        self._sl_helligkeit.setValue(int(e[7] * self._f_h))
-        self._sl_schaerfe.setValue(int(e[8] * self._f_s))
-        self._sl_upscale.setValue(int(e[9] * self._f_u))
-        self._cb_farbe.setChecked(e[10])
         
-        if len(e) > 11:
-            self._target_color = list(e[11])
-            self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
-        self._sl_toleranz.setValue(e[12] if len(e) > 12 else 30)
+        self._is_loading = True
+        try:
+            self._name_edit.setText(e[0])
+            # set modus
+            for btn in self._modus_grp.buttons():
+                if btn.text() == e[1]:
+                    btn.setChecked(True)
+            self._sl_kontrast.setValue(int(e[6] * self._f_k))
+            self._sl_helligkeit.setValue(int(e[7] * self._f_h))
+            self._sl_schaerfe.setValue(int(e[8] * self._f_s))
+            self._sl_upscale.setValue(int(e[9] * self._f_u))
+            self._cb_farbe.setChecked(e[10])
+            
+            if len(e) > 11:
+                self._target_color = list(e[11])
+                self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
+            self._sl_toleranz.setValue(e[12] if len(e) > 12 else 30)
+        finally:
+            self._is_loading = False
         
         # Grafik-Update im Canvas & OCR-Vorschau
         self._on_auswahl_tabelle(idx)
@@ -691,6 +740,7 @@ class OCRKonfigDialog(QDialog):
     def _loeschen(self, idx: int):
         self._eintraege.pop(idx)
         self._tabelle_aktualisieren()
+        self._final_speichern() # Sofort persistent speichern
 
     # ── Interaktion ──────────────────────────────────────────────────────────
 
@@ -721,12 +771,11 @@ class OCRKonfigDialog(QDialog):
         bg_x1 = rel_x1 + ox
         bg_y1 = rel_y1 + oy
         
-        # Pixel auf dem Canvas (Zoom berücksichtigen)
-        z = self._sl_zoom.value() / 100.0
-        ax0 = int(bg_x0 * z)
-        ay0 = int(bg_y0 * z)
-        ax1 = int(bg_x1 * z)
-        ay1 = int(bg_y1 * z)
+        # Pixel auf dem Canvas (Ohne Zoom)
+        ax0 = int(bg_x0)
+        ay0 = int(bg_y0)
+        ax1 = int(bg_x1)
+        ay1 = int(bg_y1)
 
         self._auswahl = (ax0, ay0, ax1, ay1, form)
         self._canvas.set_auswahl(self._auswahl)
@@ -750,15 +799,11 @@ class OCRKonfigDialog(QDialog):
             return 0.0, 0.0, 0.0, 0.0
         x0, y0, x1, y1 = self._auswahl[:4]
         
-        # Aktuelle Canvas-Größe (Zoomed)
-        cw = self._canvas.width()
-        ch = self._canvas.height()
-        
-        # Umrechnen in 1:1 Koordinaten des Hintergrund-Bildes (self._tw, self._th)
-        bg_x0 = x0 / cw * self._tw
-        bg_y0 = y0 / ch * self._th
-        bg_x1 = x1 / cw * self._tw
-        bg_y1 = y1 / ch * self._th
+        # Da Canvas und Hintergrund nun 1:1 sind, sind x0/y0 direkt die bg_ Koordinaten
+        bg_x0 = x0
+        bg_y0 = y0
+        bg_x1 = x1
+        bg_y1 = y1
         
         # Relativ zum Template-Offset (wo fängt das Template im Hintergrund an?)
         off_x, off_y = getattr(self, "_live_offset", (0, 0))
@@ -799,13 +844,16 @@ class OCRKonfigDialog(QDialog):
             if e[0] == n:
                 self._eintraege[i] = neu
                 self._tabelle_aktualisieren()
+                self._final_speichern() # Automatisch persistent speichern
                 return
         self._eintraege.append(neu)
         self._tabelle_aktualisieren()
+        self._final_speichern() # Automatisch persistent speichern
 
     def _live_focus(self):
         """Hebt Grab auf damit die Live-Vorschau im Hauptfenster genutzt werden kann."""
         self.setWindowModality(Qt.WindowModality.NonModal)
+        self.hide() # Dialog ausblenden damit er die Sicht nicht versperrt
         
         # Wir registrieren uns als Empfänger für die nächste OCR-Region-Wahl
         if hasattr(self._bot, "set_live_ocr_receiver"):
@@ -822,21 +870,7 @@ class OCRKonfigDialog(QDialog):
             p.window().raise_()
             p.window().activateWindow()
 
-    def _reset_background(self):
-        """Löscht den benutzerdefinierten Bereich und kehrt zum PNG zurück."""
-        import os
-        ref_dir = os.path.join("templates", "_ocr_refs")
-        img_p = os.path.join(ref_dir, f"{self._name}.png")
-        json_p = os.path.join(ref_dir, f"{self._name}.json")
-        
-        if os.path.exists(img_p): os.remove(img_p)
-        if os.path.exists(json_p): os.remove(json_p)
-        
-        self._live_offset = (0, 0)
-        self._template_pil = None
-        self._lade_template()
-
-    def empfange_live_region(self, x0, y0, x1, y1):
+    def empfange_live_region(self, x0, y0, x1, y1, form="box"):
         """Wird vom Hauptfenster aufgerufen, wenn dort ein Bereich gewählt wurde."""
         ss_pil = self._bot.app.current_screenshot_pil
         if ss_pil is None: return
@@ -882,6 +916,20 @@ class OCRKonfigDialog(QDialog):
             self.activateWindow()
         except Exception as e:
             print(f"[OCR-Capture] Fehler: {e}")
+
+    def _reset_background(self):
+        """Löscht den benutzerdefinierten Bereich und kehrt zum PNG zurück."""
+        import os
+        ref_dir = os.path.join("templates", "_ocr_refs")
+        img_p = os.path.join(ref_dir, f"{self._name}.png")
+        json_p = os.path.join(ref_dir, f"{self._name}.json")
+        
+        if os.path.exists(img_p): os.remove(img_p)
+        if os.path.exists(json_p): os.remove(json_p)
+        
+        self._live_offset = (0, 0)
+        self._template_pil = None
+        self._lade_template()
 
     def _lade_template(self):
         if Image is None:
@@ -941,9 +989,14 @@ class OCRKonfigDialog(QDialog):
             return
 
     def _ocr_vorschau_starten(self):
-        if not self._auswahl or self._template_pil is None:
+        if self._is_loading:
+            return
+        if not self._auswahl or (self._template_pil is None and self._vorschau_basis_pil is None):
             return
         
+        self._ocr_request_id += 1
+        rid = self._ocr_request_id
+
         # Fire OCR in background thread
         cl, co, cr, cu = self._crop_prozent()
         af = self._auswahl[4] if len(self._auswahl) > 4 else "box"
@@ -967,21 +1020,26 @@ class OCRKonfigDialog(QDialog):
             "color_tolerance": self._sl_toleranz.value(),
             "ausschnitt_form": af
         }
-        pil_basis = self._template_pil
+        
+        # Basis wählen: Entweder Live-Crop (wenn aktiv) oder gespeichertes Bild
+        pil_basis = self._vorschau_basis_pil if (self._live_view_active and self._vorschau_basis_pil) else self._template_pil
 
         def run():
             try:
                 res, debug_info = self._bot.ocr_engine.region_scannen(pil_basis, region, debug=True)
                 # Signal senden
-                self.ocr_fertig.emit(res, debug_info)
+                self.ocr_fertig.emit(res, debug_info, rid)
             except Exception as e:
                 print(f"[OCR-Vorschau] Fehler: {e}")
-                self.ocr_fertig.emit(f"Fehler: {e}", None)
+                self.ocr_fertig.emit(f"Fehler: {e}", None, rid)
 
         threading.Thread(target=run, daemon=True).start()
 
-    def _on_ocr_fertig(self, res, d_info):
+    def _on_ocr_fertig(self, res, d_info, rid):
         """Wird im Haupt-Thread aufgerufen, wenn die OCR-Vorschau fertig ist."""
+        if rid != self._ocr_request_id:
+            return
+            
         self._ocr_label.setText(res if res else "—")
         
         if d_info and len(d_info) >= 5 and d_info[4] is not None:
@@ -989,46 +1047,99 @@ class OCRKonfigDialog(QDialog):
             bin_img_np = d_info[4].copy()
             self._debug_window.update_image(bin_img_np)
         else:
-            self._debug_window.show()
+            self._debug_window.update_image(None)
 
     def closeEvent(self, event):
         """Wird aufgerufen, wenn der Dialog geschlossen wird."""
         if hasattr(self, "_debug_window"):
             self._debug_window.close()
+        if hasattr(self, "_canvas") and hasattr(self._canvas, "_magnifier"):
+            self._canvas._magnifier.close()
         super().closeEvent(event)
 
     def _trigger_visual_refresh(self):
-        """Erzwingt ein Neu-Laden des Bildes (statisch oder captured) mit aktuellem Zoom."""
+        """Erzwingt ein Neu-Laden des Bildes (statisch oder captured)."""
         if self._template_pil is None:
             self._lade_template()
             return
 
-        # Anzeige-Pixmap erstellen (Zoom berücksichtigen)
-        z = self._sl_zoom.value() / 100.0
-        nw, nh = int(self._tw * z), int(self._th * z)
-        scaled = self._template_pil.resize((nw, nh), Image.LANCZOS)
-        pm = _pil_to_qpixmap(scaled)
+        # Anzeige-Pixmap erstellen (Originalgröße)
+        nw, nh = self._tw, self._th
+        pm = _pil_to_qpixmap(self._template_pil)
+        
+        # Canvas informieren über Offset und Original-Größe
+        self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), (self._orig_tw, self._orig_th))
         self._canvas.set_pixmap(pm)
+        self._canvas.setFixedSize(nw, nh) # Größe fixieren damit ScrollArea sie kennt
+        
+        # Wir zwingen die ScrollArea auf die Bildgröße + kleiner Puffer für den Rahmen
+        # Das verhindert, dass die ScrollArea vom Layout "erdrückt" wird.
+        self._scroll.setMinimumSize(min(nw + 4, 1000), min(nh + 4, 800))
+        
+        # Dialog-Größe anpassen
+        screen = self.screen().availableGeometry()
+        
+        # Erhöhter Puffer für die restliche UI (Slider, Tabelle, Margins)
+        # 620px ist ein sicherer Wert für alle Elemente inklusive Abstände
+        ui_height = 620 
+        
+        # Mindestbreite 750px für die Slider-Zeilen, damit diese nicht gequetscht wirken
+        target_w = max(750, nw + 100)
+        target_h = nh + ui_height
+        
+        # Grenzen des Bildschirms einhalten
+        target_w = min(target_w, screen.width() - 40)
+        target_h = min(target_h, screen.height() - 40)
+        
+        self.resize(target_w, target_h)
+        # adjustSize() am Ende hilft Qt, die restlichen Abstände perfekt zu berechnen
+        QTimer.singleShot(50, self.adjustSize)
 
     def _final_speichern(self):
-        """Speichert alle Einträge im OCR-Engine."""
+        """Speichert alle Einträge im OCR-Engine persistent."""
         ocr = self._bot.ocr_engine
         prefix = f"{self._name}_"
-        # Alte Einträge für dieses Template löschen
-        for k, v in list(ocr.template_ocr_konfigurationen().items()):
-            if v.get("template") == self._name:
-                ocr.template_ocr_deaktivieren(k)
-        # Neue Einträge registrieren
+        
+        # 1. Aktuellen Stand aus der Engine/Datei laden
+        konfig = dict(ocr.template_ocr_konfigurationen())
+        
+        # 2. Alle alten Einträge für dieses Template entfernen
+        zu_entfernen = [k for k, v in konfig.items() if v.get("template") == self._name]
+        for k in zu_entfernen:
+            konfig.pop(k, None)
+            
+        # 3. Neue Einträge aus der UI-Liste hinzufügen
         for e in self._eintraege:
-            n, m, co, cu, cl, cr, con, br, sh, up, cf, tc, ct = e[:13]
+            if len(e) < 10: continue
+            
+            n = e[0]
+            m = e[1]
+            co, cu, cl, cr = e[2], e[3], e[4], e[5]
+            con, br, sh, up = e[6], e[7], e[8], e[9]
+            cf = e[10] if len(e) > 10 else False
+            tc = e[11] if len(e) > 11 else [255, 255, 255]
+            ct = e[12] if len(e) > 12 else 30
             af = e[13] if len(e) > 13 else "box"
+            
             key = n if n.startswith(prefix) else f"{prefix}{n}"
-            ocr.template_ocr_aktivieren(
-                key, self._name, m,
-                crop_oben=co, crop_unten=cu, crop_links=cl, crop_rechts=cr,
-                contrast=con, brightness=br, sharpness=sh, upscale=up,
-                color_filter=cf, target_color=tc, color_tolerance=ct,
-                ausschnitt_form=af
-            )
+            konfig[key] = {
+                "template":    self._name,
+                "modus":       m,
+                "crop_oben":   co,
+                "crop_unten":  cu,
+                "crop_links":  cl,
+                "crop_rechts": cr,
+                "contrast":    con,
+                "brightness":  br,
+                "sharpness":   sh,
+                "upscale":     up,
+                "color_filter": cf,
+                "target_color": tc,
+                "color_tolerance": ct,
+                "ausschnitt_form": af
+            }
+
+        # 4. Zurück an die Engine geben (die speichert es persistent)
+        ocr._template_ocr_speichern(konfig)
         self.gespeichert.emit()
         # self.close() # BLEIBT OFFEN AUF WUNSCH

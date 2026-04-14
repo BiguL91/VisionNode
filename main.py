@@ -289,17 +289,37 @@ class VorschauLabel(QLabel):
             p.drawText(cx + 2, max(cy - 2, 10), f"{name} {score:.2f}")
 
             # Template-OCR Crop-Bereiche
+            # Wir berechnen die Boxen im 1:1 Raum des Templates und skalieren dann,
+            # um Rundungsfehler bei den Prozenten zu minimieren.
             for cfg in ocr_by_tmpl.get(name, []):
                 cl = cfg.get("crop_links",  0) / 100
                 co = cfg.get("crop_oben",   0) / 100
                 cr = cfg.get("crop_rechts", 0) / 100
                 cu = cfg.get("crop_unten",  0) / 100
-                rcx = int(cx + cl * cw)
-                rcy = int(cy + co * ch)
-                rcw = int(cw * (1 - cl - cr))
-                rch = int(ch * (1 - co - cu))
+                
+                # Pixel im Original-Raum (relativ zum Match-Start mx, my)
+                # mw/mh ist die Größe des Matches auf dem echten Screen
+                rx0_1to1 = mx + cl * mw
+                ry0_1to1 = my + co * mh
+                rx1_1to1 = mx + mw - cr * mw
+                ry1_1to1 = my + mh - cu * mh
+                
+                # Jetzt auf Vorschau-Pixel skalieren
+                rcx = int(round(ox + rx0_1to1 * s))
+                rcy = int(round(oy + ry0_1to1 * s))
+                rcx1 = int(round(ox + rx1_1to1 * s))
+                rcy1 = int(round(oy + ry1_1to1 * s))
+                
+                rcw = rcx1 - rcx
+                rch = rcy1 - rcy
+                
                 p.setPen(QPen(QColor("#00bcd4"), 1, Qt.PenStyle.DashLine))
-                p.drawRect(rcx, rcy, rcw, rch)
+                # Form berücksichtigen falls vorhanden
+                af = cfg.get("ausschnitt_form", "box")
+                if af == "kreis":
+                    p.drawEllipse(rcx, rcy, rcw, rch)
+                else:
+                    p.drawRect(rcx, rcy, rcw, rch)
 
 
 # ── Hauptfenster ──────────────────────────────────────────────────────────────
@@ -366,7 +386,14 @@ class TilesBotWindow(QMainWindow):
         # Mitte (Live-Vorschau)
         self._vorschau = VorschauLabel()
         self._vorschau.setMinimumWidth(400)
-        splitter.addWidget(self._vorschau)
+        
+        # In ScrollArea packen damit große Screenshots nicht gestaucht werden
+        self._vorschau_scroll = QScrollArea()
+        self._vorschau_scroll.setWidgetResizable(True)
+        self._vorschau_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._vorschau_scroll.setWidget(self._vorschau)
+        
+        splitter.addWidget(self._vorschau_scroll)
 
         # Rechte Spalte 1 (Templates, OCR, State, Log)
         self._spalte_rechts1 = self._setup_rechte_spalte1()
@@ -1393,7 +1420,9 @@ class TilesBotWindow(QMainWindow):
         except Exception:
             pass
         screen = QApplication.primaryScreen().availableGeometry()
-        self.resize(1150, screen.height() - 60)
+        # 1800px Breite für alle 4 Spalten, aber maximal 95% der Bildschirmbreite
+        target_w = min(1800, int(screen.width() * 0.95))
+        self.resize(target_w, screen.height() - 80)
 
     def _fenster_geometrie_speichern(self):
         try:
