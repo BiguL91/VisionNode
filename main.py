@@ -517,7 +517,6 @@ class TilesBotWindow(QMainWindow):
         btn_bearb.setObjectName("btn_sm")
         btn_del      = QPushButton("✕ Löschen")
         btn_del.setObjectName("btn_del_sm")
-        btn_del.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
         for btn in [btn_neu, btn_bearb, btn_del]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             zeile1.addWidget(btn)
@@ -1289,8 +1288,6 @@ class TilesBotWindow(QMainWindow):
 
     def _nur_aktive_toggle(self, aktiv: bool):
         self._nur_aktive_variablen = aktiv
-        self._btn_nur_aktive.setProperty("active", aktiv)
-        self._btn_nur_aktive.setStyle(self._btn_nur_aktive.style())
         self.ocr_panel.set_nur_aktive(aktiv)
 
     # ── Dialoge ───────────────────────────────────────────────────────────────
