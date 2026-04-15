@@ -282,6 +282,9 @@ class TemplateEditorQt(QDialog):
                 self.ausschnitt_form = aktueller_ausschnitt[3]
 
         self.einlern_modus_callback = einlern_modus_callback
+        
+        # Fokus für das Matching-Backend setzen
+        self.bot.app.state.editor_template_name = self.bearbeiten_name
 
         # Dynamischen Fenstertitel setzen
         prefix = "Template" if bearbeiten_name else "Neues Template"
@@ -1022,7 +1025,7 @@ class TemplateEditorQt(QDialog):
                 "condition_states": {}, "set_states": {},
             }
 
-            res = self.template_engine.matches_suchen_np(snap_np)
+            res, master_namen = self.template_engine.matches_suchen_np(snap_np)
             my_matches = [m for m in res if m[0] == n_tmp]
             self.roi_editor.draw_test_results(my_matches, match_s)
 
@@ -1312,6 +1315,13 @@ class TemplateEditorQt(QDialog):
         self.template_engine.template_loeschen("_tmp_preview")
         self.template_engine.templates.pop("test_match_preview", None)
         self.template_engine.settings.pop("test_match_preview", None)
+        
+        # Fokus im Backend löschen
+        self.bot.app.state.editor_template_name = None
+
+        if self.roi_editor:
+            self.roi_editor.close()
+        
         self.close()
         if self.einlern_modus_callback:
             self.einlern_modus_callback()
@@ -1320,6 +1330,13 @@ class TemplateEditorQt(QDialog):
         self.template_engine.template_loeschen("_tmp_preview")
         self.template_engine.templates.pop("test_match_preview", None)
         self.template_engine.settings.pop("test_match_preview", None)
+        
+        # Fokus im Backend löschen
+        self.bot.app.state.editor_template_name = None
+
+        if self.roi_editor:
+            self.roi_editor.close()
+        
         if self.einlern_modus_callback:
             self.einlern_modus_callback()
         super().closeEvent(event)

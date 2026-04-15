@@ -33,6 +33,9 @@ class BotState:
     
     # Game State (z.B. Map=True, City=False)
     game_states: Dict[str, bool] = field(default_factory=dict)
+    
+    # Fokusiertes Template im Editor (wird immer gescannt, ignoriert States)
+    editor_template_name: Optional[str] = None
 
     def set_game_state(self, name: str, value: bool):
         """Setzt eine Status-Variable."""

@@ -799,8 +799,8 @@ class TemplateEngine:
         return self._gpu_cache[key]
 
     @torch.no_grad()
-    def matches_suchen_np(self, screenshot_bgr, game_states=None):
-        if not self.templates: return []
+    def matches_suchen_np(self, screenshot_bgr, game_states=None, editor_fokus=None):
+        if not self.templates: return [], []
         img_gpu = torch.from_numpy(screenshot_bgr.transpose(2, 0, 1)).float().div(255.0).to(self.device).unsqueeze(0)
         ih, iw = screenshot_bgr.shape[:2]
         s_base = self.matching_skalierung
@@ -825,7 +825,15 @@ class TemplateEngine:
                 master_name = name.split("__")[0]
                 conditions = self.settings.get(master_name, {}).get("condition_states", {})
             
-            if game_states is not None:
+            # Fokus im Editor: Bedingungen für dieses Template und seine Varianten ignorieren
+            ist_fokus = False
+            if editor_fokus:
+                basis_fokus = editor_fokus.split("__")[0]
+                basis_name = name.split("__")[0]
+                if basis_name == basis_fokus:
+                    ist_fokus = True
+
+            if game_states is not None and not ist_fokus:
                 # Eigenen gesetzte Zustände sammeln (Hierarchie-weit!), 
                 # damit sie beim [KEIN ANDERER] Check ignoriert werden.
                 my_hierarchy_sets = self._get_hierarchy_set_states(name)

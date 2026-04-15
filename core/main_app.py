@@ -37,10 +37,15 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         except Exception: continue
         if item is None: break
 
-        frame, ref_groesse, skala, states = item
+        if len(item) == 5:
+            frame, ref_groesse, skala, states, editor_fokus = item
+        else:
+            frame, ref_groesse, skala, states = item
+            editor_fokus = None
+
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
-        result_tupel = engine.matches_suchen_np(frame, game_states=states)
+        result_tupel = engine.matches_suchen_np(frame, game_states=states, editor_fokus=editor_fokus)
         
         while not result_q.empty():
             try: result_q.get_nowait()
@@ -215,7 +220,8 @@ class TilesBotApp:
                         self.current_screenshot_np,
                         self.template_engine.referenz_groesse,
                         self.template_engine.matching_skalierung,
-                        self.state.game_states.copy()
+                        self.state.game_states.copy(),
+                        getattr(self.state, "editor_template_name", None)
                     ))
                     t_start = time.time()
                 except Exception: t_start = None
