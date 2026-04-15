@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem, QLabel, QLineEdit, QComboBox, QFrame, QMenu,
     QFormLayout, QWidget
 )
-from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG, QTimer
 from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction
 )
@@ -89,6 +89,7 @@ class NodeItem(QGraphicsItem):
     def __init__(self, node_data: dict):
         super().__init__()
         self.data = node_data
+        self._status_val = None  # True | False | None (unbekannt)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
@@ -96,6 +97,11 @@ class NodeItem(QGraphicsItem):
         self.setZValue(1)
         self._ports: dict[str, PortItem] = {}
         self._build_ports()
+
+    def set_status(self, val):
+        if self._status_val != val:
+            self._status_val = val
+            self.update()
 
     def _build_ports(self):
         typ = self.data["typ"]
@@ -123,8 +129,18 @@ class NodeItem(QGraphicsItem):
         farbe = QColor(FARBEN.get(typ, "#555555"))
         selected = self.isSelected()
 
+        # Rahmenfarbe basierend auf Status
+        border_color = farbe if not selected else QColor("#ffffff")
+        border_width = 2
+        if self._status_val is True:
+            border_color = QColor("#00ff00")
+            border_width = 3
+        elif self._status_val is False:
+            border_color = QColor("#ff4444")
+            border_width = 2
+
         # Haupt-Body
-        body_pen = QPen(farbe if not selected else QColor("#ffffff"), 2)
+        body_pen = QPen(border_color, border_width)
         painter.setPen(body_pen)
         painter.setBrush(QBrush(QColor("#252525")))
         painter.drawRect(0, 0, NW, NH)
@@ -188,9 +204,21 @@ class ConnectionItem(QGraphicsPathItem):
         self.src_port = src_port
         self.dst_port = dst_port
         self.conn_data = conn_data
-        self.setPen(QPen(QColor("#4caf50"), 2))
+        self._status_val = None
+        self.setPen(QPen(QColor("#444444"), 2))
         self.setZValue(0)
         self.update_path()
+
+    def set_status(self, val):
+        if self._status_val != val:
+            self._status_val = val
+            if val is True:
+                self.setPen(QPen(QColor("#00ff00"), 3))
+            elif val is False:
+                self.setPen(QPen(QColor("#884444"), 2))
+            else:
+                self.setPen(QPen(QColor("#444444"), 2))
+            self.update()
 
     def update_path(self):
         p1 = self.src_port.scene_pos()
@@ -252,6 +280,17 @@ class LogicScene(QGraphicsScene):
         for conn in self._connections:
             if conn.src_port.node is node or conn.dst_port.node is node:
                 conn.update_path()
+
+    def update_live_data(self, results: dict):
+        # results: { node_id: value }
+        for nid, node in self._nodes.items():
+            val = results.get(nid)
+            node.set_status(val)
+        
+        for conn in self._connections:
+            # Verbindung ist aktiv, wenn der Quell-Port-Wert True liefert
+            src_val = results.get(conn.src_port.node.node_id())
+            conn.set_status(src_val)
 
     def collect_graph(self) -> dict:
         nodes = [dict(item.data) for item in self._nodes.values()]
@@ -516,7 +555,11 @@ class LogicEditorDialogQt(QDialog):
         self._game_states = game_states or {}
         self._templates = templates or []
         self._ocr_vars = ocr_vars or {}
+        
+        # Falls bot ein Fenster ist, nimm die app-Instanz
         self._bot = bot
+        if hasattr(bot, "app"):
+            self._bot = bot.app
 
         nodes = [dict(n) for n in graph.get("nodes", [])]
         connections = [dict(c) for c in graph.get("connections", [])]
@@ -526,6 +569,13 @@ class LogicEditorDialogQt(QDialog):
         self._setup_ui()
 
         self._scene.load_graph(nodes, connections)
+
+        # Live-Vorschau Timer
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setInterval(500)
+        self._preview_timer.timeout.connect(self._update_live_preview)
+        if self._bot:
+            self._preview_timer.start()
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -590,6 +640,27 @@ class LogicEditorDialogQt(QDialog):
             return
         dlg = NodeParamDialog(node, self._game_states, self._templates, self._ocr_vars, self, bot=self._bot)
         dlg.exec()
+
+    def _update_live_preview(self):
+        if not self._bot: return
+        graph = self._scene.collect_graph()
+        
+        # Hilfsfunktionen für Bot-Daten
+        def ocr_f():
+            # Die WorkflowEngine erwartet ein Dictionary aller Werte
+            all_vals = self._bot.state.get_all_ocr()
+            # Game-States injizieren
+            for k, v in self._bot.state.game_states.items():
+                all_vals[f"__state__{k}"] = "true" if v else "false"
+            return all_vals
+        
+        def mat_f(): return self._bot.state.active_matches
+        
+        # Logik auswerten mit memo-Return
+        _, memo = self._bot.workflow_engine._logik_auswerten(
+            graph, ocr_f, mat_f, return_memo=True
+        )
+        self._scene.update_live_data(memo)
 
     def _speichern(self):
         graph = self._scene.collect_graph()

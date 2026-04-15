@@ -314,7 +314,7 @@ class WorkflowEngine:
 
         return None  # Unbekannter Node-Typ
 
-    def _logik_auswerten(self, graph, ocr_func, matches_func):
+    def _logik_auswerten(self, graph, ocr_func, matches_func, return_memo=False):
         """Berechnet das Ergebnis eines FUP-Logik-Netzwerks."""
         nodes = {n["id"]: n for n in graph.get("nodes", [])}
         conns = graph.get("connections", [])
@@ -379,8 +379,14 @@ class WorkflowEngine:
 
         # Das Ergebnis ist der Wert des "Result" Nodes
         result_node = next((n for n in nodes.values() if n["typ"] == "l_result"), None)
-        if not result_node: return False
-        return _eval_node(result_node["id"])
+        if not result_node:
+            final_res = False
+        else:
+            final_res = _eval_node(result_node["id"])
+
+        if return_memo:
+            return final_res, memo
+        return final_res
 
     def _check_bedingung(self, ist, operator, soll):
         """Hilfsmethode für numerische und String-Vergleiche."""
