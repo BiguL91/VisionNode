@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem,
     QHeaderView
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
@@ -147,7 +147,8 @@ class TransformBlock(QFrame):
 
     def __init__(self, t: dict, ocr_vars_struk: dict, ocr_state_func, db_cache: dict, parent=None):
         """
-        ocr_vars_struk: { Kategorie: { Template: [ (Anzeige, Tech), ... ] } }
+        ocr_vars_struk: { Kategorie: { Gruppe: { Template: [ (Anzeige, Tech), ... ] } } }
+        Gruppe kann "" sein (Templates ohne Container), dann wird die Gruppe-Ebene übersprungen.
         """
         super().__init__(parent)
         self._t = t
@@ -229,16 +230,16 @@ class TransformBlock(QFrame):
         a_none.triggered.connect(lambda: self._ocr_auswaehlen(""))
         menu.addSeparator()
 
-        for kat, templates in self._ocr_vars_struk.items():
+        for kat, gruppen in self._ocr_vars_struk.items():
             kat_menu = menu.addMenu(kat.upper())
-            for tn, vars in templates.items():
-                # Falls nur ein Template in der Liste (z.B. Global), direkt die Vars zeigen? 
-                # Nein, wir wollen Template-Submenus laut User-Wunsch.
-                tpl_menu = kat_menu.addMenu(tn)
-                for disp, tech in vars:
-                    a = tpl_menu.addAction(disp)
-                    # Closure-Fix: tech als Default-Argument binden
-                    a.triggered.connect(lambda _, t=tech: self._ocr_auswaehlen(t))
+            for grp, templates in gruppen.items():
+                # Gruppe-Ebene nur einziehen wenn ein Container-Name vorhanden
+                grp_menu = kat_menu.addMenu(grp) if grp else kat_menu
+                for tn, vars in templates.items():
+                    tpl_menu = grp_menu.addMenu(tn)
+                    for disp, tech in vars:
+                        a = tpl_menu.addAction(disp)
+                        a.triggered.connect(lambda _, t=tech: self._ocr_auswaehlen(t))
 
         menu.exec(self._ocr_btn.mapToGlobal(self._ocr_btn.rect().bottomLeft()))
 
@@ -365,6 +366,12 @@ class DatenListeEditorQt(QDialog):
         self._spalten          = spalten_der_liste(liste["id"])
         self._ocr_vars         = {}              # Struktur: { Kat: { Tpl: [ (Disp, Tech) ] } }
         self._db_cache         = cache_lesen(liste["id"])
+        self._transform_blocks: list[TransformBlock]   = []
+        self._berech_blocks:    list[BerechnungsBlock] = []
+
+        self._live_timer = QTimer(self)
+        self._live_timer.setInterval(1000)
+        self._live_timer.timeout.connect(self._live_tick)
 
         self._setup_ui()
 
@@ -374,7 +381,7 @@ class DatenListeEditorQt(QDialog):
         return self._ocr_vars   # wird von außen gesetzt
 
     def set_ocr_vars(self, vars_struk: dict):
-        """Erwartet Struktur: { Kategorie: { Template: [ (AnzeigeName, TechnischerName) ] } }."""
+        """Erwartet Struktur: { Kategorie: { Gruppe: { Template: [ (AnzeigeName, TechnischerName) ] } } }."""
         self._ocr_vars = vars_struk
         self._transform_neu_aufbauen()
 
@@ -479,11 +486,22 @@ class DatenListeEditorQt(QDialog):
                 item.widget().deleteLater()
 
         self._transformationen = transformationen_der_liste(self._liste["id"])
-        # Nach OCR-Variable sortieren (gruppiert automatisch nach Template)
-        self._transformationen.sort(key=lambda x: x.get("ocr_var", ""))
+        # Reverse-Lookup aufbauen: tech_name → (kategorie, gruppe, template)
+        _var_lookup: dict[str, tuple[str, str, str]] = {}
+        for kat, gruppen in self._ocr_vars.items():
+            for grp, templates in gruppen.items():
+                for tn, vars in templates.items():
+                    for _disp, tech in vars:
+                        _var_lookup[tech] = (kat, grp, tn)
+        # Nach Workflow/State → Gruppe/Container → Template → Var sortieren
+        self._transformationen.sort(key=lambda x: (
+            *_var_lookup.get(x.get("ocr_var", ""), ("zzz", "zzz", "zzz")),
+            x.get("ocr_var", ""),
+        ))
         
         self._db_cache = cache_lesen(self._liste["id"])
 
+        self._transform_blocks = []
         if not self._transformationen:
             lbl = QLabel("Keine Transformationen definiert.")
             lbl.setProperty("class", "lbl_dim")
@@ -494,6 +512,7 @@ class DatenListeEditorQt(QDialog):
             block = TransformBlock(t, self._ocr_vars, self._ocr_state_func, self._db_cache)
             block.loeschen_requested.connect(self._transformation_loeschen)
             self._transform_layout.insertWidget(i, block)
+            self._transform_blocks.append(block)
 
     def _transformation_hinzufuegen(self):
         transformation_hinzufuegen(self._liste["id"], "neu_transform", "", "einheit_zu_zahl")
@@ -580,8 +599,10 @@ class DatenListeEditorQt(QDialog):
             )
             block.loeschen_requested.connect(self._berechnung_loeschen)
             self._berech_layout.insertWidget(self._berech_layout.count() - 1, block)
+            self._berech_blocks.append(block)
 
     def _berech_neu_aufbauen(self):
+        self._berech_blocks = []
         while self._berech_layout.count() > 1:
             item = self._berech_layout.takeAt(0)
             if item.widget():
@@ -823,6 +844,29 @@ class DatenListeEditorQt(QDialog):
         if self._on_gespeichert:
             self._on_gespeichert()
         # Dialog bleibt offen (nur Schließen-Button oder X beendet)
+
+    # ── Live-Tick ──────────────────────────────────────────────────────────────
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._ocr_state_func:
+            self._live_timer.start()
+
+    def closeEvent(self, event):
+        self._live_timer.stop()
+        super().closeEvent(event)
+
+    def _live_tick(self):
+        """Aktualisiert Roh-/Ausgabe-Werte in Transform- und Berechnungs-Blöcken."""
+        idx = self._tabs.currentIndex()
+        if idx == 0:  # OCR Transform
+            for block in self._transform_blocks:
+                block._live_update()
+        elif idx == 1:  # Berechnung
+            for block in self._berech_blocks:
+                block._ergebnis_aktualisieren()
+
+    # ── Listen-Aktionen ────────────────────────────────────────────────────────
 
     def _liste_loeschen(self):
         msg = QMessageBox(self)

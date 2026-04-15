@@ -685,7 +685,7 @@ def _einheiten_laden():
             with open(EINHEITEN_DATEI, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 # Normalisierung: Upper und Punkt entfernen
-                _EINHEITEN_CACHE = {k.upper().rstrip("."): v for k, v in data.items() if k.strip()}
+                _EINHEITEN_CACHE = {k.upper().strip(".").strip(): v for k, v in data.items() if k.strip()}
                 return _EINHEITEN_CACHE
         except Exception:
             pass
@@ -697,7 +697,7 @@ def _einheiten_speichern(einheiten):
     """Speichert die globalen Einheiten-Faktoren als JSON."""
     global _EINHEITEN_CACHE
     # Keys vereinheitlichen (Upper und Punkt entfernen)
-    data = {k.upper().strip().rstrip("."): v for k, v in einheiten.items() if k.strip()}
+    data = {k.upper().strip(".").strip(): v for k, v in einheiten.items() if k.strip()}
     with open(EINHEITEN_DATEI, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     _EINHEITEN_CACHE = data
@@ -719,8 +719,12 @@ def _einheit_zu_zahl(text):
         return text
 
     num_str = match.group(1)
-    # Einheit ist alles, was nach der Zahl kommt (Upper + rstrip "." für Vergleich)
-    unit_str = match.group(2).strip().upper().rstrip(".")
+    # Einheit ist alles, was nach der Zahl kommt.
+    # Bei "Tsd./Std." o.ä. nur den Teil VOR dem "/" nutzen (Nenner wie /Std., /h ignorieren).
+    raw_unit = match.group(2).strip()
+    if "/" in raw_unit:
+        raw_unit = raw_unit.split("/")[0]
+    unit_str = raw_unit.upper().strip(".").strip()
 
     # 2. Number-String bereinigen
     if "." in num_str and "," in num_str:

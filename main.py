@@ -1367,37 +1367,42 @@ class TilesBotWindow(QMainWindow):
         ocr_func = lambda n: {**self.app.state.ocr_values, **self.app.state.template_ocr_values}.get(n)
         dlg = DatenListeEditorQt(listen_dict, ocr_state_func=ocr_func, parent=self)
         
-        # OCR-Variablen strukturiert sammeln: { Kategorie: { Template: [ (VarAnzeige, VarTech), ... ] } }
+        # OCR-Variablen strukturiert sammeln:
+        # { Kategorie: { Gruppe: { Template: [ (VarAnzeige, VarTech), ... ] } } }
         struk = {}
 
-        # 1. Feste Regionen
+        # 1. Feste Regionen (kein Gruppe-Level → leerer Gruppe-Key "")
         feste = sorted(self.ocr_engine.regionen.keys())
         if feste:
-            struk["Global"] = {"Globale Regionen": [(f, f) for f in feste]}
-        
+            struk["Global"] = {"": {"Globale Regionen": [(f, f) for f in feste]}}
+
         # 2. Template-OCR
         t_ocr_konf = self.ocr_engine.template_ocr_konfigurationen()
         for en, k in t_ocr_konf.items():
-            tn = k.get("template", "")
+            tn  = k.get("template", "")
             kat = self.template_engine.settings.get(tn, {}).get("kategorie", "workflow")
-            
-            if kat not in struk: struk[kat] = {}
-            if tn not in struk[kat]: struk[kat][tn] = []
-            
+            grp = self.template_engine.settings.get(tn, {}).get("gruppe", "") or ""
+
+            if kat not in struk:           struk[kat] = {}
+            if grp not in struk[kat]:      struk[kat][grp] = {}
+            if tn  not in struk[kat][grp]: struk[kat][grp][tn] = []
+
             # Anzeige-Name für das Menü säubern (Präfix weg)
             v_anzeige = en
             prefix = f"{tn}_"
             if en.startswith(prefix):
                 v_anzeige = en[len(prefix):]
-            
-            struk[kat][tn].append((v_anzeige, en))
+
+            struk[kat][grp][tn].append((v_anzeige, en))
 
         # Sortieren innerhalb der Struktur
         sorted_struk = {}
         for kat in sorted(struk.keys()):
             sorted_struk[kat] = {}
-            for tn in sorted(struk[kat].keys()):
-                sorted_struk[kat][tn] = sorted(struk[kat][tn])
+            for grp in sorted(struk[kat].keys()):
+                sorted_struk[kat][grp] = {}
+                for tn in sorted(struk[kat][grp].keys()):
+                    sorted_struk[kat][grp][tn] = sorted(struk[kat][grp][tn])
         
         dlg.set_ocr_vars(sorted_struk)
         dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)

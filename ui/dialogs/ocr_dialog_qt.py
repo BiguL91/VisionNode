@@ -589,10 +589,19 @@ class OCRKonfigDialog(QDialog):
                 self._live_tm_size = (found_match[3], found_match[4]) # Match-Größe auf Screen
                 print(f"[OCR-Capture] Template gefunden bei Offset: {self._live_offset}, Größe: {self._live_tm_size}")
             else:
-                # Wenn nicht gefunden, setzen wir Offset auf 0 (User muss selbst zielen)
+                # Wenn nicht gefunden: Capture-Bereich selbst als Referenz nutzen
                 self._live_offset = (0, 0)
-                self._live_tm_size = (self._orig_tw, self._orig_th)
+                self._live_tm_size = (x1 - x0, y1 - y0)
                 print("[OCR-Capture] WARNUNG: Template nicht im gewählten Bereich gefunden!")
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Template nicht erkannt",
+                    f"Das Template \"{self._name}\" wurde im gewählten Bereich nicht gefunden.\n\n"
+                    "Möglicherweise ist der Bot gerade inaktiv oder das Template liegt außerhalb "
+                    "des markierten Ausschnitts.\n\n"
+                    "OCR-Zonen werden trotzdem relativ zum gewählten Ausschnitt definiert.",
+                )
 
             # 3. SPEICHERN für Persistenz
             img_p = os.path.join(ref_dir, f"{self._name}.png")
