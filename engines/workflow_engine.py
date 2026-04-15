@@ -375,6 +375,10 @@ class WorkflowEngine:
                 v2 = n.get("wert", "") # Entweder fester Wert...
                 if not v2: v2 = _get_input_val(nid, "in2") # ...oder zweiter Input
                 res = self._check_bedingung(v1, op, v2)
+
+            elif typ == "l_timer":
+                var = n.get("variable", "")
+                res = self._timer_variable_auflösen(var, ocr_func)
                 
             elif typ == "l_result": # End-Knoten
                 res = self._wert_zu_bool(_get_input_val(nid, "in"))
@@ -470,6 +474,45 @@ class WorkflowEngine:
         if ocr_func is None:
             return ""
         return ocr_func().get(variable, "")
+
+    def _timer_variable_auflösen(self, variable, ocr_func):
+        """Berechnet die restlichen Sekunden eines Timers aus der Datenbank."""
+        if not variable or not variable.startswith("db::"):
+            return 0
+        
+        teile = variable[4:].split("::", 1)
+        if len(teile) != 2: return 0
+        listen_name, var_name = teile
+        
+        try:
+            import time
+            from core import daten_manager as dm
+            listen = dm.alle_listen()
+            for liste in listen:
+                if liste["name"] == listen_name:
+                    cache = dm.cache_lesen(liste["id"])
+                    
+                    # Wir suchen primär nach der _deadline (wird vom DatenPanel/main_app gepflegt)
+                    deadline_key = f"Timer.{var_name}._deadline"
+                    if deadline_key in cache:
+                        deadline_val = cache[deadline_key]
+                        deadline = deadline_val[0] if isinstance(deadline_val, (tuple, list)) else deadline_val
+                        try:
+                            return max(0, int(float(deadline) - time.time()))
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Fallback: Normaler Wert (Sekunden zum Zeitpunkt des Scans)
+                    val_data = cache.get(var_name)
+                    if val_data and isinstance(val_data, (tuple, list)):
+                        s, t = val_data
+                        try:
+                            return max(0, int(float(s) - (time.time() - t)))
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            pass
+        return 0
 
     # ── Graph-Traversierung ──────────────────────────────────────────────────
 

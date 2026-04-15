@@ -33,6 +33,7 @@ FARBEN = {
     "l_or":     "#2ea043",
     "l_not":    "#b71c1c",
     "l_cmp":    "#f9a825",
+    "l_timer":  "#e91e63",
     "l_result": "#673ab7",
 }
 
@@ -44,6 +45,7 @@ PORTS = {
     "l_or":     (["in1", "in2"], ["out"]),
     "l_not":    (["in"], ["out"]),
     "l_cmp":    (["in1", "in2"], ["out"]),
+    "l_timer":  ([], ["out"]),
     "l_result": (["in"], []),
 }
 
@@ -55,6 +57,7 @@ TYPEN_LABEL = [
     ("OR",        "l_or"),
     ("NOT",       "l_not"),
     ("Vergleich", "l_cmp"),
+    ("Timer",     "l_timer"),
 ]
 
 
@@ -99,8 +102,10 @@ class NodeItem(QGraphicsItem):
         self._build_ports()
 
     def set_status(self, val):
-        if self._status_val != val:
-            self._status_val = val
+        # Konvertiere in bool für die Visualisierung (grüner/roter Rahmen)
+        b_val = bool(val) if val is not None else None
+        if self._status_val != b_val:
+            self._status_val = b_val
             self.update()
 
     def _build_ports(self):
@@ -176,6 +181,7 @@ class NodeItem(QGraphicsItem):
         if typ == "l_match":  return f"Bild: {self.data.get('template', '–')}"
         if typ == "l_const":  return f"Wert: {self.data.get('wert', '0')}"
         if typ == "l_cmp":    return f"{self.data.get('operator','=')} {self.data.get('wert','')}"
+        if typ == "l_timer":  return f"Timer: {self.data.get('variable', '–')}"
         return ""
 
     def itemChange(self, change, value):
@@ -210,11 +216,12 @@ class ConnectionItem(QGraphicsPathItem):
         self.update_path()
 
     def set_status(self, val):
-        if self._status_val != val:
-            self._status_val = val
-            if val is True:
+        b_val = bool(val) if val is not None else None
+        if self._status_val != b_val:
+            self._status_val = b_val
+            if b_val is True:
                 self.setPen(QPen(QColor("#00ff00"), 3))
-            elif val is False:
+            elif b_val is False:
                 self.setPen(QPen(QColor("#884444"), 2))
             else:
                 self.setPen(QPen(QColor("#444444"), 2))
@@ -470,6 +477,22 @@ class NodeParamDialog(QDialog):
             info.setProperty("class", "lbl_info")
             layout.addWidget(info)
 
+        elif typ == "l_timer":
+            lbl = QLabel("Timer aus Datenliste wählen:")
+            lbl.setProperty("class", "lbl_dim")
+            layout.addWidget(lbl)
+
+            self._var_btn = QPushButton(self._node.data.get("variable", "Bitte wählen..."))
+            self._var_btn.setObjectName("btn_logic_net")
+            self._var_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._var_btn.clicked.connect(self._timer_menu_zeigen)
+            layout.addWidget(self._var_btn)
+            self._felder["variable"] = self._var_btn
+
+            info = QLabel("Gibt die restlichen Sekunden bis zum Ablauf aus.")
+            info.setProperty("class", "lbl_info")
+            layout.addWidget(info)
+
         layout.addStretch()
 
         btn_apply = QPushButton("Übernehmen")
@@ -528,9 +551,64 @@ class NodeParamDialog(QDialog):
                         act.triggered.connect(lambda _, x=en: self._var_btn.setText(f"ocr::{x}"))
                         t_menu.addAction(act)
 
+        # 3. Datenbank (Daten-Listen)
+        try:
+            from core import daten_manager as dm
+            listen = dm.alle_listen()
+            if listen:
+                d_menu = menu.addMenu("📋 Datenbank")
+                for l in listen:
+                    l_sub = d_menu.addMenu(f"📋 {l['name']}")
+                    spalten = dm.spalten_der_liste(l["id"])
+                    trans = dm.transformationen_der_liste(l["id"])
+                    vars = sorted(list(set([s["name"] for s in spalten] + [t["name"] for t in trans])))
+                    for v in vars:
+                        act = QAction(v, self)
+                        act.triggered.connect(lambda _, ln=l["name"], vn=v: self._var_btn.setText(f"db::{ln}::{vn}"))
+                        l_sub.addAction(act)
+        except Exception:
+            pass
+
         if menu.isEmpty():
             menu.addAction("(Keine Variablen verfügbar)").setEnabled(False)
 
+        menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
+
+    def _timer_menu_zeigen(self):
+        """Spezialisierter Picker für Timer-Variablen."""
+        from core import daten_manager as dm
+        menu = QMenu(self)
+        try:
+            listen = dm.alle_listen()
+            for l in listen:
+                l_menu = QMenu(f"📋 {l['name']}", self)
+                timer_vars = []
+                
+                # Nur Spalten/Transformationen vom Typ 'timer'
+                spalten = dm.spalten_der_liste(l["id"])
+                for s in spalten:
+                    if s.get("typ") == "timer": timer_vars.append(s["name"])
+                
+                trans = dm.transformationen_der_liste(l["id"])
+                for t in trans:
+                    if t.get("typ") == "timer": timer_vars.append(t["name"])
+                
+                timer_vars = sorted(list(set(timer_vars)))
+                for v in timer_vars:
+                    act = QAction(v, self)
+                    act.triggered.connect(lambda _, ln=l["name"], vn=v: self._var_btn.setText(f"db::{ln}::{vn}"))
+                    l_menu.addAction(act)
+                
+                if timer_vars:
+                    menu.addMenu(l_menu)
+                    
+            if not listen:
+                menu.addAction("(Keine Listen vorhanden)").setEnabled(False)
+            elif menu.isEmpty():
+                 menu.addAction("(Keine Timer-Spalten gefunden)").setEnabled(False)
+        except Exception as e:
+            menu.addAction(f"Fehler: {e}").setEnabled(False)
+             
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
 
 
