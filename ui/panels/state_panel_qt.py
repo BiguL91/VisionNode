@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 class StateRow(QFrame):
     selected = pyqtSignal(str)
     toggled = pyqtSignal(str, bool)
+    double_clicked = pyqtSignal(str)
 
     def __init__(self, name: str, value: bool, parent=None):
         super().__init__(parent)
@@ -54,6 +55,10 @@ class StateRow(QFrame):
     def mousePressEvent(self, event):
         self.selected.emit(self.name)
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        self.double_clicked.emit(self.name)
+        super().mouseDoubleClickEvent(event)
 
 
 class StatePanel(QWidget):
@@ -141,6 +146,7 @@ class StatePanel(QWidget):
             row = StateRow(name=name, value=game_states[name])
             row.selected.connect(self._auswahl_setzen)
             row.toggled.connect(self.toggle_requested)
+            row.double_clicked.connect(lambda: self.rename_requested.emit(self.ausgewaehlt))
             if name == self.ausgewaehlt:
                 row.set_selected(True)
             self.list_layout.insertWidget(i, row)

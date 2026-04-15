@@ -58,6 +58,7 @@ class WorkflowPanel(QWidget):
         self.btn_master_bearbeiten.clicked.connect(self._master_bearbeiten)
         self.btn_master_aktiv.clicked.connect(self._master_aktiv)
         self.btn_master_loeschen.clicked.connect(self._master_loeschen)
+        self.master_liste.itemDoubleClicked.connect(self._master_bearbeiten)
 
         # Trenner
         line = QFrame()
@@ -90,6 +91,7 @@ class WorkflowPanel(QWidget):
         self.btn_wf_neu.clicked.connect(self.workflow_neu_requested)
         self.btn_wf_bearbeiten.clicked.connect(self._wf_bearbeiten)
         self.btn_wf_loeschen.clicked.connect(self._wf_loeschen)
+        self.workflow_liste.itemDoubleClicked.connect(self._wf_bearbeiten)
 
         # Trenner 2
         line2 = QFrame()
@@ -105,6 +107,7 @@ class WorkflowPanel(QWidget):
         self.logic_liste = QListWidget()
         self.logic_liste.setObjectName("logic_liste")
         self.logic_liste.setFixedHeight(150)
+        self.logic_liste.itemDoubleClicked.connect(self._logic_bearbeiten)
         layout.addWidget(self.logic_liste)
 
         l_btns = QHBoxLayout()

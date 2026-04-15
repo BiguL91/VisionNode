@@ -259,6 +259,8 @@ class TemplatePanel(QWidget):
     def _on_doppelklick(self, item: QListWidgetItem):
         if "📦" in item.text():
             self._gruppe()
+        else:
+            self._bearbeiten()
 
     def _bearbeiten(self):
         name = self.get_auswahl_name()
