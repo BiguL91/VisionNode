@@ -1299,6 +1299,14 @@ class TilesBotWindow(QMainWindow):
             self._log(f"Logik-Netzwerk in [{wf_name}] gespeichert.")
 
         dlg.gespeichert.connect(on_save)
+        
+        # Um GC zu verhindern, hängen wir den Dialog an self
+        if not hasattr(self, "_active_dialogs"):
+            self._active_dialogs = []
+        self._active_dialogs.append(dlg)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
+        
         dlg.show()
 
     # ── State-Aktionen ────────────────────────────────────────────────────────
@@ -1406,6 +1414,14 @@ class TilesBotWindow(QMainWindow):
         
         dlg.set_ocr_vars(sorted_struk)
         dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)
+        
+        # Um GC zu verhindern, hängen wir den Dialog an self
+        if not hasattr(self, "_active_dialogs"):
+            self._active_dialogs = []
+        self._active_dialogs.append(dlg)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
+
         dlg.show()
 
     def _einheiten_dialog(self):

@@ -362,7 +362,7 @@ class DatenListeEditorQt(QDialog):
     def __init__(self, liste: dict, ocr_state_func=None, on_gespeichert=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Liste bearbeiten: {liste['name']}")
-        self.setModal(True)
+        self.setModal(False)
         self.setMinimumWidth(720)
         self.setMinimumHeight(600)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)

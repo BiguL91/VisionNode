@@ -581,7 +581,7 @@ class LogicEditorDialogQt(QDialog):
                  bot=None):
         super().__init__(parent)
         self.setWindowTitle(f"Logik-Netzwerk: {name}")
-        self.setModal(True)
+        self.setModal(False)
         self.resize(1100, 700)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 

@@ -754,7 +754,14 @@ class WorkflowEditorDialogQt(QDialog):
         btn_row.addWidget(btn_ab)
         btn_row.addWidget(btn_ok)
         lay.addLayout(btn_row)
-        dlg.exec()
+
+        # Um GC zu verhindern, hängen wir den Dialog an self
+        if not hasattr(self, "_active_dialogs"):
+            self._active_dialogs = []
+        self._active_dialogs.append(dlg)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
+        dlg.show()
 
     def _selector_editor(self, parent_dlg: QDialog, lay: QVBoxLayout, node: dict):
         ausgaenge_liste = [dict(a) for a in node.get("ausgaenge", [])]
@@ -796,7 +803,14 @@ class WorkflowEditorDialogQt(QDialog):
                         },
                         parent=parent_dlg, bot=self.bot)
                     dlg2.gespeichert.connect(lambda ng: (a_obj.__setitem__("logic_graph", ng), b.setText("★ Netzwerk")))
-                    dlg2.exec()
+                    
+                    # GC verhindern
+                    if not hasattr(parent_dlg, "_sub_dialogs"):
+                        parent_dlg._sub_dialogs = []
+                    parent_dlg._sub_dialogs.append(dlg2)
+                    dlg2.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+                    dlg2.destroyed.connect(lambda: parent_dlg._sub_dialogs.remove(dlg2) if dlg2 in parent_dlg._sub_dialogs else None)
+                    dlg2.show()
                 btn_logic.clicked.connect(_edit_logic)
                 c_sp = QDoubleSpinBox()
                 c_sp.setRange(0, 3600)
