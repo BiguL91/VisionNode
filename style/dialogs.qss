@@ -500,6 +500,7 @@ QPushButton#btn_logic_net:hover {
     padding: 4px 10px;
     border-radius: 3px;
     border: none;
+    min-width: 70px;
 }
 
 .btn_node_type[type="l_var"]    { background-color: #1e88e5; }
@@ -509,6 +510,7 @@ QPushButton#btn_logic_net:hover {
 .btn_node_type[type="l_or"]     { background-color: #2ea043; }
 .btn_node_type[type="l_not"]    { background-color: #b71c1c; }
 .btn_node_type[type="l_cmp"]    { background-color: #f9a825; }
+.btn_node_type[type="l_timer"]  { background-color: #e91e63; }
 .btn_node_type[type="l_result"] { background-color: #673ab7; }
 
 QWidget#logic_view {
