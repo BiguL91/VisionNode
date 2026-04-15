@@ -1049,15 +1049,17 @@ class TilesBotWindow(QMainWindow):
         set_states = settings.get("set_states", {})
         if not set_states and settings.get("target_state"):
             set_states = {settings["target_state"]: True}
-            
-        dlg = GruppeEditorQt(name, bekannte, raw, set_states=set_states, parent=self)
 
-        def on_gespeichert(gruppe_name, conditions, new_set_states):
+        search_only = settings.get("search_only", False)
+
+        dlg = GruppeEditorQt(name, bekannte, raw, set_states=set_states, search_only=search_only, parent=self)
+
+        def on_gespeichert(gruppe_name, conditions, new_set_states, new_search_only):
             if name not in self.template_engine.settings:
                 self.template_engine.settings[name] = {}
             self.template_engine.settings[name]["condition_states"] = conditions
             self.template_engine.settings[name]["set_states"] = new_set_states
-            
+            self.template_engine.settings[name]["search_only"] = new_search_only
             # Altes Feld aufräumen
             if "target_state" in self.template_engine.settings[name]:
                 del self.template_engine.settings[name]["target_state"]
@@ -1264,7 +1266,10 @@ class TilesBotWindow(QMainWindow):
             graph=graph,
             game_states=self.app.state.game_states,
             templates=list(self.template_engine.templates.keys()),
-            ocr_vars={"global": self.app.state.ocr_values, "template": self.app.state.template_ocr_values},
+            ocr_vars={
+                "global": self.ocr_engine.regionen, 
+                "template": self.ocr_engine.template_ocr_konfigurationen()
+            },
             parent=self,
             bot=self.app
         )

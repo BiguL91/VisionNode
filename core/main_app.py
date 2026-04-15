@@ -38,14 +38,14 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         if item is None: break
 
         if len(item) == 5:
-            frame, ref_groesse, skala, states, editor_fokus = item
+            frame, ref_groesse, skala, states, force_include = item
         else:
             frame, ref_groesse, skala, states = item
-            editor_fokus = None
+            force_include = None
 
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
-        result_tupel = engine.matches_suchen_np(frame, game_states=states, editor_fokus=editor_fokus)
+        result_tupel = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
         
         while not result_q.empty():
             try: result_q.get_nowait()
@@ -221,7 +221,7 @@ class TilesBotApp:
                         self.template_engine.referenz_groesse,
                         self.template_engine.matching_skalierung,
                         self.state.game_states.copy(),
-                        getattr(self.state, "editor_template_name", None)
+                        self.state.force_include
                     ))
                     t_start = time.time()
                 except Exception: t_start = None
@@ -283,9 +283,14 @@ class TilesBotApp:
                 # Nach dem State-Update: Matches gegen die NEUEN States filtern.
                 # Verhindert, dass Treffer aus dem gleichen Frame aktiv bleiben,
                 # obwohl ihre condition_states durch den State-Update nicht mehr erfüllt sind.
+                # Force-included Templates (Workflow-Zwang) überspringen den Filter komplett.
+                fi_bases = {n.split("__")[0] for n in self.state.force_include if n}
                 aktive_matches = []
                 for m in matches:
                     m_name = m[6]
+                    if m_name.split("__")[0] in fi_bases:
+                        aktive_matches.append(m)
+                        continue
                     conds = self.template_engine.settings.get(m_name, {}).get("condition_states", [])
                     ignore = self.template_engine._get_hierarchy_set_states(m_name)
                     if self.template_engine._condition_states_erfuellt(conds, neue_states, ignore_states=ignore):
@@ -382,6 +387,16 @@ class TilesBotApp:
 
                 log_wrapper(f"[Bot] Starte Schrittkette: {master_name}")
                 
+                def state_func(cmd, val):
+                    if cmd == "add_force_include":
+                        if val and val not in self.state.force_include:
+                            self.state.force_include.append(val)
+                    elif cmd == "remove_force_include":
+                        if val in self.state.force_include:
+                            self.state.force_include.remove(val)
+                    elif cmd == "set_force_include": # Legacy / Einzelwert
+                        self.state.force_include = [val] if val else []
+
                 self.workflow_engine.workflow_ausfuehren(
                     master_name, self.action_engine,
                     lambda: self.state.active_matches,
@@ -392,6 +407,7 @@ class TilesBotApp:
                         **{f"__state__{k}": ("true" if v else "false")
                            for k, v in self.state.game_states.items()},
                     },
+                    state_func=state_func,
                     ist_master=True
                 )
                 

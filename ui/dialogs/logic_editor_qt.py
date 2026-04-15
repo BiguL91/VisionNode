@@ -480,26 +480,59 @@ class NodeParamDialog(QDialog):
 
     def _var_menu_zeigen(self):
         menu = QMenu(self)
-        # Game States
+
+        # 1. Game States (Sortiert)
         s_menu = menu.addMenu("🚩 Game States")
         for s in sorted(self._game_states.keys()):
             act = QAction(s, self)
             act.triggered.connect(lambda _, x=s: self._var_btn.setText(f"state::{x}"))
             s_menu.addAction(act)
-        # OCR
+
+        # 2. OCR Werte (Strukturiert und Sortiert)
         o_menu = menu.addMenu("🔤 OCR Werte")
-        for o in sorted(self._ocr_vars.get("global", {}).keys()):
-            act = QAction(f"🌐 {o}", self)
-            act.triggered.connect(lambda _, x=o: self._var_btn.setText(f"ocr::{x}"))
-            o_menu.addAction(act)
-        for t in sorted(self._ocr_vars.get("template", {}).keys()):
-            act = QAction(f"🖼 {t}", self)
-            act.triggered.connect(lambda _, x=t: self._var_btn.setText(f"ocr::{x}"))
-            o_menu.addAction(act)
-        
+
+        # a) Global (Feste Regionen)
+        glob_vars = sorted(self._ocr_vars.get("global", {}).keys())
+        if glob_vars:
+            g_sub = o_menu.addMenu("🌐 Global")
+            for o in glob_vars:
+                act = QAction(o, self)
+                act.triggered.connect(lambda _, x=o: self._var_btn.setText(f"ocr::{x}"))
+                g_sub.addAction(act)
+
+        # b) Template OCR (Gruppiert nach Kategorie -> Template)
+        t_vars = self._ocr_vars.get("template", {})
+        if t_vars:
+            # Struktur aufbauen: { Kategorie: { TemplateName: [Variablen] } }
+            struk = {}
+            for en, cfg in t_vars.items():
+                tn = cfg.get("template", "Unbekannt")
+                # Kategorie aus Bot-Settings holen (falls verfügbar)
+                kat = "Workflow"
+                if self._bot:
+                    kat = self._bot.template_engine.settings.get(tn, {}).get("kategorie", "Workflow").capitalize()
+
+                if kat not in struk: struk[kat] = {}
+                if tn not in struk[kat]: struk[kat][tn] = []
+                struk[kat][tn].append(en)
+
+            # Menü nach Kategorien aufbauen
+            for kat in sorted(struk.keys()):
+                k_menu = o_menu.addMenu(f"📁 {kat}")
+                for tn in sorted(struk[kat].keys()):
+                    t_menu = k_menu.addMenu(f"🖼 {tn}")
+                    for en in sorted(struk[kat][tn]):
+                        # Anzeige-Name säubern (Präfix entfernen)
+                        v_anzeige = en[len(tn)+1:] if en.startswith(f"{tn}_") else en
+                        act = QAction(v_anzeige, self)
+                        act.triggered.connect(lambda _, x=en: self._var_btn.setText(f"ocr::{x}"))
+                        t_menu.addAction(act)
+
         if menu.isEmpty():
-            menu.addAction("(keine Variablen)").setEnabled(False)
+            menu.addAction("(Keine Variablen verfügbar)").setEnabled(False)
+
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
+
 
     def _tpl_menu_zeigen(self):
         if self._bot:
@@ -570,12 +603,24 @@ class LogicEditorDialogQt(QDialog):
 
         self._scene.load_graph(nodes, connections)
 
+        # Trackt, welche Templates DIESER Editor dem Bot aufgezwungen hat
+        self._added_force_includes = set()
+
         # Live-Vorschau Timer
         self._preview_timer = QTimer(self)
         self._preview_timer.setInterval(500)
         self._preview_timer.timeout.connect(self._update_live_preview)
         if self._bot:
             self._preview_timer.start()
+
+    def closeEvent(self, event):
+        """Beim Schließen alle erzwungenen Scans wieder freigeben."""
+        if hasattr(self, "_bot") and self._bot and hasattr(self._bot.state, "force_include"):
+            for t in list(self._added_force_includes):
+                if t in self._bot.state.force_include:
+                    self._bot.state.force_include.remove(t)
+        self._added_force_includes.clear()
+        super().closeEvent(event)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -645,6 +690,28 @@ class LogicEditorDialogQt(QDialog):
         if not self._bot: return
         graph = self._scene.collect_graph()
         
+        # 1. Aktuell im Graph benötigte Templates sammeln (l_match Nodes)
+        current_needed = set()
+        for node in graph.get("nodes", []):
+            if node.get("typ") == "l_match":
+                t = node.get("template")
+                if t: current_needed.add(t)
+        
+        # 2. Synchronisierung mit dem Bot-State
+        # a) Nicht mehr benötigte entfernen
+        for t in list(self._added_force_includes):
+            if t not in current_needed:
+                if t in self._bot.state.force_include:
+                    self._bot.state.force_include.remove(t)
+                self._added_force_includes.remove(t)
+        
+        # b) Neue hinzufügen
+        for t in current_needed:
+            if t not in self._added_force_includes:
+                if t not in self._bot.state.force_include:
+                    self._bot.state.force_include.append(t)
+                self._added_force_includes.add(t)
+
         # Hilfsfunktionen für Bot-Daten
         def ocr_f():
             # Die WorkflowEngine erwartet ein Dictionary aller Werte

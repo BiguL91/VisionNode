@@ -14,20 +14,21 @@ class GruppeEditorQt(QDialog):
     Wird sowohl für Gruppen (main.py) als auch für einzelne Templates (template_editor_qt.py) genutzt.
 
     Signals:
-        gespeichert(gruppe_name, conditions, set_states)  — nach erfolgreichem Speichern
+        gespeichert(gruppe_name, conditions, set_states, search_only)  — nach erfolgreichem Speichern
         geloescht(gruppe_name)                            — nach Löschen der Konfiguration
     """
-    gespeichert = pyqtSignal(str, list, dict)
+    gespeichert = pyqtSignal(str, list, dict, bool)
     geloescht = pyqtSignal(str)
 
     def __init__(self, name: str, bekannte_states: list[str],
                  condition_states: list | None = None, 
                  set_states: dict | None = None,
+                 search_only: bool = False,
                  parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Zustände & Bedingungen: {name}")
         self.setModal(True)
-        self.setMinimumSize(550, 650)
+        self.setMinimumSize(550, 700)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         self._name = name
@@ -36,6 +37,7 @@ class GruppeEditorQt(QDialog):
             self._bekannte.insert(0, "[KEIN ANDERER ZUSTAND]")
         self._condition_states = self._migrate_condition_states(condition_states or [])
         self._set_states_data = set_states or {}
+        self._search_only = search_only
         
         # UI-Referenzen für das Sammeln
         self._gruppen_ui = []
@@ -60,6 +62,21 @@ class GruppeEditorQt(QDialog):
         lbl_titel = QLabel(f'Konfiguration für "{self._name}"')
         lbl_titel.setObjectName("dialog_header_title_gold_small")
         root.addWidget(lbl_titel)
+
+        # ── Bereich 0: Aktivierung ────────────────────────────────────────────
+        act_box = QFrame()
+        act_box.setObjectName("activation_settings")
+        act_box.setStyleSheet("QFrame#activation_settings { background: #1a1a1a; border-radius: 4px; border: 1px solid #333; }")
+        act_lay = QVBoxLayout(act_box)
+        
+        self.chk_search_only = QCheckBox("Automatische Hintergrund-Suche deaktivieren")
+        self.chk_search_only.setChecked(self._search_only)
+        self.chk_search_only.setToolTip("Wenn aktiv, wird dieses Element (und ggf. seine Kinder) NICHT automatisch gescannt.\nDie Suche muss explizit via Workflow-Logik angestoßen werden.")
+        self.chk_search_only.setStyleSheet("font-weight: bold; color: #ffca28;")
+        act_lay.addWidget(self.chk_search_only)
+        
+        root.addWidget(act_box)
+        root.addSpacing(4)
 
         # ── Bereich 1: Bedingungen (Wann ist es aktiv?) ──────────────────────
         lbl_cond_header = QLabel("Bedingungen (Wann ist dieses Element aktiv?):")
@@ -307,7 +324,7 @@ class GruppeEditorQt(QDialog):
             n = combo.currentText().strip()
             if n: set_states[n] = chk.isChecked()
 
-        self.gespeichert.emit(self._name, conditions, set_states)
+        self.gespeichert.emit(self._name, conditions, set_states, self.chk_search_only.isChecked())
         self.accept()
 
     def _loeschen(self):
@@ -327,10 +344,11 @@ class GruppeEditorQt(QDialog):
     def ausfuehren(name: str, bekannte_states: list[str],
                    condition_states: list | None = None, 
                    set_states: dict | None = None,
+                   search_only: bool = False,
                    parent=None):
-        dlg = GruppeEditorQt(name, bekannte_states, condition_states, set_states, parent)
-        result = {"conditions": None, "set_states": None, "geloescht": False}
-        dlg.gespeichert.connect(lambda n, c, s: result.update(conditions=c, set_states=s))
+        dlg = GruppeEditorQt(name, bekannte_states, condition_states, set_states, search_only, parent)
+        result = {"conditions": None, "set_states": None, "search_only": search_only, "geloescht": False}
+        dlg.gespeichert.connect(lambda n, c, s, so: result.update(conditions=c, set_states=s, search_only=so))
         dlg.geloescht.connect(lambda n: result.update(geloescht=True))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return result

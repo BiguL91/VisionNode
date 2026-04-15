@@ -145,6 +145,7 @@ class TemplatePanel(QWidget):
         def mark(name):
             s = settings.get(name, {})
             m = ""
+            if s.get("search_only"): m += " 💤"
             if s.get("kategorie") == "state" or s.get("set_states"): m += " 🚩"
             if name in templates_mit_ocr: m += " 🔤"
             if name in klick_konfig: m += " 🖱"

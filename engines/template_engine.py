@@ -459,7 +459,7 @@ class TemplateEngine:
         x0, x1 = np.where(spalten)[0][[0, -1]]
         return (int(x0), int(y0), int(x1 - x0 + 1), int(y1 - y0 + 1))
 
-    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None, alter_name=None, ausschnitt_form="box"):
+    def template_speichern(self, name, bild_pil, hintergrund_entfernen=True, ignore_regionen=None, hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85, scan_regions=None, condition_states=None, set_states=None, typ=None, ist_state_template=False, kategorie=None, alter_name=None, ausschnitt_form="box", search_only=False):
         bild_np = np.array(bild_pil.convert("RGB"))
 
         basis_name = name.split("__")[0]
@@ -560,6 +560,7 @@ class TemplateEngine:
             "typ": typ,
             "kategorie": kategorie,
             "ausschnitt_form": ausschnitt_form,
+            "search_only": bool(search_only),
         }
         self._settings_speichern(neu_laden=True)
 
@@ -717,7 +718,7 @@ class TemplateEngine:
         self.settings.pop(name, None)
         self._settings_speichern(neu_laden=True)
 
-    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None, scan_regions=None):
+    def gruppe_config_speichern(self, gruppe_name, condition_states, uebergeordnete_gruppe="", kategorie=None, scan_regions=None, search_only=False):
         """Speichert eine passive Gruppe (kein Bild, nur Bedingungen) und legt den Ordner an."""
         bestehend = self.settings.get(gruppe_name, {})
         kat = kategorie or bestehend.get("kategorie", "workflow")
@@ -733,6 +734,7 @@ class TemplateEngine:
             "condition_states": condition_states,
             "kategorie": kat,
             "scan_regions": [list(r) for r in scan_regions] if scan_regions else [],
+            "search_only": bool(search_only),
         }
         # Ordner nach Settings-Update bauen (Hierarchie wird über _gruppe_ordnerpfad aufgelöst)
         ordner = self._gruppe_ordnerpfad(gruppe_name)
@@ -798,8 +800,41 @@ class TemplateEngine:
             self._gpu_cache[key] = {"t_zm": t_zm, "t_norm": t_norm, "N": N, "is_masked": False}
         return self._gpu_cache[key]
 
+    def _is_search_only_recursive(self, name_oder_pfad):
+        """Prüft ob ein Element oder seine Eltern-Kette 'search_only' ist."""
+        # 1. Start-Punkt prüfen
+        basis_name = name_oder_pfad.split("__")[0] if "__" in name_oder_pfad else name_oder_pfad
+        s = self.settings.get(basis_name, {})
+        if not s and "/" in name_oder_pfad:
+            leaf = name_oder_pfad.split("/")[-1]
+            s = self.settings.get(leaf, {})
+        
+        if s and s.get("search_only"):
+            return True
+            
+        # 2. Eltern-Kette nach oben
+        current_path = s.get("gruppe", "") if isinstance(s, dict) else ""
+        besucht = {name_oder_pfad}
+        while current_path:
+            teile = current_path.split("/")
+            leaf = teile[-1]
+            if leaf in besucht: break
+            besucht.add(leaf)
+            
+            ps = self.settings.get(leaf, {})
+            if isinstance(ps, dict):
+                if ps.get("search_only"):
+                    return True
+                if len(teile) > 1:
+                    current_path = "/".join(teile[:-1])
+                else:
+                    current_path = ps.get("gruppe", "")
+            else:
+                break
+        return False
+
     @torch.no_grad()
-    def matches_suchen_np(self, screenshot_bgr, game_states=None, editor_fokus=None):
+    def matches_suchen_np(self, screenshot_bgr, game_states=None, force_include=None):
         if not self.templates: return [], []
         img_gpu = torch.from_numpy(screenshot_bgr.transpose(2, 0, 1)).float().div(255.0).to(self.device).unsqueeze(0)
         ih, iw = screenshot_bgr.shape[:2]
@@ -813,6 +848,21 @@ class TemplateEngine:
             s_eff, th_t, tw_t = s_base, max(1, int(ih*s_base)), max(1, int(iw*s_base))
         img_m = F.interpolate(img_gpu, size=(th_t, tw_t), mode='bilinear', align_corners=False)
         
+        # force_include (Set für schnelles Nachschlagen)
+        fi_set = set()
+        if force_include:
+            namen_liste = [force_include] if isinstance(force_include, (str, type(None))) else force_include
+            for n in (namen_liste or []):
+                if n and isinstance(n, str):
+                    basis = n.split("__")[0]
+                    fi_set.add(basis)
+                    # Übergeordnete Gruppe ebenfalls freischalten
+                    tpl_s = self.settings.get(basis, {})
+                    g_val = tpl_s.get("gruppe", "")
+                    if g_val:
+                        for g_teil in g_val.split("/"):
+                            if g_teil: fi_set.add(g_teil)
+
         # Master und Kinder trennen
         master_namen = []
         kinder_nach_gruppe = defaultdict(list)
@@ -825,15 +875,22 @@ class TemplateEngine:
                 master_name = name.split("__")[0]
                 conditions = self.settings.get(master_name, {}).get("condition_states", {})
             
-            # Fokus im Editor: Bedingungen für dieses Template und seine Varianten ignorieren
-            ist_fokus = False
-            if editor_fokus:
-                basis_fokus = editor_fokus.split("__")[0]
-                basis_name = name.split("__")[0]
-                if basis_name == basis_fokus:
-                    ist_fokus = True
+            # Fokus im Editor oder Workflow-Zwang: Bedingungen für dieses Template ignorieren
+            basis_name = name.split("__")[0]
+            ist_erzwungen = basis_name in fi_set
+            
+            # Auch erzwingen, wenn eine übergeordnete Gruppe erzwungen wurde
+            if not ist_erzwungen and t.get("gruppe"):
+                for teil in t["gruppe"].split("/"):
+                    if teil in fi_set:
+                        ist_erzwungen = True
+                        break
 
-            if game_states is not None and not ist_fokus:
+            # search_only Prüfung (Hintergrund-Scan deaktiviert)
+            if not ist_erzwungen and self._is_search_only_recursive(name):
+                continue
+
+            if game_states is not None and not ist_erzwungen:
                 # Eigenen gesetzte Zustände sammeln (Hierarchie-weit!), 
                 # damit sie beim [KEIN ANDERER] Check ignoriert werden.
                 my_hierarchy_sets = self._get_hierarchy_set_states(name)

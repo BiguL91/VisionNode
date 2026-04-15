@@ -149,7 +149,7 @@ class WorkflowEngine:
 
     # ── Node ausführen ───────────────────────────────────────────────────────
 
-    def _node_ausfuehren(self, node, action_engine, matches_func, ocr_func=None, log_func=None, laeuft_func=None):
+    def _node_ausfuehren(self, node, action_engine, matches_func, ocr_func=None, log_func=None, laeuft_func=None, state_func=None):
         """Führt einen einzelnen Node aus.
         Gibt den Namen des ausgehenden Ports zurück (z.B. "out", "success", "failure", "true", "false").
         Gibt None zurück bei unbekanntem Typ.
@@ -181,8 +181,13 @@ class WorkflowEngine:
             return "out"
 
         elif typ == "klick":
+            t_name = node["template"]
+            # Kurz warten falls active_matches noch nicht aktualisiert
             matches = matches_func()
-            ok = action_engine.template_tippen(node["template"], matches, log_func=log_func)
+            if not any(m[0] == t_name for m in matches):
+                time.sleep(0.2)
+                matches = matches_func()
+            ok = action_engine.template_tippen(t_name, matches, log_func=log_func)
             return "out" if ok else "failure"
 
         elif typ == "warten":
@@ -227,7 +232,7 @@ class WorkflowEngine:
 
             ok = self.workflow_ausfuehren(
                 wf_name, action_engine, matches_func,
-                log_func=sub_log, laeuft_func=laeuft_func, ocr_func=ocr_func
+                log_func=sub_log, laeuft_func=laeuft_func, ocr_func=ocr_func, state_func=state_func
             )
             
             if log_func:
@@ -402,6 +407,9 @@ class WorkflowEngine:
         except (ValueError, AttributeError):
             ist_str  = str(ist).lower()
             soll_str = str(soll).lower()
+            # Wenn beides leer ist, werten wir es als False, um Fehlalarme zu vermeiden
+            if not ist_str and not soll_str:
+                return False
             if   operator in ("=", "=="): return ist_str == soll_str
             elif operator == "!=":        return ist_str != soll_str
         return False
@@ -473,7 +481,7 @@ class WorkflowEngine:
         return None
 
     def workflow_ausfuehren(self, name, action_engine, matches_func,
-                            log_func=None, laeuft_func=None, ocr_func=None, ist_master=False):
+                            log_func=None, laeuft_func=None, ocr_func=None, state_func=None, ist_master=False):
         """Traversiert den Workflow-Graphen ab dem Start-Node.
         Gibt True bei erfolgreichem Durchlauf zurück, False bei Fehler oder Abbruch.
         """
@@ -503,41 +511,73 @@ class WorkflowEngine:
 
         aktueller_node  = start_node
         schritt_zaehler = 0
+        # Aktuell erzwungenes Template – wird über Knotengrenzen hinweg gehalten
+        # damit es auch während des Inter-Node-Delays nicht aus active_matches verschwindet.
+        gezwungenes_template = None
 
-        while aktueller_node is not None:
+        def _force_setzen(t_name):
+            nonlocal gezwungenes_template
+            if t_name == gezwungenes_template:
+                return
+            if gezwungenes_template and state_func:
+                state_func("remove_force_include", gezwungenes_template)
+            gezwungenes_template = t_name
+            if t_name and state_func:
+                state_func("add_force_include", t_name)
 
-            # Bot-Stopp-Signal prüfen
-            if laeuft_func and not laeuft_func():
-                return False
+        def _force_freigeben():
+            nonlocal gezwungenes_template
+            if gezwungenes_template and state_func:
+                state_func("remove_force_include", gezwungenes_template)
+            gezwungenes_template = None
 
-            # Endlosschleifen abfangen
-            schritt_zaehler += 1
-            if schritt_zaehler > MAX_SCHRITTE:
-                if log_func:
-                    log_func(f"[{name}] Limit von {MAX_SCHRITTE} Schritten erreicht – Abbruch.")
-                return False
+        try:
+            while aktueller_node is not None:
 
-            typ     = aktueller_node.get("typ", "?")
-            node_id = aktueller_node.get("id", "?")
+                # Bot-Stopp-Signal prüfen
+                if laeuft_func and not laeuft_func():
+                    return False
 
-            # Log-Ausgabe (Start-Node überspringen, ist uninteressant)
-            if log_func and typ != "start":
-                detail = aktueller_node.get("template", aktueller_node.get("sekunden", ""))
-                log_func(f"[{name}] {node_id} ({typ}): {detail}")
+                # Endlosschleifen abfangen
+                schritt_zaehler += 1
+                if schritt_zaehler > MAX_SCHRITTE:
+                    if log_func:
+                        log_func(f"[{name}] Limit von {MAX_SCHRITTE} Schritten erreicht – Abbruch.")
+                    return False
 
-            # Node ausführen → ausgehenden Port ermitteln
-            port_aus = self._node_ausfuehren(
-                aktueller_node, action_engine, matches_func,
-                ocr_func=ocr_func, log_func=log_func
-            )
+                typ     = aktueller_node.get("typ", "?")
+                node_id = aktueller_node.get("id", "?")
 
-            if port_aus is None:
-                if log_func:
-                    log_func(f"[{name}] Node '{node_id}': unbekannter Typ '{typ}' – Abbruch.")
-                return False
+                # force_include VOR dem Node setzen (Template-Knoten)
+                t_name = aktueller_node.get("template") if typ in ("suche", "suche_optional", "klick") else None
+                _force_setzen(t_name)
 
-            # Nächsten Node über Verbindung suchen
-            aktueller_node = self._naechsten_node(node_id, port_aus, nodes_index, connections)
+                # Log-Ausgabe (Start-Node überspringen, ist uninteressant)
+                if log_func and typ != "start":
+                    detail = aktueller_node.get("template", aktueller_node.get("sekunden", ""))
+                    log_func(f"[{name}] {node_id} ({typ}): {detail}")
+
+                # Node ausführen → ausgehenden Port ermitteln
+                port_aus = self._node_ausfuehren(
+                    aktueller_node, action_engine, matches_func,
+                    ocr_func=ocr_func, log_func=log_func, laeuft_func=laeuft_func, state_func=state_func
+                )
+
+                if port_aus is None:
+                    if log_func:
+                        log_func(f"[{name}] Node '{node_id}': unbekannter Typ '{typ}' – Abbruch.")
+                    return False
+
+                # Kurzes Delay zwischen Nodes (außer Start-Node) – force_include bleibt aktiv!
+                if typ != "start" and (not laeuft_func or laeuft_func()):
+                    time.sleep(0.5)
+
+                # Nächsten Node über Verbindung suchen
+                aktueller_node = self._naechsten_node(node_id, port_aus, nodes_index, connections)
+
+        finally:
+            # force_include immer sauber freigeben, auch bei Fehler/Abbruch
+            _force_freigeben()
 
         # Kein Folge-Node mehr → Workflow abgeschlossen
         if log_func:

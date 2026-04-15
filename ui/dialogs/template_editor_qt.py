@@ -284,7 +284,9 @@ class TemplateEditorQt(QDialog):
         self.einlern_modus_callback = einlern_modus_callback
         
         # Fokus für das Matching-Backend setzen
-        self.bot.app.state.editor_template_name = self.bearbeiten_name
+        if self.bot and hasattr(self.bot.app.state, "force_include"):
+            if self.bearbeiten_name and self.bearbeiten_name not in self.bot.app.state.force_include:
+                self.bot.app.state.force_include.append(self.bearbeiten_name)
 
         # Dynamischen Fenstertitel setzen
         prefix = "Template" if bearbeiten_name else "Neues Template"
@@ -314,6 +316,7 @@ class TemplateEditorQt(QDialog):
         self.aktuelle_variante_idx: int = 0
         self.condition_states: list = []
         self.set_states: dict = {}
+        self.search_only: bool = False
 
         self._setup_ui()
         self._load_existing_data()
@@ -640,6 +643,7 @@ class TemplateEditorQt(QDialog):
                 self.condition_states = self._migrate_condition_states(cs)
                 ss = s.get("set_states", {})
                 self.set_states = dict(ss) if isinstance(ss, dict) else {}
+                self.search_only = s.get("search_only", False)
 
             if name in self.template_engine.templates:
                 pfad = self.template_engine.templates[name]["pfad"]
@@ -912,12 +916,14 @@ class TemplateEditorQt(QDialog):
             name, bekannte, 
             condition_states=list(self.condition_states), 
             set_states=dict(self.set_states),
+            search_only=self.search_only,
             parent=self
         )
         
-        def on_save(n, conditions, sets):
+        def on_save(n, conditions, sets, search_only):
             self.condition_states = conditions
             self.set_states = sets
+            self.search_only = search_only
             
         dlg.gespeichert.connect(on_save)
         dlg.exec()
@@ -1270,6 +1276,7 @@ class TemplateEditorQt(QDialog):
                 typ=self.typ,
                 kategorie=self.kategorie,
                 ausschnitt_form=self.ausschnitt_form,
+                search_only=self.search_only,
             )
 
             if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):
@@ -1317,7 +1324,9 @@ class TemplateEditorQt(QDialog):
         self.template_engine.settings.pop("test_match_preview", None)
         
         # Fokus im Backend löschen
-        self.bot.app.state.editor_template_name = None
+        if self.bot and hasattr(self.bot.app.state, "force_include"):
+            if self.bearbeiten_name in self.bot.app.state.force_include:
+                self.bot.app.state.force_include.remove(self.bearbeiten_name)
 
         if self.roi_editor:
             self.roi_editor.close()
@@ -1332,7 +1341,9 @@ class TemplateEditorQt(QDialog):
         self.template_engine.settings.pop("test_match_preview", None)
         
         # Fokus im Backend löschen
-        self.bot.app.state.editor_template_name = None
+        if self.bot and hasattr(self.bot.app.state, "force_include"):
+            if self.bearbeiten_name in self.bot.app.state.force_include:
+                self.bot.app.state.force_include.remove(self.bearbeiten_name)
 
         if self.roi_editor:
             self.roi_editor.close()

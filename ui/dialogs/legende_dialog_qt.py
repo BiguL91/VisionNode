@@ -16,6 +16,7 @@ _EINTRAEGE = [
     ("    └─ Name", "template",      "Kind-Template — gehört zur übergeordneten Gruppe"),
     ("", None, None),
     ("MARKIERUNGEN", None, None),
+    ("💤", "sleep",  "Automatische Hintergrund-Suche deaktiviert"),
     ("🚩", "state",  "State Template — setzt einen Game-State wenn erkannt"),
     ("🔤", "ocr",    "OCR konfiguriert"),
     ("🖱",  "klick",  "Klick-Zone konfiguriert"),

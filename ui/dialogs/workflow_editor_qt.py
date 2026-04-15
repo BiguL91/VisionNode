@@ -790,7 +790,10 @@ class WorkflowEditorDialogQt(QDialog):
                         name=a_obj.get("port", "Port"), graph=g,
                         game_states=self.bot.app.state.game_states,
                         templates=list(self.bot.template_engine.templates.keys()),
-                        ocr_vars={"global": self.bot.app.state.ocr_values, "template": self.bot.app.state.template_ocr_values},
+                        ocr_vars={
+                            "global": self.bot.ocr_engine.regionen, 
+                            "template": self.bot.ocr_engine.template_ocr_konfigurationen()
+                        },
                         parent=parent_dlg, bot=self.bot)
                     dlg2.gespeichert.connect(lambda ng: (a_obj.__setitem__("logic_graph", ng), b.setText("★ Netzwerk")))
                     dlg2.exec()
@@ -1054,10 +1057,21 @@ class WorkflowEditorDialogQt(QDialog):
                     data[f"__state__{sn}"] = "true" if sv else "false"
                 data.update(self.bot.app.state.template_ocr_values)
                 return data
-            
+            def sim_state_func(cmd, val):
+                if not (self.bot and hasattr(self.bot.app.state, "force_include")):
+                    return
+                fi = self.bot.app.state.force_include
+                if cmd == "add_force_include":
+                    if val and val not in fi:
+                        fi.append(val)
+                elif cmd == "remove_force_include":
+                    if val in fi:
+                        fi.remove(val)
+
             port = self.bot.workflow_engine._node_ausfuehren(
                 node, self._sim_engine, m_func, ocr_func=o_func,
-                log_func=self._sim_log, laeuft_func=lambda: self._sim_aktiv)
+                log_func=self._sim_log, laeuft_func=lambda: self._sim_aktiv,
+                state_func=sim_state_func)
             
             if port is None:
                 self._sim_log(f"!! Unbekannter Typ: {typ}", "failure")
