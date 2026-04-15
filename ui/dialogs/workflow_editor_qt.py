@@ -452,6 +452,7 @@ class NodeCanvas(QWidget):
 class WorkflowEditorDialogQt(QDialog):
     gespeichert = pyqtSignal(str, dict)
     abgebrochen = pyqtSignal()
+    _sim_fragen_signal = pyqtSignal(str, str)
 
     def __init__(self, parent, bot, name: str, graph: dict, callback=None):
         super().__init__(parent)
@@ -464,6 +465,9 @@ class WorkflowEditorDialogQt(QDialog):
         self._sim_aktiv = False
         self._sim_zustand = {}
         self._sim_progress = {}
+        self._sim_fragen_event = None
+        self._sim_fragen_result = None
+        self._sim_fragen_signal.connect(self._sim_fragen_slot)
         self.setWindowTitle("Workflow Editor")
         self.resize(960, 640)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
@@ -980,11 +984,38 @@ class WorkflowEditorDialogQt(QDialog):
             
             if next_n is None:
                 self._sim_log("(Ende)", "done")
-                QTimer.singleShot(400, lambda: QMetaObject.invokeMethod(self, "_simulation_fertig", Qt.ConnectionType.QueuedConnection))
+                QMetaObject.invokeMethod(self, "_sim_fertig_verzoegert", Qt.ConnectionType.QueuedConnection)
             else:
-                QTimer.singleShot(300, lambda: QMetaObject.invokeMethod(self, "_simulation_schritt_gui", Qt.ConnectionType.QueuedConnection, Q_ARG(dict, next_n)))
+                QMetaObject.invokeMethod(self, "_sim_naechster_schritt", Qt.ConnectionType.QueuedConnection, Q_ARG(dict, next_n))
         
         threading.Thread(target=run, daemon=True).start()
+
+    @pyqtSlot(str, str)
+    def _sim_fragen_slot(self, titel, msg):
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle(titel)
+        dlg.setText(msg)
+        b_sim = dlg.addButton("Simulieren", QMessageBox.ButtonRole.NoRole)
+        b_adb = dlg.addButton("ADB", QMessageBox.ButtonRole.YesRole)
+        b_ab  = dlg.addButton("Stop", QMessageBox.ButtonRole.RejectRole)
+        dlg.exec()
+        c = dlg.clickedButton()
+        if c == b_adb:
+            self._sim_fragen_result = "adb"
+        elif c == b_ab:
+            self._sim_fragen_result = "stop"
+        else:
+            self._sim_fragen_result = "sim"
+        if self._sim_fragen_event:
+            self._sim_fragen_event.set()
+
+    @pyqtSlot()
+    def _sim_fertig_verzoegert(self):
+        QTimer.singleShot(400, self._simulation_fertig)
+
+    @pyqtSlot(dict)
+    def _sim_naechster_schritt(self, next_n):
+        QTimer.singleShot(300, lambda: self._simulation_schritt_gui(next_n))
 
     @pyqtSlot()
     def _simulation_fertig(self):
@@ -1061,24 +1092,18 @@ class WorkflowEditorDialogQt(QDialog):
             self.log = log
         
         def _fragen(self, titel, msg):
-            dlg = QMessageBox(self.parent)
-            dlg.setWindowTitle(titel)
-            dlg.setText(msg)
-            b_sim = dlg.addButton("Simulieren", QMessageBox.ButtonRole.NoRole)
-            b_adb = dlg.addButton("ADB", QMessageBox.ButtonRole.YesRole)
-            b_ab = dlg.addButton("Stop", QMessageBox.ButtonRole.RejectRole)
-            dlg.exec()
-            c = dlg.clickedButton()
-            if c == b_adb:
-                return "adb"
-            elif c == b_ab:
-                return "stop"
-            return "sim"
+            import threading as _threading
+            event = _threading.Event()
+            self.parent._sim_fragen_event = event
+            self.parent._sim_fragen_result = None
+            self.parent._sim_fragen_signal.emit(titel, msg)
+            event.wait()
+            return self.parent._sim_fragen_result
         
-        def auf_template_warten(self, t, mf, to=10, iv=0.3, lf=None, laf=None):
-            return self.real.auf_template_warten(t, mf, to, iv, log_func=lf, laeuft_func=laf)
+        def auf_template_warten(self, t, mf, timeout=10, intervall=0.3, log_func=None, laeuft_func=None):
+            return self.real.auf_template_warten(t, mf, timeout, intervall, log_func=log_func, laeuft_func=laeuft_func)
         
-        def template_tippen(self, t, m, lf=None):
+        def template_tippen(self, t, m, log_func=None):
             for i in m:
                 if i[0] == t:
                     _, mx, my, mw, mh = i[:5]
