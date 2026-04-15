@@ -16,14 +16,14 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor
 from core.daten_manager import (
     spalten_der_liste, spalte_hinzufuegen, spalte_aktualisieren, spalte_loeschen,
-    zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen,
+    zeilen_der_liste, zeile_hinzufuegen, zeile_umbenennen, zeile_loeschen, zeile_verschieben,
     liste_umbenennen, liste_intervall_setzen, liste_loeschen,
     transformationen_der_liste, transformation_hinzufuegen,
     transformation_aktualisieren, transformation_loeschen, transformation_anwenden,
     berechnungen_der_liste, berechnung_hinzufuegen, berechnung_aktualisieren,
     berechnung_loeschen, berechnung_auswerten, cache_lesen,
     zuordnungen_der_liste, zuordnung_speichern, variable_umbenennen,
-    sekunden_formatieren,
+    spalte_verschieben, sekunden_formatieren,
 )
 
 
@@ -414,12 +414,6 @@ class DatenListeEditorQt(QDialog):
         self._name_edit.setMinimumWidth(180)
         kl.addWidget(self._name_edit)
 
-        kl.addSpacing(16)
-        kl.addWidget(QLabel("Update alle:"))
-        self._intervall_edit = QLineEdit(str(self._liste.get("update_intervall", 30)))
-        self._intervall_edit.setFixedWidth(50)
-        kl.addWidget(self._intervall_edit)
-        kl.addWidget(QLabel("s"))
         kl.addStretch()
         root.addWidget(kopf)
 
@@ -562,7 +556,7 @@ class DatenListeEditorQt(QDialog):
         namen += [b["name"] for b in self._berechnungen if b.get("name") and b.get("typ") == "zwischen"]
         if not nur_zwischen:
             namen += [b["name"] for b in self._berechnungen if b.get("name") and b.get("typ") == "ausgabe"]
-        return namen + ["update_intervall", "zeit_h", "zeit_m", "zeit_s"]
+        return namen + ["zeit_h", "zeit_m", "zeit_s"]
 
     def _berech_werte(self) -> dict:
         self._db_cache = cache_lesen(self._liste["id"])
@@ -702,6 +696,19 @@ class DatenListeEditorQt(QDialog):
         entry = QLineEdit(z["name"])
         entry.editingFinished.connect(lambda zid=z["id"], e=entry: self._zeile_speichern(zid, e.text()))
         rl.addWidget(entry)
+
+        btn_up = QPushButton("▲")
+        btn_up.setObjectName("btn_move_sm")
+        btn_up.setFixedWidth(24)
+        btn_up.clicked.connect(lambda _, zid=z["id"]: self._zeile_verschieben(zid, -1))
+        rl.addWidget(btn_up)
+
+        btn_down = QPushButton("▼")
+        btn_down.setObjectName("btn_move_sm")
+        btn_down.setFixedWidth(24)
+        btn_down.clicked.connect(lambda _, zid=z["id"]: self._zeile_verschieben(zid, 1))
+        rl.addWidget(btn_down)
+
         btn = QPushButton("✕")
         btn.setObjectName("btn_del_sm")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -725,6 +732,10 @@ class DatenListeEditorQt(QDialog):
     def _zeile_loeschen(self, zid: str):
         zeile_loeschen(zid)
         self._zeilen = [z for z in self._zeilen if z["id"] != zid]
+        self._zeilen_neu_aufbauen()
+
+    def _zeile_verschieben(self, zid: int, richtung: int):
+        zeile_verschieben(zid, richtung)
         self._zeilen_neu_aufbauen()
 
     def _zeile_speichern(self, zid: str, neuer: str):
@@ -759,6 +770,18 @@ class DatenListeEditorQt(QDialog):
         fmt_c.currentTextChanged.connect(lambda v, sid=sp["id"]: spalte_aktualisieren(sid, format=v))
         rl.addWidget(fmt_c)
 
+        btn_up = QPushButton("▲")
+        btn_up.setObjectName("btn_move_sm")
+        btn_up.setFixedWidth(24)
+        btn_up.clicked.connect(lambda _, sid=sp["id"]: self._spalte_verschieben(sid, -1))
+        rl.addWidget(btn_up)
+
+        btn_down = QPushButton("▼")
+        btn_down.setObjectName("btn_move_sm")
+        btn_down.setFixedWidth(24)
+        btn_down.clicked.connect(lambda _, sid=sp["id"]: self._spalte_verschieben(sid, 1))
+        rl.addWidget(btn_down)
+
         btn = QPushButton("✕")
         btn.setObjectName("btn_del_sm")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -782,6 +805,10 @@ class DatenListeEditorQt(QDialog):
     def _spalte_loeschen(self, sid: str):
         spalte_loeschen(sid)
         self._spalten = [s for s in self._spalten if s["id"] != sid]
+        self._spalten_neu_aufbauen()
+
+    def _spalte_verschieben(self, sid: int, richtung: int):
+        spalte_verschieben(sid, richtung)
         self._spalten_neu_aufbauen()
 
     # ── Tab: Mapping ───────────────────────────────────────────────────────────
@@ -842,14 +869,6 @@ class DatenListeEditorQt(QDialog):
             liste_umbenennen(self._liste["id"], neuer_name)
             self._liste["name"] = neuer_name
             self.setWindowTitle(f"Liste bearbeiten: {neuer_name}")
-
-        try:
-            intervall = int(self._intervall_edit.text())
-            if intervall > 0:
-                liste_intervall_setzen(self._liste["id"], intervall)
-                self._liste["update_intervall"] = intervall
-        except ValueError:
-            pass
 
         self.gespeichert.emit()
         if self._on_gespeichert:

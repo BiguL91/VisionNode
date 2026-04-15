@@ -237,6 +237,36 @@ def zeile_loeschen(zeile_id):
         conn.commit()
 
 
+def zeile_verschieben(zeile_id, richtung: int):
+    """Verschiebt eine Zeile nach oben (-1) oder unten (+1)."""
+    with _verbinden() as conn:
+        # Aktuelle Zeile holen
+        z = conn.execute("SELECT id, listen_id, position FROM zeilen WHERE id=?", (zeile_id,)).fetchone()
+        if not z:
+            return
+        
+        pos_alt = z["position"]
+        lid = z["listen_id"]
+        
+        # Tauschpartner finden
+        if richtung < 0:
+            target = conn.execute(
+                "SELECT id, position FROM zeilen WHERE listen_id=? AND position < ? ORDER BY position DESC LIMIT 1",
+                (lid, pos_alt)
+            ).fetchone()
+        else:
+            target = conn.execute(
+                "SELECT id, position FROM zeilen WHERE listen_id=? AND position > ? ORDER BY position ASC LIMIT 1",
+                (lid, pos_alt)
+            ).fetchone()
+            
+        if target:
+            pos_neu = target["position"]
+            conn.execute("UPDATE zeilen SET position=? WHERE id=?", (pos_neu, zeile_id))
+            conn.execute("UPDATE zeilen SET position=? WHERE id=?", (pos_alt, target["id"]))
+            conn.commit()
+
+
 def zeilen_der_liste(listen_id):
     """Gibt alle Zeilen einer Liste sortiert nach Position zurück."""
     with _verbinden() as conn:
@@ -285,6 +315,36 @@ def spalte_loeschen(spalte_id):
     with _verbinden() as conn:
         conn.execute("DELETE FROM spalten WHERE id=?", (spalte_id,))
         conn.commit()
+
+
+def spalte_verschieben(spalte_id, richtung: int):
+    """Verschiebt eine Spalte nach links (-1) oder rechts (+1)."""
+    with _verbinden() as conn:
+        # Aktuelle Spalte holen
+        s = conn.execute("SELECT id, listen_id, position FROM spalten WHERE id=?", (spalte_id,)).fetchone()
+        if not s:
+            return
+        
+        pos_alt = s["position"]
+        lid = s["listen_id"]
+        
+        # Tauschpartner finden
+        if richtung < 0:
+            target = conn.execute(
+                "SELECT id, position FROM spalten WHERE listen_id=? AND position < ? ORDER BY position DESC LIMIT 1",
+                (lid, pos_alt)
+            ).fetchone()
+        else:
+            target = conn.execute(
+                "SELECT id, position FROM spalten WHERE listen_id=? AND position > ? ORDER BY position ASC LIMIT 1",
+                (lid, pos_alt)
+            ).fetchone()
+            
+        if target:
+            pos_neu = target["position"]
+            conn.execute("UPDATE spalten SET position=? WHERE id=?", (pos_neu, spalte_id))
+            conn.execute("UPDATE spalten SET position=? WHERE id=?", (pos_alt, target["id"]))
+            conn.commit()
 
 
 def spalten_der_liste(listen_id):
@@ -712,19 +772,17 @@ def _einheit_zu_zahl(text):
     if not text:
         return "—"
 
-    # 1. Zahl und Einheit trennen
-    # Regex: (Vorzeichen? Zahl-Trenner) Leerzeichen? (Rest des Strings)
-    match = re.search(r"([+-]?[\d,.]+)\s*(.*)", text)
+    # 1. Zahl und Rest trennen
+    # Wir suchen die längste Sequenz am Anfang, die mit einer Ziffer endet.
+    # Erlaubt Vorzeichen, Ziffern, Punkte, Kommas und Leerzeichen (als Tausender-Trenner).
+    text = str(text).strip()
+    match = re.search(r"([+-]?[\d,.\s]*\d)\s*(.*)", text)
     if not match:
         return text
 
-    num_str = match.group(1)
-    # Einheit ist alles, was nach der Zahl kommt.
-    # Bei "Tsd./Std." o.ä. nur den Teil VOR dem "/" nutzen (Nenner wie /Std., /h ignorieren).
-    raw_unit = match.group(2).strip()
-    if "/" in raw_unit:
-        raw_unit = raw_unit.split("/")[0]
-    unit_str = raw_unit.upper().strip(".").strip()
+    num_str = match.group(1).replace(" ", "")  # Leerzeichen in der Zahl entfernen
+    # Rest-String (Einheit). Wir nehmen nur den Teil vor einem "/" (Nenner ignorieren).
+    raw_unit = match.group(2).split("/")[0].upper()
 
     # 2. Number-String bereinigen
     if "." in num_str and "," in num_str:
@@ -745,12 +803,18 @@ def _einheit_zu_zahl(text):
     except ValueError:
         return text
 
-    # 3. Faktor aus globalem Wörterbuch anwenden
+    # 3. Faktor aus globalem Wörterbuch suchen
     faktoren = _einheiten_laden()
-    faktor = faktoren.get(unit_str, 1)
-    
+    faktor = 1
+    # Längste Keys zuerst prüfen, um z.B. "MIO" vor "M" zu finden
+    for u in sorted(faktoren.keys(), key=len, reverse=True):
+        if u in raw_unit:
+            faktor = faktoren[u]
+            break
+
     ergebnis = zahl * faktor
 
     if ergebnis == int(ergebnis):
         return str(int(ergebnis))
     return str(round(ergebnis, 2))
+

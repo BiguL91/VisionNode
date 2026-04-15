@@ -110,6 +110,19 @@ QPushButton#btn_del_sm:hover {
     color: #ff8888;
 }
 
+/* ── Klein neutral (Verschieben / Reorder) ── */
+QPushButton#btn_move_sm {
+    padding: 4px 8px;
+    min-width: 0;
+    color: #4fc3f7;
+    border-color: #1e88e5;
+}
+
+QPushButton#btn_move_sm:hover {
+    background-color: #1a2a3a;
+    color: #81d4fa;
+}
+
 /* ── Start / Stop (Toolbar, bewusst groß) ── */
 QPushButton#btn_start {
     background-color: #2ea043;
