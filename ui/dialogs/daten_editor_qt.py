@@ -254,7 +254,9 @@ class TransformBlock(QFrame):
         rohwert = "—"
         if ocr_name and self._ocr_state_func:
             rohwert = self._ocr_state_func(ocr_name) or "—"
-        self._roh_lbl.setText(str(rohwert))
+        roh_str = str(rohwert)
+        if self._roh_lbl.text() != roh_str:
+            self._roh_lbl.setText(roh_str)
 
         typ = self._typ_combo.currentText()
         if rohwert not in (None, "", "—"):
@@ -264,7 +266,9 @@ class TransformBlock(QFrame):
             entry = self._db_cache.get(self._t["name"], ("—", 0))
             sek = entry[0]
             ausgabe = sekunden_formatieren(sek) if typ == "timer" and sek not in ("—", "?", "", None) else sek
-        self._aus_lbl.setText(str(ausgabe))
+        aus_str = str(ausgabe)
+        if self._aus_lbl.text() != aus_str:
+            self._aus_lbl.setText(aus_str)
 
     def _name_speichern(self):
         transformation_aktualisieren(self._t["id"], name=self._name_edit.text().strip())
@@ -323,9 +327,16 @@ class BerechnungsBlock(QFrame):
         self._ergebnis_aktualisieren()
 
     def _ergebnis_aktualisieren(self):
+        """Berechnet Werte selbst – nur für manuelle Aufrufe (z.B. nach Formel-Änderung)."""
         werte = self._werte_func()
+        self._ergebnis_mit_werten(werte)
+
+    def _ergebnis_mit_werten(self, werte: dict):
+        """Setzt das Ergebnis mit bereits berechneten Werten – für den Live-Tick."""
         ergebnis = berechnung_auswerten(self._b["formel_json"], werte, 30)
-        self._ergebnis_lbl.setText(f"= {ergebnis}")
+        neu = f"= {ergebnis}"
+        if self._ergebnis_lbl.text() != neu:
+            self._ergebnis_lbl.setText(neu)
 
     def _name_speichern(self):
         neuer = self._name_edit.text().strip()
@@ -863,8 +874,10 @@ class DatenListeEditorQt(QDialog):
             for block in self._transform_blocks:
                 block._live_update()
         elif idx == 1:  # Berechnung
-            for block in self._berech_blocks:
-                block._ergebnis_aktualisieren()
+            if self._berech_blocks:
+                werte = self._berech_werte()  # einmal DB-Read für alle Blöcke
+                for block in self._berech_blocks:
+                    block._ergebnis_mit_werten(werte)
 
     # ── Listen-Aktionen ────────────────────────────────────────────────────────
 
