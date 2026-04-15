@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QWidget, QFrame, QMenu, QPlainTextEdit, QScrollArea, QSizePolicy,
     QMessageBox, QRadioButton, QButtonGroup, QFormLayout, QDoubleSpinBox,
-    QSpinBox, QComboBox, QApplication,
+    QSpinBox, QComboBox, QApplication, QAbstractSpinBox,
 )
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QTimer, QPointF, QRectF, QPoint, QSizeF,
@@ -798,12 +798,17 @@ class WorkflowEditorDialogQt(QDialog):
                 c_sp = QDoubleSpinBox()
                 c_sp.setRange(0, 3600)
                 c_sp.setValue(float(aus.get("cooldown", 0)))
-                c_sp.setFixedWidth(70)
+                c_sp.setFixedWidth(55)
+                c_sp.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+                c_sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 c_sp.setProperty("class", "input_dark")
+                
                 m_sp = QSpinBox()
                 m_sp.setRange(0, 9999)
                 m_sp.setValue(int(aus.get("max_runs", 0)))
-                m_sp.setFixedWidth(70)
+                m_sp.setFixedWidth(55)
+                m_sp.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+                m_sp.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 m_sp.setProperty("class", "input_dark")
                 btn_up = QPushButton("↑")
                 btn_dn = QPushButton("↓")
