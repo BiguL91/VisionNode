@@ -17,10 +17,12 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QPushButton, QLabel, QLineEdit, QComboBox, QInputDialog,
     QMessageBox, QScrollArea, QSizePolicy, QApplication, QFrame,
+    QMenu,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG
 from PyQt6.QtGui import (
     QImage, QPixmap, QPainter, QPen, QColor, QFont, QCloseEvent,
+    QAction,
 )
 
 try:
@@ -53,7 +55,7 @@ from ui.dialogs.daten_editor_qt    import DatenListeEditorQt
 from ui.dialogs.einheiten_dialog_qt import EinheitenDialogQt
 from ui.dialogs.typ_dialog_qt      import TypDialog
 from ui.dialogs.legende_dialog_qt  import LegendDialog
-from ui.dialogs.state_dialogs_qt   import StateHinzufuegenDialog, StateUmbenennenDialog
+from ui.dialogs.state_dialogs_qt   import StateHinzufuegenDialog, StateEditorDialog
 from ui.dialogs.settings_dialog_qt import SettingsDialog
 from ui.dialogs.gruppe_editor_qt   import GruppeEditorQt
 from ui.dialogs.ocr_dialog_qt      import OCRKonfigDialog
@@ -1305,17 +1307,24 @@ class TilesBotWindow(QMainWindow):
             self._log(f"State-Variable hinzugefügt: {name} = {wert}")
 
     def _state_umbenennen(self, alter_name: str):
-        result = StateUmbenennenDialog.ausfuehren(alter_name, self)
+        aktueller_wert = self.app.state.game_states.get(alter_name, False)
+        result = StateEditorDialog.ausfuehren(alter_name, aktueller_wert, self)
         if result:
-            _, neuer_name = result
-            alter_wert = self.app.state.game_states.pop(alter_name, False)
-            self.app.state.game_states[neuer_name] = alter_wert
+            _, neuer_name, neuer_wert = result
             
-            # Template-Settings aktualisieren
-            self.template_engine.state_umbenennen_in_settings(alter_name, neuer_name)
+            # Aus altem Namen entfernen
+            self.app.state.game_states.pop(alter_name, None)
+            # Mit neuem Namen (oder altem, falls gleich) und neuem Wert setzen
+            self.app.state.game_states[neuer_name] = neuer_wert
+            
+            # Falls Name geändert wurde: Template-Settings aktualisieren
+            if neuer_name != alter_name:
+                self.template_engine.state_umbenennen_in_settings(alter_name, neuer_name)
+                self._log(f"State umbenannt: {alter_name} → {neuer_name} (Wert: {neuer_wert})")
+            else:
+                self._log(f"State-Wert geändert: {neuer_name} = {neuer_wert}")
             
             self.state_panel.aktualisieren(dict(self.app.state.game_states))
-            self._log(f"State umbenannt: {alter_name} → {neuer_name}")
 
     def _state_loeschen(self, name: str):
         self.app.state.game_states.pop(name, None)

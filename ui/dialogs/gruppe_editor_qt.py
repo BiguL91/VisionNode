@@ -32,6 +32,8 @@ class GruppeEditorQt(QDialog):
 
         self._name = name
         self._bekannte = sorted(bekannte_states)
+        if "[KEIN ANDERER ZUSTAND]" not in self._bekannte:
+            self._bekannte.insert(0, "[KEIN ANDERER ZUSTAND]")
         self._condition_states = self._migrate_condition_states(condition_states or [])
         self._set_states_data = set_states or {}
         

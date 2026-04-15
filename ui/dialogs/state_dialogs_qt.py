@@ -83,22 +83,23 @@ class StateHinzufuegenDialog(QDialog):
         return None
 
 
-class StateUmbenennenDialog(QDialog):
+class StateEditorDialog(QDialog):
     """
-    Kleiner Dialog: bestehenden Namen bearbeiten.
+    Dialog zum Bearbeiten einer State-Variable (Name und Wert).
 
     Signal:
-        umbenannt(alter_name: str, neuer_name: str)
+        gespeichert(alter_name: str, neuer_name: str, wert: bool)
     """
-    umbenannt = pyqtSignal(str, str)
+    gespeichert = pyqtSignal(str, str, bool)
 
-    def __init__(self, alter_name: str, parent=None):
+    def __init__(self, name: str, wert: bool, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(lang.t("state_rename_title"))
+        self.setWindowTitle("State-Variable bearbeiten")
         self.setModal(True)
-        self.setFixedSize(300, 150)
+        self.setFixedSize(300, 200)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
-        self._alter_name = alter_name
+        self._alter_name = name
+        self._wert = wert
         self._setup_ui()
 
     def _setup_ui(self):
@@ -115,14 +116,18 @@ class StateUmbenennenDialog(QDialog):
         self._entry.returnPressed.connect(self._bestaetigen)
         layout.addWidget(self._entry)
 
+        self._check = QCheckBox("Aktiv (TRUE)")
+        self._check.setChecked(self._wert)
+        layout.addWidget(self._check)
+
         layout.addStretch()
 
         btn_row = QHBoxLayout()
-        btn_rename = QPushButton("Umbenennen")
-        btn_rename.setObjectName("btn_new")
-        btn_rename.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_rename.clicked.connect(self._bestaetigen)
-        btn_row.addWidget(btn_rename)
+        btn_save = QPushButton("Speichern")
+        btn_save.setObjectName("btn_new")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.clicked.connect(self._bestaetigen)
+        btn_row.addWidget(btn_save)
 
         btn_cancel = QPushButton(lang.t("btn_cancel"))
         btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -134,18 +139,18 @@ class StateUmbenennenDialog(QDialog):
 
     def _bestaetigen(self):
         neuer_name = self._entry.text().strip()
-        if not neuer_name or neuer_name == self._alter_name:
-            self.reject()
+        neuer_wert = self._check.isChecked()
+        if not neuer_name:
             return
-        self.umbenannt.emit(self._alter_name, neuer_name)
+        self.gespeichert.emit(self._alter_name, neuer_name, neuer_wert)
         self.accept()
 
     @staticmethod
-    def ausfuehren(alter_name: str, parent=None) -> tuple[str, str] | None:
-        """Gibt (alter_name, neuer_name) zurück oder None bei Abbruch/unverändertem Namen."""
+    def ausfuehren(name: str, wert: bool, parent=None) -> tuple[str, str, bool] | None:
+        """Gibt (alter_name, neuer_name, neuer_wert) zurück oder None bei Abbruch."""
         result = {}
-        dlg = StateUmbenennenDialog(alter_name, parent)
-        dlg.umbenannt.connect(lambda a, n: result.update(alt=a, neu=n))
+        dlg = StateEditorDialog(name, wert, parent)
+        dlg.gespeichert.connect(lambda a, n, v: result.update(alt=a, neu=n, wert=v))
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            return result.get("alt"), result.get("neu")
+            return result.get("alt"), result.get("neu"), result.get("wert")
         return None

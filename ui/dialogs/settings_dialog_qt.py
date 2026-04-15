@@ -18,6 +18,7 @@ LOG_KEYS = [
     ("log_dateitransfers",       "Datei-Operationen (Verschieben/Rename)"),
     ("log_ocr_debug",            "OCR Debug-Bilder speichern"),
     ("log_matching",             "Matching-Timing"),
+    ("log_gpu_templates",        "Gescannte Templates (GPU) loggen"),
     ("log_capture",              "Capture-Timing"),
     ("log_daten_berechnungen",   "Log Daten-Berechnungen (Transform/Formeln)"),
 ]

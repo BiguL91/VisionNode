@@ -40,12 +40,12 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         frame, ref_groesse, skala, states = item
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
-        matches = engine.matches_suchen_np(frame, game_states=states)
+        result_tupel = engine.matches_suchen_np(frame, game_states=states)
         
         while not result_q.empty():
             try: result_q.get_nowait()
             except Exception: break
-        try: result_q.put_nowait(matches)
+        try: result_q.put_nowait(result_tupel)
         except Exception: pass
 
 class TilesBotApp:
@@ -87,6 +87,7 @@ class TilesBotApp:
         self.matching_proc = None
         self.frame_q = mp.Queue(maxsize=1)
         self.result_q = mp.Queue(maxsize=2)
+        self._last_gpu_masters = []
 
     def _states_initialisieren(self):
         """Setzt alle bekannten State-Variablen aus Template-Settings auf False."""
@@ -111,7 +112,8 @@ class TilesBotApp:
             "log_ocr_debug": False,
             "log_matching": False,
             "log_capture": False,
-            "log_daten_berechnungen": False
+            "log_daten_berechnungen": False,
+            "log_gpu_templates": False
         }
         if os.path.exists(self.settings_path):
             try:
@@ -221,7 +223,17 @@ class TilesBotApp:
                 t_start = None
             
             try:
-                matches = self.result_q.get(timeout=0.1)
+                res_item = self.result_q.get(timeout=0.1)
+                if isinstance(res_item, tuple) and len(res_item) == 2:
+                    matches, master_namen = res_item
+                    if self.settings.get("log_gpu_templates", False):
+                        m_set = sorted(set(master_namen))
+                        if m_set != self._last_gpu_masters:
+                            self._last_gpu_masters = m_set
+                            m_str = ", ".join(m_set)
+                            self._log(f"[GPU] Scanne {len(m_set)} Master: {m_str}")
+                else:
+                    matches = res_item
 
                 # --- State Automatisierung ---
                 gefundene_p_namen = {m[6] for m in matches}

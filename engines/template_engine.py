@@ -294,14 +294,28 @@ class TemplateEngine:
         return sorted(g for g in gruppen if g)
 
     @staticmethod
-    def _condition_states_erfuellt(conditions, game_states):
+    def _condition_states_erfuellt(conditions, game_states, ignore_states=None):
         """Wertet condition_states gegen game_states aus. Unterstützt altes und neues Format."""
-        if not conditions:
+        if not conditions or game_states is None:
             return True
+
+        def _wert_pruefen(k, v):
+            if k == "[KEIN ANDERER ZUSTAND]":
+                # Prüfe ob IRGENDEIN ANDERER State True ist
+                for s_name, s_val in game_states.items():
+                    if s_val is True:
+                        if ignore_states and s_name in ignore_states:
+                            continue
+                        # Ein anderer State ist True -> Bedingung [KEIN ANDERER] == True ist NICHT erfüllt
+                        if v: return False
+                        else: return True
+                # Kein anderer State ist True -> Bedingung [KEIN ANDERER] == True ist erfüllt
+                return v
+            return game_states.get(k) == v
 
         # Altes Format (dict): {"Map": True} → einfaches AND
         if isinstance(conditions, dict):
-            return all(game_states.get(k) == v for k, v in conditions.items())
+            return all(_wert_pruefen(k, v) for k, v in conditions.items())
 
         if not isinstance(conditions, list) or not conditions:
             return True
@@ -314,7 +328,7 @@ class TemplateEngine:
             for group in conditions:
                 connector = group.get("connector")  # None | "OR" | "AND"
                 states = group.get("states", {})
-                group_ok = all(game_states.get(k) == v for k, v in states.items())
+                group_ok = all(_wert_pruefen(k, v) for k, v in states.items())
                 if result is None or connector is None or connector == "OR":
                     result = group_ok if result is None else (result or group_ok)
                 else:  # AND
@@ -323,9 +337,47 @@ class TemplateEngine:
 
         # Altes Listen-Format: [{"Map": True}, {"Statd": True}] → OR zwischen Gruppen
         for group in conditions:
-            if isinstance(group, dict) and all(game_states.get(k) == v for k, v in group.items()):
+            if isinstance(group, dict) and all(_wert_pruefen(k, v) for k, v in group.items()):
                 return True
         return False
+
+    def _get_hierarchy_set_states(self, name_oder_pfad):
+        """Sammelt alle set_states eines Templates/Pfades und seiner Eltern."""
+        sets = set()
+        # 1. Start-Punkt prüfen (kann Template-Name oder Gruppen-Pfad sein)
+        basis_name = name_oder_pfad.split("__")[0] if "__" in name_oder_pfad else name_oder_pfad
+        s = self.settings.get(basis_name, {})
+        if not s and "/" in name_oder_pfad:
+            # Es ist ein Pfad, nimm das letzte Element
+            leaf = name_oder_pfad.split("/")[-1]
+            s = self.settings.get(leaf, {})
+        
+        if s:
+            sets.update(s.get("set_states", {}).keys())
+            # Falls es ein Template-Name war, auch Master-States bei Varianten prüfen
+            if "__" in name_oder_pfad:
+                m_name = name_oder_pfad.split("__")[0]
+                sets.update(self.settings.get(m_name, {}).get("set_states", {}).keys())
+            
+            # 2. Eltern-Kette nach oben
+            current_path = s.get("gruppe", "")
+            besucht = {name_oder_pfad}
+            while current_path:
+                teile = current_path.split("/")
+                leaf = teile[-1]
+                if leaf in besucht: break
+                besucht.add(leaf)
+                
+                ps = self.settings.get(leaf, {})
+                if isinstance(ps, dict):
+                    sets.update(ps.get("set_states", {}).keys())
+                    if len(teile) > 1:
+                        current_path = "/".join(teile[:-1])
+                    else:
+                        current_path = ps.get("gruppe", "")
+                else:
+                    break
+        return list(sets)
 
     def _eltern_conditions_pruefen(self, pfad, game_states):
         """Prüft Bedingungen aller Eltern-Ebenen rekursiv über einen Vollpfad."""
@@ -342,8 +394,12 @@ class TemplateEngine:
             eintrag = self.settings.get(leaf, {})
             if isinstance(eintrag, dict):
                 conds = eintrag.get("condition_states", [])
-                if conds and not self._condition_states_erfuellt(conds, game_states):
-                    return False
+                if conds:
+                    # Für [KEIN ANDERER ZUSTAND] müssen wir alle Zustände ignorieren,
+                    # die in DIESER Hierarchie (von diesem Blatt abwärts) gesetzt werden.
+                    my_hierarchy_sets = self._get_hierarchy_set_states(current_path)
+                    if not self._condition_states_erfuellt(conds, game_states, ignore_states=my_hierarchy_sets):
+                        return False
                 
                 # Nächste Ebene im Pfad nach oben (z.B. A/B/C -> A/B)
                 if len(teile) > 1:
@@ -770,7 +826,11 @@ class TemplateEngine:
                 conditions = self.settings.get(master_name, {}).get("condition_states", {})
             
             if game_states is not None:
-                if conditions and not self._condition_states_erfuellt(conditions, game_states):
+                # Eigenen gesetzte Zustände sammeln (Hierarchie-weit!), 
+                # damit sie beim [KEIN ANDERER] Check ignoriert werden.
+                my_hierarchy_sets = self._get_hierarchy_set_states(name)
+                
+                if conditions and not self._condition_states_erfuellt(conditions, game_states, ignore_states=my_hierarchy_sets):
                     continue
                 # Eltern-Kette prüfen (passive Gruppen, hierarchisch)
                 if t["gruppe"] and not self._eltern_conditions_pruefen(t["gruppe"], game_states):
@@ -867,7 +927,7 @@ class TemplateEngine:
             d_name = name.split("__")[0]
             # Wir geben den Anzeigenamen, Koordinaten, Score UND den echten physikalischen Namen zurück
             output.append((d_name, int(rx_ref*norm_sx), int(ry_ref*norm_sy), int(rw_ref*norm_sx), int(rh_ref*norm_sy), score, name))
-        return self._nms(output)
+        return self._nms(output), master_namen
 
 
     def _batch_match(self, img_tensor, template_namen, s_eff, schwellwert_override=None, offset=(0,0), is_full_scan=False):
