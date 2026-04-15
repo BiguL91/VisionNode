@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem, QLabel, QLineEdit, QComboBox, QFrame, QMenu,
     QFormLayout, QWidget
 )
-from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG, QTimer
+from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG, QTimer, QPoint
 from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction,
     QPainterPathStroker
@@ -60,6 +60,58 @@ TYPEN_LABEL = [
     ("Vergleich", "l_cmp"),
     ("Timer",     "l_timer"),
 ]
+
+
+# ── LogicView ─────────────────────────────────────────────────────────────────
+class LogicView(QGraphicsView):
+    """
+    Spezialisierte View für den Logik-Editor.
+    Übernimmt das Navigationsverhalten vom Workflow-Editor (Pan & Zoom).
+    """
+    def __init__(self, scene, parent=None):
+        super().__init__(scene, parent)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setDragMode(QGraphicsView.DragMode.NoDrag) # RubberBand deaktiviert
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setInteractive(True)
+        self.setObjectName("logic_view")
+        
+        self._pan_start = QPoint()
+
+    def wheelEvent(self, event):
+        # Zoom ohne Modifikatoren (wie im Workflow)
+        delta = event.angleDelta().y()
+        factor = 1.15 if delta > 0 else 1 / 1.15
+        self.scale(factor, factor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            item = self.itemAt(event.pos())
+            # Wenn kein Item (Node/Port) getroffen wurde -> Panning starten
+            if item is None:
+                self._pan_start = event.pos()
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not self._pan_start.isNull():
+            delta = event.pos() - self._pan_start
+            self._pan_start = event.pos()
+            
+            # Verschiebt den Bildschirmausschnitt
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._pan_start = QPoint()
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().mouseReleaseEvent(event)
 
 
 # ── Port-Item ─────────────────────────────────────────────────────────────────
@@ -782,23 +834,9 @@ class LogicEditorDialogQt(QDialog):
         self._scene = LogicScene()
         self._scene.node_edit_requested.connect(self._edit_node)
 
-        self._view = QGraphicsView(self._scene)
-        self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-        self._view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self._view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self._view.setObjectName("logic_view")
+        self._view = LogicView(self._scene)
         self._view.setSceneRect(0, 0, 3000, 2000)
-        # Zoom via Ctrl+Scroll
-        self._view.setInteractive(True)
         root.addWidget(self._view)
-
-    def wheelEvent(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
-            self._view.scale(factor, factor)
-        else:
-            super().wheelEvent(event)
 
     def _node_hinzufuegen(self, typ: str):
         data = {"id": str(uuid.uuid4()), "typ": typ, "x": 150, "y": 150}
