@@ -277,13 +277,14 @@ class TilesBotApp:
                 # Nach dem State-Update: Matches gegen die NEUEN States filtern.
                 # Verhindert, dass Treffer aus dem gleichen Frame aktiv bleiben,
                 # obwohl ihre condition_states durch den State-Update nicht mehr erfüllt sind.
-                aktive_matches = [
-                    m for m in matches
-                    if self.template_engine._condition_states_erfuellt(
-                        self.template_engine.settings.get(m[6], {}).get("condition_states", []),
-                        neue_states
-                    )
-                ]
+                aktive_matches = []
+                for m in matches:
+                    m_name = m[6]
+                    conds = self.template_engine.settings.get(m_name, {}).get("condition_states", [])
+                    ignore = self.template_engine._get_hierarchy_set_states(m_name)
+                    if self.template_engine._condition_states_erfuellt(conds, neue_states, ignore_states=ignore):
+                        aktive_matches.append(m)
+                
                 self.state.active_matches = aktive_matches
 
                 if t_start and self.settings.get("log_matching", False):
