@@ -27,7 +27,7 @@ from PyQt6.QtGui import (
 # ── Visuelle Konstanten (Welt-Koordinaten) ─────────────────────────────────────
 
 NODE_BREITE  = 170
-NODE_HOEHE   = 64
+NODE_HOEHE   = 80
 TITEL_HOEHE  = 22
 PORT_RADIUS  = 8
 CANVAS_BG    = "#1a1a1a"
@@ -97,6 +97,7 @@ class NodeCanvas(QWidget):
 
         self.nodes:       list[dict] = []
         self.connections: list[dict] = []
+        self._workflow_name = ""
         self._scale  = 1.0
         self._tx     = 0.0
         self._ty     = 0.0
@@ -121,11 +122,22 @@ class NodeCanvas(QWidget):
     def _wx(self, cx): return (cx - self._tx) / self._scale
     def _wy(self, cy): return (cy - self._ty) / self._scale
 
+    def _node_h(self, node: dict) -> float:
+        """Berechnet die dynamische Höhe eines Knotens basierend auf seinen Ports."""
+        typ = node["typ"]
+        if typ == "priority_selector":
+            aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
+        else:
+            _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
+        
+        # Basis-Höhe 80, aber bei vielen Ports mindestens 28px pro Port-Abstand
+        return max(NODE_HOEHE, (len(aus_ports) + 1) * 28)
+
     def _port_pos(self, node, port_name):
         x  = self._cx(node["x"])
         y  = self._cy(node["y"])
         w  = NODE_BREITE * self._scale
-        h  = NODE_HOEHE  * self._scale
+        h  = self._node_h(node) * self._scale
         typ = node["typ"]
         if typ == "priority_selector":
             aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
@@ -215,7 +227,7 @@ class NodeCanvas(QWidget):
         x = self._cx(node["x"])
         y = self._cy(node["y"])
         w = NODE_BREITE * s
-        h = NODE_HOEHE * s
+        h = self._node_h(node) * s
         th = TITEL_HOEHE * s
         r = max(3.0, PORT_RADIUS * s)
         typ = node["typ"]
@@ -258,7 +270,12 @@ class NodeCanvas(QWidget):
         p.drawRoundedRect(QRectF(x+2, y+2, w-4, th), 2, 2)
         p.setPen(QPen(QColor("white")))
         p.setFont(QFont("Segoe UI", max(6, int(8*s)), QFont.Weight.Bold))
-        p.drawText(QRectF(x, y, w, th), Qt.AlignmentFlag.AlignCenter, typ.upper())
+        
+        titel = typ.upper()
+        if typ == "priority_selector" and self._workflow_name:
+            titel = self._workflow_name.upper()
+            
+        p.drawText(QRectF(x, y, w, th), Qt.AlignmentFlag.AlignCenter, titel)
 
         if s > 0.4:
             detail = self._node_detail(node)
@@ -454,21 +471,45 @@ class WorkflowEditorDialogQt(QDialog):
     abgebrochen = pyqtSignal()
     _sim_fragen_signal = pyqtSignal(str, str)
 
-    def __init__(self, parent, bot, name: str, graph: dict, callback=None):
+    def __init__(self, parent, bot, name: str, graph: dict, callback=None, is_master=False):
         super().__init__(parent)
         self.bot = bot
         self._callback = callback
+        self.is_master = is_master
         self.nodes = [dict(n) for n in graph.get("nodes", [])]
         self.connections = [dict(c) for c in graph.get("connections", [])]
-        if not self.nodes:
-            self.nodes.append({"id": _neue_id(), "typ": "start", "x": 80, "y": 240})
+        
+        if self.is_master:
+            # Sicherstellen, dass ein Selector da ist
+            selector = next((n for n in self.nodes if n["typ"] == "priority_selector"), None)
+            if not selector:
+                sel_id = _neue_id()
+                selector = {
+                    "id": sel_id, 
+                    "typ": "priority_selector", 
+                    "x": 300, "y": 240,
+                    "ausgaenge": [{"port": "Prio 1", "variable": "", "operator": "=", "wert": "true", "cooldown": 0, "max_runs": 0}]
+                }
+                self.nodes.append(selector)
+            
+            # Sicherstellen, dass ein Start da ist
+            start_node = next((n for n in self.nodes if n["typ"] == "start"), None)
+            if not start_node:
+                start_id = _neue_id()
+                start_node = {"id": start_id, "typ": "start", "x": 50, "y": 240}
+                self.nodes.append(start_node)
+                # Automatisch verbinden
+                self.connections.append({"von": start_id, "port_aus": "out", "zu": selector["id"], "port_ein": "in"})
+        else:
+            if not self.nodes:
+                self.nodes.append({"id": _neue_id(), "typ": "start", "x": 80, "y": 240})
         self._sim_aktiv = False
         self._sim_zustand = {}
         self._sim_progress = {}
         self._sim_fragen_event = None
         self._sim_fragen_result = None
         self._sim_fragen_signal.connect(self._sim_fragen_slot)
-        self.setWindowTitle("Workflow Editor")
+        self.setWindowTitle(f"{'Master' if is_master else 'Workflow'} Editor")
         self.resize(960, 640)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self._setup_ui(name)
@@ -486,6 +527,7 @@ class WorkflowEditorDialogQt(QDialog):
         tb_lay.addWidget(QLabel("Name:"))
         self._name_edit = QLineEdit(name)
         self._name_edit.setFixedWidth(160)
+        self._name_edit.textChanged.connect(self._on_name_changed)
         tb_lay.addWidget(self._name_edit)
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
@@ -494,7 +536,26 @@ class WorkflowEditorDialogQt(QDialog):
         lbl = QLabel("+ Node:")
         lbl.setProperty("class", "lbl_dim")
         tb_lay.addWidget(lbl)
-        typen = [("Start","start"),("Suche","suche"),("Optional","suche_optional"),("Klick","klick"),("Warten","warten"),("Zurück","zurueck"),("Home","home"),("Bedingung","bedingung"),("Workflow","call_workflow"),("Selector","priority_selector")]
+
+        # Filter nodes based on is_master
+        if self.is_master:
+            typen = [
+                ("Workflow","call_workflow"),
+                ("Bedingung","bedingung"),
+                ("Warten","warten")
+            ]
+        else:
+            typen = [
+                ("Suche","suche"),
+                ("Optional","suche_optional"),
+                ("Klick","klick"),
+                ("Warten","warten"),
+                ("Zurück","zurueck"),
+                ("Home","home"),
+                ("Bedingung","bedingung"),
+                ("Selector","priority_selector")
+            ]
+
         for label, typ in typen:
             btn = QPushButton(label)
             btn.setObjectName("btn_add_node")
@@ -547,10 +608,15 @@ class WorkflowEditorDialogQt(QDialog):
     def _sync_canvas(self):
         self._canvas.nodes = self.nodes
         self._canvas.connections = self.connections
+        self._canvas._workflow_name = self._name_edit.text()
         self._canvas._sim_zustand = self._sim_zustand
         self._canvas._sim_progress = self._sim_progress
         self._canvas.update()
         self._status_aktualisieren()
+
+    def _on_name_changed(self, text):
+        self._canvas._workflow_name = text
+        self._canvas.update()
 
     def _node_hinzufuegen(self, typ: str):
         off = (len(self.nodes) % 8) * 22
@@ -574,6 +640,13 @@ class WorkflowEditorDialogQt(QDialog):
         self._sync_canvas()
 
     def _node_loeschen(self, node: dict):
+        # Start-Node darf nie gelöscht werden
+        if node["typ"] == "start":
+            return
+        # In Master-Workflows darf der Selector nie gelöscht werden
+        if self.is_master and node["typ"] == "priority_selector":
+            return
+            
         nid = node["id"]
         self.nodes = [n for n in self.nodes if n["id"] != nid]
         self.connections = [c for c in self.connections if c["von"] != nid and c["zu"] != nid]
@@ -710,7 +783,7 @@ class WorkflowEditorDialogQt(QDialog):
                 has_logic = aus.get("logic_graph")
                 btn_logic = QPushButton("★ Netzwerk" if has_logic else "🛠 Netzwerk")
                 btn_logic.setObjectName("btn_logic_net")
-                def _edit_logic(a_obj=aus, b=btn_logic):
+                def _edit_logic(_, a_obj=aus, b=btn_logic):
                     from ui.dialogs.logic_editor_qt import LogicEditorDialogQt
                     g = a_obj.get("logic_graph") or {"nodes": [], "connections": []}
                     dlg2 = LogicEditorDialogQt(
@@ -762,11 +835,27 @@ class WorkflowEditorDialogQt(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         def anwenden():
-            node["ausgaenge"] = [{"port": p.text(), "cooldown": c.value(), "max_runs": m.value(), "logic_graph": a.get("logic_graph")} for (p,c,m,a) in rows_widgets]
+            # Wichtig: Vorhandene Daten (variable, operator, wert) behalten, wenn sie existieren
+            node["ausgaenge"] = []
+            for (p, c, m, a) in rows_widgets:
+                aus_data = {
+                    "port": p.text(),
+                    "cooldown": c.value(),
+                    "max_runs": m.value(),
+                    "logic_graph": a.get("logic_graph")
+                }
+                # Fallback-Felder von 'a' (Original-Objekt) übernehmen
+                if "variable" in a: aus_data["variable"] = a["variable"]
+                if "operator" in a: aus_data["operator"] = a["operator"]
+                if "wert" in a: aus_data["wert"] = a["wert"]
+                
+                node["ausgaenge"].append(aus_data)
+
             gültige = [a["port"] for a in node["ausgaenge"]] + ["else"]
             self.connections = [c for c in self.connections if not (c["von"] == node["id"] and c["port_aus"] not in gültige)]
             parent_dlg.accept()
             self._sync_canvas()
+
         btn_ab = QPushButton("Abbrechen")
         btn_ok = QPushButton("Anwenden")
         btn_ok.setObjectName("btn_new")
@@ -775,6 +864,7 @@ class WorkflowEditorDialogQt(QDialog):
         btn_row.addWidget(btn_ab)
         btn_row.addWidget(btn_ok)
         lay.addLayout(btn_row)
+        parent_dlg.exec()
 
     def _template_picker_btn(self, current: str, parent) -> QPushButton:
         btn = QPushButton(current or "Bitte wählen...")

@@ -624,6 +624,7 @@ class TilesBotWindow(QMainWindow):
         self.workflow_panel.workflow_neu_requested.connect(self._workflow_neu)
         self.workflow_panel.workflow_bearbeiten_requested.connect(self._workflow_bearbeiten)
         self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
+        self.workflow_panel.logic_network_edit_requested.connect(self._logic_netzwerk_bearbeiten)
 
         # Template-Panels
         self.template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
@@ -1189,7 +1190,7 @@ class TilesBotWindow(QMainWindow):
 
     def _master_bearbeiten(self, name: str):
         graph = self.workflow_engine.master_workflows.get(name, {})
-        dlg = WorkflowEditorDialogQt(parent=self, bot=self, name=name, graph=graph)
+        dlg = WorkflowEditorDialogQt(parent=self, bot=self, name=name, graph=graph, is_master=True)
 
         def on_gespeichert(neuer_name, neuer_graph):
             self.workflow_engine.master_workflow_speichern(neuer_name, neuer_graph, alter_name=name)
@@ -1252,6 +1253,46 @@ class TilesBotWindow(QMainWindow):
             self.workflow_engine.workflow_loeschen(name)
             self._panels_aktualisieren()
             self._log(f"Workflow gelöscht: {name}")
+
+    def _logic_netzwerk_bearbeiten(self, wf_type: str, wf_name: str, node_id: str, port_name: str, graph: dict):
+        from ui.dialogs.logic_editor_qt import LogicEditorDialogQt
+        
+        dlg = LogicEditorDialogQt(
+            name=f"{wf_name} → {port_name}",
+            graph=graph,
+            game_states=self.app.state.game_states,
+            templates=list(self.template_engine.templates.keys()),
+            ocr_vars={"global": self.app.state.ocr_values, "template": self.app.state.template_ocr_values},
+            parent=self,
+            bot=self.app
+        )
+        
+        def on_save(new_graph):
+            # Workflow finden und updaten
+            wf_dict = self.workflow_engine.master_workflows if wf_type == "master" else self.workflow_engine.workflows
+            target_wf = wf_dict.get(wf_name)
+            if not target_wf: return
+            
+            for node in target_wf.get("nodes", []):
+                if node.get("id") == node_id:
+                    # In den Ausgängen des Selektors suchen
+                    if node.get("typ") == "priority_selector":
+                        for aus in node.get("ausgaenge", []):
+                            if aus.get("port") == port_name:
+                                aus["logic_graph"] = new_graph
+                                break
+            
+            # Speichern erzwingen
+            if wf_type == "master":
+                self.workflow_engine.master_workflow_speichern(wf_name, target_wf)
+            else:
+                self.workflow_engine.workflow_speichern(wf_name, target_wf)
+            
+            self._panels_aktualisieren()
+            self._log(f"Logik-Netzwerk in [{wf_name}] gespeichert.")
+
+        dlg.gespeichert.connect(on_save)
+        dlg.show()
 
     # ── State-Aktionen ────────────────────────────────────────────────────────
 
