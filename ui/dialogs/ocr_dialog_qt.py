@@ -366,6 +366,8 @@ class OCRKonfigDialog(QDialog):
         self._template_pil = None
         self._vorschau_basis_pil = None
         self._live_view_active = False
+        self._live_offset = (0, 0)
+        self._live_tm_size = (1, 1)
         self._target_color = [255, 255, 255]
         self._is_loading = False
         self._ocr_request_id = 0
@@ -560,6 +562,11 @@ class OCRKonfigDialog(QDialog):
         ss_pil = self._bot.app.current_screenshot_pil
         if ss_pil is None: return
         
+        import os
+        import json
+        ref_dir = os.path.join("templates", "_ocr_refs")
+        if not os.path.exists(ref_dir): os.makedirs(ref_dir)
+
         try:
             # 1. Den gewählten Bereich ausschneiden
             pil_crop = ss_pil.crop((x0, y0, x1, y1)).convert("RGB")
@@ -579,13 +586,22 @@ class OCRKonfigDialog(QDialog):
             if found_match:
                 # Offset: Wie weit ist das Template vom Crop-Rand entfernt?
                 self._live_offset = (found_match[1] - x0, found_match[2] - y0)
-                print(f"[OCR-Capture] Template gefunden bei Offset: {self._live_offset}")
+                self._live_tm_size = (found_match[3], found_match[4]) # Match-Größe auf Screen
+                print(f"[OCR-Capture] Template gefunden bei Offset: {self._live_offset}, Größe: {self._live_tm_size}")
             else:
                 # Wenn nicht gefunden, setzen wir Offset auf 0 (User muss selbst zielen)
                 self._live_offset = (0, 0)
+                self._live_tm_size = (self._orig_tw, self._orig_th)
                 print("[OCR-Capture] WARNUNG: Template nicht im gewählten Bereich gefunden!")
 
-            # 3. Als neuen Hintergrund setzen
+            # 3. SPEICHERN für Persistenz
+            img_p = os.path.join(ref_dir, f"{self._name}.png")
+            json_p = os.path.join(ref_dir, f"{self._name}.json")
+            pil_crop.save(img_p)
+            with open(json_p, "w", encoding="utf-8") as f:
+                json.dump({"offset": self._live_offset, "tm_size": self._live_tm_size}, f)
+
+            # 4. Als neuen Hintergrund setzen
             self._template_pil = pil_crop
             self._tw, self._th = pil_crop.size
             
@@ -636,7 +652,8 @@ class OCRKonfigDialog(QDialog):
 
                 # Canvas-Bild immer aktualisieren (kein OCR-Overhead, kein Flackern)
                 pm = _pil_to_qpixmap(pil_crop)
-                self._canvas.set_template_info((ox, oy), (self._orig_tw, self._orig_th))
+                tm_size = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
+                self._canvas.set_template_info((ox, oy), tm_size)
                 self._canvas.set_pixmap(pm)
                 self._canvas.setFixedSize(sw, sh)
 
@@ -771,11 +788,14 @@ class OCRKonfigDialog(QDialog):
         co, cu, cl, cr = e[2], e[3], e[4], e[5]
         form = e[13] if len(e) > 13 else (e[6] if len(e) > 6 and isinstance(e[6], str) else "box")
 
-        # Umrechnen: Prozente -> 1:1 Pixel im Template-Raum
-        rel_x0 = cl / 100 * self._orig_tw
-        rel_y0 = co / 100 * self._orig_th
-        rel_x1 = self._orig_tw - (cr / 100 * self._orig_tw)
-        rel_y1 = self._orig_th - (cu / 100 * self._orig_th)
+        # Aktuelle Referenz-Größe für die Umrechnung (Prozent -> Pixel)
+        tw_eff, th_eff = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
+
+        # Umrechnen: Prozente -> 1:1 Pixel im Template-Raum (effektiv)
+        rel_x0 = cl / 100 * tw_eff
+        rel_y0 = co / 100 * th_eff
+        rel_x1 = tw_eff - (cr / 100 * tw_eff)
+        rel_y1 = th_eff - (cu / 100 * th_eff)
         
         # Pixel im Hintergrund-Raum (Capture)
         ox, oy = getattr(self, "_live_offset", (0, 0))
@@ -825,12 +845,16 @@ class OCRKonfigDialog(QDialog):
         rel_x1 = bg_x1 - off_x
         rel_y1 = bg_y1 - off_y
         
-        # Prozentual zur ORIGINAL-TEMPLATE-GRÖSSE
-        # cl=0% bedeutet: Startet exakt am linken Rand des Templates
-        cl = round(rel_x0 / self._orig_tw * 100, 1)
-        co = round(rel_y0 / self._orig_th * 100, 1)
-        cr = round((self._orig_tw - rel_x1) / self._orig_tw * 100, 1)
-        cu = round((self._orig_th - rel_y1) / self._orig_th * 100, 1)
+        # Aktuelle Referenz-Größe für die Prozent-Berechnung
+        # Wenn wir im Capture-Modus sind, ist das die Match-Größe auf dem Screen
+        # Wenn wir im PNG-Modus sind, ist es die Original-Größe
+        tw_eff, th_eff = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
+
+        # Prozentual zur EFFEKTIVEN GRÖSSE
+        cl = round(rel_x0 / tw_eff * 100, 1)
+        co = round(rel_y0 / th_eff * 100, 1)
+        cr = round((tw_eff - rel_x1) / tw_eff * 100, 1)
+        cu = round((th_eff - rel_y1) / th_eff * 100, 1)
         
         return cl, co, cr, cu
 
@@ -883,53 +907,6 @@ class OCRKonfigDialog(QDialog):
             p.window().raise_()
             p.window().activateWindow()
 
-    def empfange_live_region(self, x0, y0, x1, y1, form="box"):
-        """Wird vom Hauptfenster aufgerufen, wenn dort ein Bereich gewählt wurde."""
-        ss_pil = self._bot.app.current_screenshot_pil
-        if ss_pil is None: return
-        
-        import os
-        import json
-        ref_dir = os.path.join("templates", "_ocr_refs")
-        if not os.path.exists(ref_dir): os.makedirs(ref_dir)
-
-        try:
-            # 1. Den gewählten Bereich ausschneiden
-            pil_crop = ss_pil.crop((x0, y0, x1, y1)).convert("RGB")
-            
-            # 2. Template in diesem Ausschnitt suchen, um Offset zu bestimmen
-            matches = self._bot.app.state.active_matches
-            found_match = None
-            for m in matches:
-                if m[0] == self._name or (len(m) > 6 and m[6] == self._name):
-                    mx, my = m[1], m[2]
-                    if x0 <= mx <= x1 and y0 <= my <= y1:
-                        found_match = m
-                        break
-            
-            offset = (0, 0)
-            if found_match:
-                offset = (found_match[1] - x0, found_match[2] - y0)
-            
-            # 3. SPEICHERN für Persistenz
-            img_p = os.path.join(ref_dir, f"{self._name}.png")
-            json_p = os.path.join(ref_dir, f"{self._name}.json")
-            pil_crop.save(img_p)
-            with open(json_p, "w", encoding="utf-8") as f:
-                json.dump({"offset": offset}, f)
-
-            # 4. Als neuen Hintergrund setzen
-            self._live_offset = offset
-            self._template_pil = pil_crop
-            self._tw, self._th = pil_crop.size
-            self._trigger_visual_refresh()
-            
-            self.show()
-            self.raise_()
-            self.activateWindow()
-        except Exception as e:
-            print(f"[OCR-Capture] Fehler: {e}")
-
     def _reset_background(self):
         """Löscht den benutzerdefinierten Bereich und kehrt zum PNG zurück."""
         import os
@@ -941,6 +918,7 @@ class OCRKonfigDialog(QDialog):
         if os.path.exists(json_p): os.remove(json_p)
         
         self._live_offset = (0, 0)
+        self._live_tm_size = (self._orig_tw, self._orig_th)
         self._template_pil = None
         self._lade_template()
 
@@ -960,6 +938,8 @@ class OCRKonfigDialog(QDialog):
         else:
             self._orig_tw, self._orig_th = 1, 1 # Fallback
 
+        self._live_tm_size = (self._orig_tw, self._orig_th) # Default
+
         # 1. PRÜFEN OB REFERENZ-BILD EXISTIERT
         ref_dir = os.path.join("templates", "_ocr_refs")
         img_p = os.path.join(ref_dir, f"{self._name}.png")
@@ -971,6 +951,8 @@ class OCRKonfigDialog(QDialog):
                 with open(json_p, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self._live_offset = tuple(data.get("offset", (0, 0)))
+                    if "tm_size" in data:
+                        self._live_tm_size = tuple(data["tm_size"])
                 self._tw, self._th = self._template_pil.size
                 self._trigger_visual_refresh()
                 return
@@ -996,6 +978,7 @@ class OCRKonfigDialog(QDialog):
             self._template_pil = pil_view
             self._tw, self._th = pil_view.size
             self._live_offset = (0, 0)
+            self._live_tm_size = (self._orig_tw, self._orig_th)
             self._trigger_visual_refresh()
         except Exception:
             self._template_pil = None
@@ -1026,11 +1009,12 @@ class OCRKonfigDialog(QDialog):
 
         # Offset berücksichtigen (Wo liegt das Template im aktuellen Hintergrund-Bild?)
         off_x, off_y = getattr(self, "_live_offset", (0, 0))
+        tm_w, tm_h = self._live_tm_size
 
         region = {
             "name": f"Vorschau_{self._name}",
             "x": off_x, "y": off_y, # Startpunkt des Templates im Bild
-            "breite": self._orig_tw, "hoehe": self._orig_th, # Echte Maße des Templates
+            "breite": tm_w, "hoehe": tm_h, # Maße des Templates (effektiv)
             "modus": self._get_modus(),
             "crop_oben": co, "crop_unten": cu,
             "crop_links": cl, "crop_rechts": cr,
@@ -1104,8 +1088,10 @@ class OCRKonfigDialog(QDialog):
         nw, nh = self._tw, self._th
         pm = _pil_to_qpixmap(self._template_pil)
         
-        # Canvas informieren über Offset und Original-Größe
-        self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), (self._orig_tw, self._orig_th))
+        # Canvas informieren über Offset und die Größe, die das Template auf dem Canvas hat
+        # (Entweder Screen-Pixel vom Match oder Referenz-Pixel vom PNG)
+        tm_size = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
+        self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), tm_size)
         self._canvas.set_pixmap(pm)
         self._canvas.setFixedSize(nw, nh) # Größe fixieren damit ScrollArea sie kennt
         

@@ -211,8 +211,8 @@ class OCREngine:
         if modus == "Zahl":
             allowlist = "0123456789+"
         elif modus == "Timer":
-            # Erlaube Ziffern, Doppelpunkt, Tage-Kürzel und Leerzeichen
-            allowlist = "0123456789:TtdD "
+            # Erlaube Ziffern, Doppelpunkt, Tage-Kürzel, Punkt und Leerzeichen
+            allowlist = "0123456789:TtdD. "
 
         # Im Debug-Modus geben wir (Text, Koordinaten, Debug-Bild) zurück
         debug_info = (abs_x0, abs_y0, abs_x1, abs_y1, ocr_input.copy()) if debug else None
@@ -240,21 +240,29 @@ class OCREngine:
     def _bereinigen(self, text, modus):
         """Bereinigt OCR-Text je nach Modus mit Regex."""
         if modus == "Timer":
-            # 1. Bekannte OCR-Fehler bei Trennern korrigieren
-            # Wir lassen Leerzeichen erst mal drin für Tage-Erkennung
-            t = text.replace(".", ":").replace(";", ":").replace(",", ":")
-            
-            # 2. Tage (T/d) isolieren: Wir stellen sicher, dass Tage erkannt werden (z.B. 2T 12:44)
-            # Regex sucht nach: (Zahl+T/d)? (HH:)?MM:SS oder MM:SS
-            # Wir erlauben optionale Tage am Anfang
-            m = re.search(r"(\d+[TtdD]\s*)?(\d{1,2}:)?\d{1,2}:\d{2}", t)
-            if m:
-                res = m.group(0).strip()
-                # Falls wir nur ein ":" haben, könnte es MM:SS sein -> so lassen
-                # Wir normalisieren auf Großbuchstaben für das T
-                return res.upper()
+            # 1. Tage (T/d) isolieren: Wir stellen sicher, dass Tage erkannt werden (z.B. 2T. 12:44 oder 2T 12:44)
+            # Suche nach [Zahl][T/d], optional mit Punkt danach
+            t = text.strip()
+            tage_match = re.search(r"(\d+)\s*[TtdD]\.?\s*", t)
+            tage_str = ""
+            if tage_match:
+                tage_str = f"{tage_match.group(1)}T "
+                # Rest-Text nach den Tagen für die Zeit-Suche nutzen
+                t = t[tage_match.end():]
+
+            # 2. Bekannte OCR-Fehler bei Trennern im Zeit-Teil korrigieren
+            t = t.replace(".", ":").replace(";", ":").replace(",", ":").replace("-", ":")
+
+            # 3. Zeit suchen: Erkennt HH:MM:SS oder MM:SS (bis zu 3 Segmente)
+            zeit_match = re.search(r"(\d{1,2}:)?(\d{1,2}:)?\d{1,2}:\d{2}", t)
+            if zeit_match:
+                return (tage_str + zeit_match.group(0)).strip().upper()
+
+            # Fallback: Falls wir nur Tage haben (z.B. "4T")
+            if tage_str:
+                return tage_str.strip().upper()
             return ""
-            
+
         elif modus == "Zahl":
             # Unterstützt jetzt auch Vorzeichen wie +100
             m = re.search(r"[+-]?\d+", text)
