@@ -75,10 +75,20 @@ QListWidget#master_liste {
     border: none;
 }
 
+QListWidget#master_liste::item,
+QListWidget#workflow_liste::item,
+QListWidget#logic_liste::item {
+    padding: 2px 10px;
+    min-height: 28px;
+    border-bottom: 1px solid #222222;
+}
+
 QListWidget#master_liste::item:selected,
-QListWidget#workflow_liste::item:selected {
+QListWidget#workflow_liste::item:selected,
+QListWidget#logic_liste::item:selected {
     background-color: #1565c0;
     color: #ffffff;
+    border-bottom: 1px solid #1565c0;
 }
 
 QPushButton#btn_master_aktiv {
