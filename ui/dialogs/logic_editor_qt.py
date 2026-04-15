@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG, QTimer
 from PyQt6.QtGui import (
-    QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction
+    QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction,
+    QPainterPathStroker
 )
 
 # ── Konstanten ────────────────────────────────────────────────────────────────
@@ -144,16 +145,21 @@ class NodeItem(QGraphicsItem):
             border_color = QColor("#ff4444")
             border_width = 2
 
-        # Haupt-Body
+        # Schatten (wie im Workflow)
+        painter.setBrush(QBrush(QColor("#111111")))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(3, 3, NW, NH), 5, 5)
+
+        # Haupt-Body (abgerundet wie im Workflow)
         body_pen = QPen(border_color, border_width)
         painter.setPen(body_pen)
         painter.setBrush(QBrush(QColor("#252525")))
-        painter.drawRect(0, 0, NW, NH)
+        painter.drawRoundedRect(0, 0, NW, NH, 5, 5)
 
-        # Titel-Balken
+        # Titel-Balken (abgerundet)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(farbe))
-        painter.drawRect(0, 0, NW, TH)
+        painter.drawRoundedRect(QRectF(2, 2, NW - 4, TH), 3, 3)
 
         # Titel-Text
         painter.setPen(QColor("#ffffff"))
@@ -199,9 +205,7 @@ class NodeItem(QGraphicsItem):
 
     def contextMenuEvent(self, event):
         if self.scene():
-            self.scene().node_right_clicked(self)
-        super().contextMenuEvent(event)
-
+            self.scene().node_right_clicked(self, event.screenPos())
 
 # ── Connection-Item ───────────────────────────────────────────────────────────
 class ConnectionItem(QGraphicsPathItem):
@@ -213,6 +217,7 @@ class ConnectionItem(QGraphicsPathItem):
         self._status_val = None
         self.setPen(QPen(QColor("#444444"), 2))
         self.setZValue(0)
+        self.setAcceptHoverEvents(True)
         self.update_path()
 
     def set_status(self, val):
@@ -235,6 +240,25 @@ class ConnectionItem(QGraphicsPathItem):
         dx = max(dx, 60)
         path.cubicTo(p1.x() + dx, p1.y(), p2.x() - dx, p2.y(), p2.x(), p2.y())
         self.setPath(path)
+
+    def shape(self) -> QPainterPath:
+        # Breiterer Shape für einfacheres Klicken
+        s = super().shape()
+        ps = QPainterPathStroker()
+        ps.setWidth(10)
+        return ps.createStroke(s)
+
+    def hoverEnterEvent(self, event):
+        self.setPen(QPen(QColor("#ffffff"), 3))
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.set_status(self._status_val)
+        super().hoverLeaveEvent(event)
+
+    def contextMenuEvent(self, event):
+        if self.scene():
+            self.scene().connection_right_clicked(self, event.screenPos())
 
 
 # ── Scene ─────────────────────────────────────────────────────────────────────
@@ -381,17 +405,41 @@ class LogicScene(QGraphicsScene):
     def node_double_clicked(self, node: NodeItem):
         self.node_edit_requested.emit(node)
 
-    def node_right_clicked(self, node: NodeItem):
-        if node.data["typ"] == "l_result":
-            return   # Result-Node kann nicht gelöscht werden
-        nid = node.node_id()
-        self._connections = [
-            c for c in self._connections
-            if c.src_port.node.node_id() != nid and c.dst_port.node.node_id() != nid
-        ]
-        self._redraw_connections()
-        self._nodes.pop(nid, None)
-        self.removeItem(node)
+    def node_right_clicked(self, node: NodeItem, pos):
+        menu = QMenu()
+        
+        # Nur editierbare Nodes (nicht AND, OR, etc. -> wobei Timer, Var, Match, Const, Cmp editierbar sind)
+        if node.data["typ"] in ("l_var", "l_match", "l_const", "l_cmp", "l_timer"):
+            act_edit = menu.addAction("⚙ Parameter bearbeiten")
+            act_edit.triggered.connect(lambda: self.node_edit_requested.emit(node))
+            menu.addSeparator()
+
+        if node.data["typ"] != "l_result":
+            act_del = menu.addAction("🗑 Node löschen")
+            def _loeschen():
+                nid = node.node_id()
+                self._connections = [
+                    c for c in self._connections
+                    if c.src_port.node.node_id() != nid and c.dst_port.node.node_id() != nid
+                ]
+                self._redraw_connections()
+                self._nodes.pop(nid, None)
+                self.removeItem(node)
+            act_del.triggered.connect(_loeschen)
+        else:
+            menu.addAction("(Resultat kann nicht gelöscht werden)").setEnabled(False)
+
+        menu.exec(pos)
+
+    def connection_right_clicked(self, conn: ConnectionItem, pos):
+        menu = QMenu()
+        act_del = menu.addAction("🗑 Verbindung löschen")
+        def _loeschen():
+            if conn in self._connections:
+                self._connections.remove(conn)
+            self.removeItem(conn)
+        act_del.triggered.connect(_loeschen)
+        menu.exec(pos)
 
 
 # ── Parameter-Dialog ──────────────────────────────────────────────────────────

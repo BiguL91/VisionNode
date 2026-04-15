@@ -92,6 +92,7 @@ class NodeCanvas(QWidget):
         self.setMinimumSize(400, 300)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setObjectName("node_canvas")
 
@@ -107,6 +108,7 @@ class NodeCanvas(QWidget):
         self._port_rects: dict[tuple, QRectF] = {}
         self._node_rects: dict[str, QRectF]   = {}
         self._conn_paths: dict[str, tuple]    = {}
+        self._hover_conn: str | None          = None
 
         self._drag_node   = None
         self._drag_start  = QPointF()
@@ -198,16 +200,23 @@ class NodeCanvas(QWidget):
                 continue
             p1 = self._port_pos(nv, conn["port_aus"])
             p2 = self._port_pos(nz, conn["port_ein"])
+            
+            key = f"{conn['von']}_{conn['port_aus']}_{conn['zu']}"
+            is_hover = (self._hover_conn == key)
+            
             farbe = QColor(PORT_FARBEN.get(conn["port_aus"], "#aaaaaa"))
+            if is_hover:
+                farbe = QColor("#ffffff") # Weißer Glow wie im FUP
+                
             path  = self._bezier_path(p1.x(), p1.y(), p2.x(), p2.y())
-            p.setPen(QPen(farbe, max(1, 2 * self._scale)))
+            p.setPen(QPen(farbe, max(1, (3 if is_hover else 2) * self._scale)))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
             # Endpunkt-Kreis
             p.setBrush(QBrush(farbe))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QPointF(p2.x(), p2.y()), 4, 4)
-            key = f"{conn['von']}_{conn['port_aus']}_{conn['zu']}"
+            
             self._conn_paths[key] = (path, conn)
 
     def _zeichne_temp_conn(self, p: QPainter):
@@ -396,6 +405,22 @@ class NodeCanvas(QWidget):
             self._tx += cur.x() - self._pan_last.x()
             self._ty += cur.y() - self._pan_last.y()
             self._pan_last = cur
+            self.update()
+            return
+
+        # Hover-Check für Verbindungen
+        old_hover = self._hover_conn
+        self._hover_conn = None
+        pf = event.position()
+        hit_rect = QRectF(pf.x()-5, pf.y()-5, 10, 10)
+        stroker = QPainterPathStroker()
+        stroker.setWidth(10) # Gleiche Breite wie im FUP für Klickbarkeit
+        for key, (path, _) in self._conn_paths.items():
+            if stroker.createStroke(path).intersects(hit_rect):
+                self._hover_conn = key
+                break
+
+        if self._hover_conn != old_hover:
             self.update()
 
     def mouseReleaseEvent(self, event):
@@ -659,14 +684,32 @@ class WorkflowEditorDialogQt(QDialog):
 
     def _node_kontext_menu(self, node: dict, global_pos: QPoint):
         menu = QMenu(self)
-        menu.addAction(f"Node löschen ({node['typ']})", lambda: self._node_loeschen(node))
-        menu.addSeparator()
-        menu.addAction("Parameter bearbeiten", lambda: self._node_parameter_editieren(node))
+        typ = node.get("typ")
+
+        # Editieren
+        if typ not in ("start", "zurueck", "home"):
+            act_edit = menu.addAction("⚙ Parameter bearbeiten")
+            act_edit.triggered.connect(lambda: self._node_parameter_editieren(node))
+            menu.addSeparator()
+
+        # Löschen
+        can_delete = True
+        if typ == "start": can_delete = False
+        if self.is_master and typ == "priority_selector": can_delete = False
+
+        if can_delete:
+            act_del = menu.addAction("🗑 Node löschen")
+            act_del.triggered.connect(lambda: self._node_loeschen(node))
+        else:
+            msg = "Start-Node" if typ == "start" else "Haupt-Selector"
+            menu.addAction(f"({msg} kann nicht gelöscht werden)").setEnabled(False)
+
         menu.exec(global_pos)
 
     def _verbindung_kontext_menu(self, conn: dict, global_pos: QPoint):
         menu = QMenu(self)
-        menu.addAction("Verbindung löschen", lambda: self._verbindung_loeschen(conn))
+        act_del = menu.addAction("🗑 Verbindung löschen")
+        act_del.triggered.connect(lambda: self._verbindung_loeschen(conn))
         menu.exec(global_pos)
 
     def _node_parameter_editieren(self, node: dict):
