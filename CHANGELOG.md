@@ -2,6 +2,72 @@
 
 ---
 
+## v1.4.0 (Performance, Logic & Advanced OCR)
+
+### ✨ Features
+- **On-Demand Matching**: Implementierung eines `force_include` Systems, das on-demand Scans für Workflows und Editoren ermöglicht, ohne die Globalen Settings zu ändern.
+- **Search-Only Modus (💤)**: Templates und Gruppen können jetzt als "passiv" markiert werden, um Systemressourcen zu sparen, während sie für explizite Suchen (Workflows/FUP) verfügbar bleiben.
+- **FUP-Logik Live-Vorschau**: Echtzeit-Visualisierung der Logik-Netzwerke direkt im Logic-Editor.
+- **Doppelklick-Navigation**: Schneller Wechsel zwischen Panels und Editoren für Workflows, Logik, Templates und Zustände.
+- **Optimierte Timer-Erkennung**: Unterstützung für Tage-Formate mit Punkten (z.B. "4T. 12:13:15") und 3-Segment-Zeiten (HH:MM:SS).
+
+### ⚙️ Optimierungen
+- **Editor-Fokus-System**: Ermöglicht Live-Tests von Templates im Editor, indem Bedingungen (States/ROI) temporär umgangen werden können.
+- **GPU-Logging**: Detailliertes Logging der Matching-Performance direkt im UI.
+- **Hierarchische Template-Auswahl**: Strukturierte Menüs (Kategorien/Gruppen) in allen Editoren.
+- **[KEIN ANDERER ZUSTAND]**: Optimierung der Logik und visuellen Darstellung im State-Panel.
+
+### 🛠️ Fixes
+- **OCR-Koordinaten-Fix**: Korrektur der Drift-Problematik durch Normalisierung der Zonen auf die effektive Match-Größe (Screen-Pixel).
+- **Deadlock-Prävention**: Behebung von Threading-Problemen beim on-demand Matching im Scheduler.
+- **UI-Stabilität**: Fix für flackernde Rahmen, klobige SpinBox-Pfeile und fehlerhafte RadioButton-Styles.
+
+---
+
+## v1.3.0 (Workflow-Power & UI-Harmonisierung)
+
+### ✨ Features
+- **Modernisierter Workflow-Editor**: Hierarchische Template-Auswahl und verbesserte Übersicht.
+- **Logik-Netzwerk Integration**: Direkter Zugriff auf FUP-Netzwerke aus dem Workflow-Editor heraus.
+- **Daten-Listen-Upgrade**: UI-Polishing, Tab-Synchronisation und verbesserte Text-Transformationen.
+- **Set-States in Gruppen**: Gruppen-Editor wurde um die Möglichkeit erweitert, Zustände direkt bei Fund zu setzen.
+
+### 🛠️ Fixes
+- **Simulation-Thread**: Behebung von Abstürzen im Simulations-Modus des Workflow-Editors.
+- **ClickStepSlider**: Zuverlässige Erkennung von Klicks in den Groove-Bereich.
+- **Migration target_state**: Saubere Überführung veralteter State-Konfigurationen.
+
+---
+
+## v1.2.0 (OCR-Editor Revolution & Auto-Save)
+
+### ✨ Features
+- **OCR-Editor Overhaul**: Integration von Lupe, Live-Kontext (Spielhintergrund) und persistenter Hintergrund-Referenzen.
+- **Auto-Save & Persistenz**: OCR-Zonen und Hintergründe werden nun sofort und robust gespeichert.
+- **Kaskadierendes Löschen**: Beim Löschen von Gruppen werden nun auch alle zugehörigen Metadaten und Referenzen bereinigt.
+
+### 🛠️ Fixes
+- **Koordinaten-Sync**: Korrekte Synchronisation zwischen Markierung und tatsächlicher OCR-Region.
+- **Fenster-Management**: Fix für hängende Debug-Fenster beim Schließen des Editors.
+- **Bereinigung**: Automatisches Entfernen von Dateileichen im Dateisystem.
+
+---
+
+## v1.1.0 (Hierarchische Gruppen & Maskierung)
+
+### ✨ Features
+- **Echte Gruppen-Hierarchie**: Volle Unterstützung für verschachtelte Gruppen mit visueller Vererbung von ROI und Bedingungen.
+- **Kreisförmige Masken**: Unterstützung für kreisförmige OCR-Ausschnitte und Maskierungen für komplexe UI-Elemente.
+- **Einheitliches Button-System**: Umstellung auf QSS-basiertes Styling für konsistente Optik (Python setzt nur noch den ObjectName).
+- **Dynamische Fenstertitel**: Editoren zeigen nun immer das aktuell bearbeitete Template/Element im Titel an.
+
+### 🛠️ Fixes
+- **ROI/Condition Vererbung**: Fehler bei der Weitergabe von Attributen durch die Hierarchie behoben.
+- **Template-Erstellung**: Bugs beim initialen Anlegen von Templates im Panel beseitigt.
+- **Style-Konsistenz**: Einheitliches Padding, Margins und Hover-Effekte über alle Panels hinweg.
+
+---
+
 ## v1.0.0 (The PyQt6 Revolution)
 
 ### ✨ Highlights

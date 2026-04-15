@@ -48,6 +48,6 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v1.0.0 – **The PyQt6 Revolution**.
+v1.4.0 – **Performance, Logic & Advanced OCR**.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)
