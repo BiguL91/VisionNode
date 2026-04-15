@@ -92,6 +92,38 @@ QCheckBox::indicator:hover {
     border-color: #5a8fc0;
 }
 
+/* ── RadioButtons ──────────────────────────────────────────────────────────── */
+
+QRadioButton {
+    color: #cccccc;
+    spacing: 8px;
+    font-size: 13px;
+}
+
+QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #555555;
+    border-radius: 10px;
+    background-color: #1a1a1a;
+}
+
+QRadioButton::indicator:checked {
+    border-color: #5a8fc0;
+    background-color: qradialgradient(
+        cx:0.5, cy:0.5, radius:0.5,
+        fx:0.5, fy:0.5,
+        stop:0 #5a8fc0, 
+        stop:0.45 #5a8fc0, 
+        stop:0.55 transparent, 
+        stop:1.0 transparent
+    );
+}
+
+QRadioButton::indicator:hover {
+    border-color: #5a8fc0;
+}
+
 QSpinBox,
 QDoubleSpinBox {
     background-color: #242424;

@@ -102,7 +102,8 @@ class FormelBuilder(QWidget):
             combo = QComboBox()
             combo.addItems([""] + self._optionen)
             combo.setCurrentText(teil.get("var", ""))
-            combo.setFixedWidth(140)
+            combo.setMinimumWidth(160)
+            combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             combo.currentTextChanged.connect(lambda v, ix=idx: self._var_geaendert(ix, v))
             self._layout.addWidget(combo)
         elif "zahl" in teil:
@@ -165,13 +166,14 @@ class TransformBlock(QFrame):
 
         z1.addWidget(QLabel("Name:"))
         self._name_edit = QLineEdit(t["name"])
-        self._name_edit.setFixedWidth(120)
+        self._name_edit.setMinimumWidth(120)
         self._name_edit.editingFinished.connect(self._name_speichern)
         z1.addWidget(self._name_edit)
 
         z1.addWidget(QLabel("OCR-Var:"))
         self._ocr_btn = QPushButton("Wählen...")
-        self._ocr_btn.setFixedWidth(200)
+        self._ocr_btn.setMinimumWidth(220)
+        self._ocr_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._ocr_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._ocr_btn.clicked.connect(self._ocr_menue_zeigen)
         self._ocr_btn_aktualisieren()
@@ -292,7 +294,7 @@ class BerechnungsBlock(QFrame):
         kopf = QHBoxLayout()
         kopf.addWidget(QLabel("Name:"))
         self._name_edit = QLineEdit(b["name"])
-        self._name_edit.setFixedWidth(140)
+        self._name_edit.setMinimumWidth(160)
         self._name_edit.editingFinished.connect(self._name_speichern)
         kopf.addWidget(self._name_edit)
 
@@ -349,7 +351,8 @@ class DatenListeEditorQt(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Liste bearbeiten: {liste['name']}")
         self.setModal(True)
-        self.resize(660, 580)
+        self.setMinimumWidth(720)
+        self.setMinimumHeight(600)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         self._liste = liste
@@ -705,7 +708,7 @@ class DatenListeEditorQt(QDialog):
         rl.setSpacing(4)
 
         name_e = QLineEdit(sp["name"])
-        name_e.setFixedWidth(100)
+        name_e.setMinimumWidth(120)
         name_e.editingFinished.connect(lambda sid=sp["id"], e=name_e: spalte_aktualisieren(sid, name=e.text().strip()))
         rl.addWidget(name_e)
 
@@ -719,7 +722,8 @@ class DatenListeEditorQt(QDialog):
         fmt_c = QComboBox()
         fmt_c.addItems(["standard", "K/M/B", "0 (Ganzzahl)", ".2 (2 Nachkomma)", "timer"])
         fmt_c.setCurrentText(sp.get("format") or "standard")
-        fmt_c.setFixedWidth(130)
+        fmt_c.setMinimumWidth(130)
+        fmt_c.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         fmt_c.currentTextChanged.connect(lambda v, sid=sp["id"]: spalte_aktualisieren(sid, format=v))
         rl.addWidget(fmt_c)
 
@@ -761,7 +765,9 @@ class DatenListeEditorQt(QDialog):
 
         self._mapping_table = QTableWidget()
         self._mapping_table.setObjectName("mapping_table")
-        self._mapping_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # ResizeMode.ResizeToContents stellt sicher, dass alles sichtbar ist
+        header = self._mapping_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self._mapping_table)
 
         self._mapping_neu_aufbauen()

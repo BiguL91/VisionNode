@@ -24,12 +24,6 @@ QPushButton {
     font-size: 13px;
 }
 
-QRadioButton {
-    background-color: transparent;
-    spacing: 6px;
-    font-size: 13px;
-}
-
 QCheckBox {
     background-color: transparent;
     spacing: 6px;
