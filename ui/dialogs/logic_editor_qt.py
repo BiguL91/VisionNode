@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal, QLineF, QMetaObject, Q_ARG, QTimer, QPoint
 from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QColor, QPainterPath, QFont, QAction,
-    QPainterPathStroker
+    QPainterPathStroker, QCursor
 )
 
 # ── Konstanten ────────────────────────────────────────────────────────────────
@@ -239,7 +239,13 @@ class NodeItem(QGraphicsItem):
         if typ == "l_match":  return f"Bild: {self.data.get('template', '–')}"
         if typ == "l_const":  return f"Wert: {self.data.get('wert', '0')}"
         if typ == "l_cmp":    return f"{self.data.get('operator','=')} {self.data.get('wert','')}"
-        if typ == "l_timer":  return f"Timer: {self.data.get('variable', '–')}"
+        if typ == "l_timer":
+            t_var = self.data.get("variable", "–")
+            if t_var.startswith("db::"):
+                parts = t_var.split("::")
+                if len(parts) >= 3:
+                    t_var = f"{parts[1]} -> {parts[2]}"
+            return f"Timer: {t_var}"
         return ""
 
     def itemChange(self, change, value):
@@ -578,16 +584,17 @@ class NodeParamDialog(QDialog):
             layout.addWidget(info)
 
         elif typ == "l_timer":
-            lbl = QLabel("Timer aus Datenliste wählen:")
+            lbl = QLabel("Timer auswählen:")
             lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
-            self._var_btn = QPushButton(self._node.data.get("variable", "Bitte wählen..."))
-            self._var_btn.setObjectName("btn_logic_net")
-            self._var_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self._var_btn.clicked.connect(self._timer_menu_zeigen)
-            layout.addWidget(self._var_btn)
-            self._felder["variable"] = self._var_btn
+            t_var = self._node.data.get("variable", "")
+            self._timer_btn = QPushButton(t_var or "Timer wählen...")
+            self._timer_btn.setObjectName("btn_logic_net")
+            self._timer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._timer_btn.clicked.connect(self._timer_menu_zeigen)
+            layout.addWidget(self._timer_btn)
+            self._felder["variable"] = self._timer_btn
 
             info = QLabel("Gibt die restlichen Sekunden bis zum Ablauf aus.")
             info.setProperty("class", "lbl_info")
@@ -675,46 +682,54 @@ class NodeParamDialog(QDialog):
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
 
     def _timer_menu_zeigen(self):
-        """Spezialisierter Picker für Timer-Variablen."""
+        """Spezialisierter Picker für Timer-Variablen – zwei Kategorien."""
         from core import daten_manager as dm
         menu = QMenu(self)
         try:
-            listen = dm.alle_listen()
+            listen = sorted(dm.alle_listen(), key=lambda x: x["name"].lower())
+            found = False
+
+            # ── Kategorie 1: Globale Timer-Listen (typ == "timer") ────────────
+            kat_global = menu.addMenu("⏳ Globale Timer Liste")
             for l in listen:
-                l_menu = QMenu(f"📋 {l['name']}", self)
+                if l.get("typ") != "timer":
+                    continue
+                zeilen = sorted(dm.zeilen_der_liste(l["id"]), key=lambda x: x["name"].lower())
+                if zeilen:
+                    sub = kat_global.addMenu(l["name"])
+                    for z in zeilen:
+                        found = True
+                        var_path = f"db::{l['name']}::{z['name']}"
+                        sub.addAction(z["name"], lambda _, x=var_path: self._timer_btn.setText(x))
+            if kat_global.isEmpty():
+                kat_global.addAction("(keine)").setEnabled(False)
+
+            # ── Kategorie 2: Standard Daten-Listen mit Timer-Spalten/Transforms ─
+            kat_daten = menu.addMenu("📊 Standard Daten-Liste")
+            for l in listen:
                 timer_vars = []
-                
-                # Nur Spalten/Transformationen vom Typ 'timer'
                 spalten = dm.spalten_der_liste(l["id"])
                 for s in spalten:
                     if s.get("typ") == "timer": timer_vars.append(s["name"])
-                
                 trans = dm.transformationen_der_liste(l["id"])
                 for t in trans:
                     if t.get("typ") == "timer": timer_vars.append(t["name"])
-
-                # Spezialfall: Timer-Listen (hier sind die Zeilen die Timer)
-                if l.get("typ") == "timer":
-                    zeilen = dm.zeilen_der_liste(l["id"])
-                    timer_vars += [z["name"] for z in zeilen]
-                
-                timer_vars = sorted(list(set(timer_vars)))
-                for v in timer_vars:
-                    act = QAction(v, self)
-                    act.triggered.connect(lambda _, ln=l["name"], vn=v: self._var_btn.setText(f"db::{ln}::{vn}"))
-                    l_menu.addAction(act)
-                
+                timer_vars = sorted(list(set(timer_vars)), key=lambda x: x.lower())
                 if timer_vars:
-                    menu.addMenu(l_menu)
-                    
-            if not listen:
-                menu.addAction("(Keine Listen vorhanden)").setEnabled(False)
-            elif menu.isEmpty():
-                 menu.addAction("(Keine Timer-Spalten gefunden)").setEnabled(False)
+                    sub = kat_daten.addMenu(l["name"])
+                    for v in timer_vars:
+                        found = True
+                        var_path = f"db::{l['name']}::{v}"
+                        sub.addAction(v, lambda _, x=var_path: self._timer_btn.setText(x))
+            if kat_daten.isEmpty():
+                kat_daten.addAction("(keine)").setEnabled(False)
+
+            if not found:
+                menu.addAction("(Keine Timer gefunden)").setEnabled(False)
         except Exception as e:
             menu.addAction(f"Fehler: {e}").setEnabled(False)
-             
-        menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
+
+        menu.exec(self._timer_btn.mapToGlobal(self._timer_btn.rect().bottomLeft()))
 
 
     def _tpl_menu_zeigen(self):
@@ -737,7 +752,8 @@ class NodeParamDialog(QDialog):
     def _speichern(self):
         for key, widget in self._felder.items():
             if isinstance(widget, QPushButton):
-                self._node.data[key] = widget.text()
+                val = widget.text()
+                self._node.data[key] = "" if val in ("Bitte wählen...", "Timer wählen...") else val
             elif isinstance(widget, QLineEdit):
                 self._node.data[key] = widget.text()
             elif isinstance(widget, QComboBox):

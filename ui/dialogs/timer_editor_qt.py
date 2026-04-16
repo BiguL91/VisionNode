@@ -1,7 +1,8 @@
 from lang import lang
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QLineEdit, QScrollArea, QFrame, QMessageBox
+    QLabel, QLineEdit, QScrollArea, QFrame, QMessageBox,
+    QWidget
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from core.daten_manager import (

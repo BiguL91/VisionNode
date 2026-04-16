@@ -331,6 +331,12 @@ class NodeCanvas(QWidget):
             return f"{node.get('variable','?')} {node.get('operator','=')} {node.get('wert','0')}"
         elif typ == "call_workflow":
             return f"➔ {node.get('workflow', '–')}"
+        elif typ == "set_timer":
+            t_var = node.get("timer_var", "–")
+            if t_var.startswith("db::"):
+                # Zeige es im Format db::Liste::Timer [Dauer s]
+                return f"{t_var} [{node.get('dauer', 60)}s]"
+            return f"{t_var} [{node.get('dauer', 60)}s]"
         return ""
 
     def _get_port_at(self, pos: QPointF) -> tuple[dict, str, bool] | tuple[None, None, None]:
@@ -755,8 +761,10 @@ class WorkflowEditorDialogQt(QDialog):
             sp.setProperty("class", "input_dark")
             add_row("Dauer (s):", "sekunden", sp)
         elif typ == "set_timer":
-            timer_btn = self._db_timer_picker_btn(node.get("timer_var", ""), dlg)
+            t_var = node.get("timer_var", "")
+            timer_btn = self._db_timer_picker_btn(t_var, dlg)
             add_row("Timer:", "timer_var", timer_btn)
+
             sp = QDoubleSpinBox()
             sp.setRange(0.1, 3600.0)
             sp.setSingleStep(1.0)
@@ -800,6 +808,9 @@ class WorkflowEditorDialogQt(QDialog):
                 elif key in ("template", "variable", "workflow"):
                     val = w.text()
                     node[key] = "" if val == "Bitte wählen..." else val
+                elif key == "timer_var":
+                    val = w.text()
+                    node["timer_var"] = "" if val == "Timer wählen..." else val
                 elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
                     node[key] = w.value()
                 elif isinstance(w, QLineEdit):
@@ -987,8 +998,21 @@ class WorkflowEditorDialogQt(QDialog):
             for p in list(baum.keys()):
                 if p != "" and p not in ex_gr:
                     baum[""].extend(baum.pop(p))
-            def render(pfad, m: QMenu):
-                items = sorted(baum.get(pfad, []), key=lambda x: (settings.get(x, {}).get("typ") not in ("aktiv_gruppe", "passiv_gruppe"), x.lower()))
+            def render(pfad, m: QMenu, tiefe=0):
+                # Sortierung wie im TemplatePanel:
+                # Root (tiefe 0): Gruppen zuerst (False/0), dann Templates (True/1)
+                # Submenus: Templates zuerst (False/0), dann Gruppen (True/1)
+                if tiefe == 0:
+                    items = sorted(baum.get(pfad, []), key=lambda x: (
+                        settings.get(x, {}).get("typ") not in ("aktiv_gruppe", "passiv_gruppe"), 
+                        x.lower()
+                    ))
+                else:
+                    items = sorted(baum.get(pfad, []), key=lambda x: (
+                        settings.get(x, {}).get("typ") in ("aktiv_gruppe", "passiv_gruppe"), 
+                        x.lower()
+                    ))
+
                 for name in items:
                     s = settings.get(name, {})
                     typ = s.get("typ", "template")
@@ -996,19 +1020,20 @@ class WorkflowEditorDialogQt(QDialog):
                         sub = m.addMenu(f"★ {name}")
                         sub.addAction(f"Auswählen: {name}", lambda n=name: on_selected_callback(n))
                         sub.addSeparator()
-                        render(name, sub)
+                        render(name, sub, tiefe + 1)
                     elif typ == "passiv_gruppe":
                         sub = m.addMenu(f"📦 {name}")
-                        render(name, sub)
+                        render(name, sub, tiefe + 1)
                         if sub.isEmpty():
                             sub.addAction("(leer)").setEnabled(False)
                     else:
                         m.addAction(name, lambda n=name: on_selected_callback(n))
             render("", submenu)
-        wf = menu.addMenu("🔄 Workflow")
-        _fill_kat(wf, "workflow")
+        # Kategorien alphabetisch sortieren: State (🚩) vor Workflow (🔄)
         st = menu.addMenu("🚩 State")
         _fill_kat(st, "state")
+        wf = menu.addMenu("🔄 Workflow")
+        _fill_kat(wf, "workflow")
         return menu
 
     def _variablen_picker_btn(self, current: str, parent) -> QPushButton:
@@ -1057,18 +1082,17 @@ class WorkflowEditorDialogQt(QDialog):
         def show():
             from core import daten_manager as dm
             menu = QMenu(parent)
-            listen = dm.alle_listen()
+            listen = sorted(dm.alle_listen(), key=lambda x: x["name"].lower())
             found = False
             for l in listen:
                 if l.get("typ") == "timer":
-                    found = True
-                    l_menu = menu.addMenu(f"⏳ {l['name']}")
-                    zeilen = dm.zeilen_der_liste(l["id"])
-                    for z in zeilen:
-                        var_path = f"db::{l['name']}::{z['name']}"
-                        act = QAction(z["name"], self)
-                        act.triggered.connect(lambda _, x=var_path: btn.setText(x))
-                        l_menu.addAction(act)
+                    zeilen = sorted(dm.zeilen_der_liste(l["id"]), key=lambda x: x["name"].lower())
+                    if zeilen:
+                        sub = menu.addMenu(f"⏳ {l['name']}")
+                        for z in zeilen:
+                            found = True
+                            var_path = f"db::{l['name']}::{z['name']}"
+                            sub.addAction(z["name"], lambda _, x=var_path: btn.setText(x))
             if not found:
                 menu.addAction("(Keine Timer-Listen gefunden)").setEnabled(False)
             menu.exec(QCursor.pos())
