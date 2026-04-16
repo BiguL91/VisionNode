@@ -570,3 +570,28 @@ QMessageBox {
 QMessageBox QPushButton {
     min-width: 80px;
 }
+
+/* OCR-Lupe */
+QLabel#ocr_magnifier {
+    border: 2px solid #1e88e5;
+    background-color: #000000;
+}
+
+/* OCR-Debug-Fenster Label */
+QLabel#ocr_debug_label {
+    background-color: #000000;
+    color: #555555;
+}
+
+/* Gruppen-Editor Aktivierungsbereich */
+QFrame#activation_settings {
+    background-color: #1a1a1a;
+    border-radius: 4px;
+    border: 1px solid #333333;
+}
+
+/* Search-Only Checkbox */
+QCheckBox#search_only_check {
+    font-weight: bold;
+    color: #ffca28;
+}

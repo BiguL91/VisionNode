@@ -66,13 +66,12 @@ class GruppeEditorQt(QDialog):
         # ── Bereich 0: Aktivierung ────────────────────────────────────────────
         act_box = QFrame()
         act_box.setObjectName("activation_settings")
-        act_box.setStyleSheet("QFrame#activation_settings { background: #1a1a1a; border-radius: 4px; border: 1px solid #333; }")
         act_lay = QVBoxLayout(act_box)
         
         self.chk_search_only = QCheckBox("Automatische Hintergrund-Suche deaktivieren")
         self.chk_search_only.setChecked(self._search_only)
         self.chk_search_only.setToolTip("Wenn aktiv, wird dieses Element (und ggf. seine Kinder) NICHT automatisch gescannt.\nDie Suche muss explizit via Workflow-Logik angestoßen werden.")
-        self.chk_search_only.setStyleSheet("font-weight: bold; color: #ffca28;")
+        self.chk_search_only.setObjectName("search_only_check")
         act_lay.addWidget(self.chk_search_only)
         
         root.addWidget(act_box)

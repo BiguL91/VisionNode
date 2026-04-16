@@ -140,17 +140,17 @@ QLabel#state_name {
 
 /* Daten-Panel Tabelle */
 QLabel#daten_tab_header {
-    color: #555555;
-    font-size: 10px;
+    color: #888888;
+    font-size: 14px;
     font-weight: bold;
-    padding: 2px 6px;
+    padding: 6px;
     background-color: #1e1e1e;
 }
 
 QLabel#daten_tab_cell {
     color: #cccccc;
-    font-size: 10px;
-    padding: 2px 6px;
+    font-size: 13px;
+    padding: 6px;
     background-color: #1a1a1a;
 }
 
@@ -158,8 +158,24 @@ QLabel#daten_tab_cell[alt="true"] {
     background-color: #212121;
 }
 
-QLabel#daten_tab_cell[highlight="true"] {
+QLabel#daten_tab_val {
+    color: #cccccc;
+    font-size: 13px;
+    padding: 6px;
+    font-family: "Consolas";
+    background-color: #1a1a1a;
+}
+
+QLabel#daten_tab_val[alt="true"] {
+    background-color: #212121;
+}
+
+QLabel#daten_tab_val[highlight="true"] {
     color: #4fc3f7;
+}
+
+QLabel#daten_tab_val[timer_val="true"] {
+    color: #e91e63;
 }
 
 /* Log-Panel */

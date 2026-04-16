@@ -96,16 +96,15 @@ class ListenBlock(QFrame):
                 lbl_name.setObjectName("daten_tab_cell")
                 lbl_name.setProperty("class", "daten_tab_cell")
                 lbl_name.setProperty("alt", is_alt)
-                lbl_name.setStyleSheet("font-size: 13px; color: #cccccc; padding: 6px;")
                 self.tabelle_layout.addWidget(lbl_name, r, 0)
 
                 val = ocr_werte.get(z["name"], ("—", 0))[0]
                 anzeige = sekunden_formatieren(val) if val not in ("—", "?") else val
                 lbl_val = QLabel(anzeige)
-                lbl_val.setObjectName("daten_tab_cell")
-                lbl_val.setProperty("class", "daten_tab_cell")
+                lbl_val.setObjectName("daten_tab_val")
+                lbl_val.setProperty("class", "daten_tab_val")
                 lbl_val.setProperty("alt", is_alt)
-                lbl_val.setStyleSheet("font-size: 13px; font-family: 'Consolas'; color: #e91e63; padding: 6px;")
+                lbl_val.setProperty("timer_val", True)
                 lbl_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.tabelle_layout.addWidget(lbl_val, r, 1)
                 self._wert_labels[(z["name"], 0)] = lbl_val
@@ -127,7 +126,6 @@ class ListenBlock(QFrame):
         lbl_zeile = QLabel("Zeile")
         lbl_zeile.setObjectName("daten_tab_header")
         lbl_zeile.setProperty("class", "daten_tab_header")
-        lbl_zeile.setStyleSheet("font-size: 14px; font-weight: bold; color: #888888; padding: 6px;")
         lbl_zeile.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.tabelle_layout.addWidget(lbl_zeile, 0, 0)
 
@@ -135,7 +133,6 @@ class ListenBlock(QFrame):
             lbl = QLabel(sp["name"])
             lbl.setObjectName("daten_tab_header")
             lbl.setProperty("class", "daten_tab_header")
-            lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #888888; padding: 6px;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.tabelle_layout.addWidget(lbl, 0, i + 1)
 
@@ -154,7 +151,6 @@ class ListenBlock(QFrame):
             lbl_name.setObjectName("daten_tab_cell")
             lbl_name.setProperty("class", "daten_tab_cell")
             lbl_name.setProperty("alt", is_alt)
-            lbl_name.setStyleSheet("font-size: 13px; color: #cccccc; padding: 6px;")
             self.tabelle_layout.addWidget(lbl_name, row_idx, 0)
 
             for ci, sp in enumerate(spalten):
@@ -170,12 +166,10 @@ class ListenBlock(QFrame):
                 ist_berech = ocr_var in berech_namen
 
                 lbl = QLabel(anzeige)
-                lbl.setObjectName("daten_tab_cell")
-                lbl.setProperty("class", "daten_tab_cell")
+                lbl.setObjectName("daten_tab_val")
+                lbl.setProperty("class", "daten_tab_val")
                 lbl.setProperty("alt", is_alt)
                 lbl.setProperty("highlight", ist_berech)
-                highlight_color = "color: #4fc3f7;" if ist_berech else "color: #cccccc;"
-                lbl.setStyleSheet(f"font-size: 13px; font-family: 'Consolas'; {highlight_color} padding: 6px;")
                 lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.tabelle_layout.addWidget(lbl, row_idx, ci + 1)
                 self._wert_labels[(z["name"], ci)] = lbl
