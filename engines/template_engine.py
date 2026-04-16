@@ -380,32 +380,40 @@ class TemplateEngine:
         return list(sets)
 
     def _eltern_conditions_pruefen(self, pfad, game_states):
-        """Prüft Bedingungen aller Eltern-Ebenen rekursiv über einen Vollpfad."""
+        """Prüft den nächsten Elternteil mit definierten Bedingungen in der Hierarchie.
+
+        Jede Ebene ist eigenständig: sobald ein Vorfahre mit eigenen Bedingungen
+        gefunden wird, werden NUR DESSEN Bedingungen geprüft (kein weiteres Ketten
+        nach oben). Hat ein Vorfahre keine Bedingungen, wird die nächste Ebene gesucht.
+
+        Beispiel: Allianz-Menü/Allianzkiste
+          → "Allianzkiste" hat Bedingung (Allianzkiste=true) → prüfe nur diese, STOP.
+          → "Allianz-Menü" wird NICHT zusätzlich geprüft.
+        """
         if not pfad: return True
         current_path = pfad
         besucht = set()
-        
+
         while current_path:
             teile = current_path.split("/")
             leaf = teile[-1]
             if leaf in besucht: break
             besucht.add(leaf)
-            
+
             eintrag = self.settings.get(leaf, {})
             if isinstance(eintrag, dict):
                 conds = eintrag.get("condition_states", [])
                 if conds:
-                    # Für [KEIN ANDERER ZUSTAND] müssen wir alle Zustände ignorieren,
-                    # die in DIESER Hierarchie (von diesem Blatt abwärts) gesetzt werden.
+                    # Erster Vorfahre mit Bedingungen gefunden: nur diese prüfen, dann STOP.
                     my_hierarchy_sets = self._get_hierarchy_set_states(current_path)
                     if not self._condition_states_erfuellt(conds, game_states, ignore_states=my_hierarchy_sets):
                         return False
-                
-                # Nächste Ebene im Pfad nach oben (z.B. A/B/C -> A/B)
+                    return True  # Bedingung erfüllt, nicht weiter nach oben ketten
+
+                # Keine Bedingungen auf dieser Ebene → nächste Ebene suchen
                 if len(teile) > 1:
                     current_path = "/".join(teile[:-1])
                 else:
-                    # Ende des Pfades erreicht, schauen ob Root-Master noch ein Parent hat
                     current_path = eintrag.get("gruppe", "")
             else:
                 break
