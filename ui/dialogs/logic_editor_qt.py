@@ -692,6 +692,11 @@ class NodeParamDialog(QDialog):
                 trans = dm.transformationen_der_liste(l["id"])
                 for t in trans:
                     if t.get("typ") == "timer": timer_vars.append(t["name"])
+
+                # Spezialfall: Timer-Listen (hier sind die Zeilen die Timer)
+                if l.get("typ") == "timer":
+                    zeilen = dm.zeilen_der_liste(l["id"])
+                    timer_vars += [z["name"] for z in zeilen]
                 
                 timer_vars = sorted(list(set(timer_vars)))
                 for v in timer_vars:

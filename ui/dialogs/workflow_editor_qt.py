@@ -44,6 +44,7 @@ NODE_FARBEN = {
     "bedingung":         "#f9a825",
     "call_workflow":     "#673ab7",
     "priority_selector": "#fbc02d",
+    "set_timer":         "#e91e63",
 }
 
 NODE_PORTS = {
@@ -57,6 +58,7 @@ NODE_PORTS = {
     "bedingung":         (True,  ["true", "false"]),
     "call_workflow":     (True,  ["done", "failure"]),
     "priority_selector": (True,  []),
+    "set_timer":         (True,  ["out"]),
 }
 
 PORT_FARBEN = {
@@ -567,6 +569,7 @@ class WorkflowEditorDialogQt(QDialog):
             typen = [
                 ("Workflow","call_workflow"),
                 ("Bedingung","bedingung"),
+                ("Set Timer", "set_timer"),
                 ("Warten","warten")
             ]
         else:
@@ -574,6 +577,7 @@ class WorkflowEditorDialogQt(QDialog):
                 ("Suche","suche"),
                 ("Optional","suche_optional"),
                 ("Klick","klick"),
+                ("Set Timer", "set_timer"),
                 ("Warten","warten"),
                 ("Zurück","zurueck"),
                 ("Home","home"),
@@ -654,8 +658,12 @@ class WorkflowEditorDialogQt(QDialog):
         elif typ == "klick":
             node["template"] = ""
         elif typ == "warten":
-            node["sekunden"] = 2.0
+            node["sekunden"] = 1.0
+        elif typ == "set_timer":
+            node["timer_var"] = ""
+            node["dauer"] = 60.0
         elif typ == "bedingung":
+
             node["variable"] = ""
             node["operator"] = ">"
             node["wert"] = "0"
@@ -743,10 +751,20 @@ class WorkflowEditorDialogQt(QDialog):
             sp = QDoubleSpinBox()
             sp.setRange(0.1, 300.0)
             sp.setSingleStep(0.5)
-            sp.setValue(float(node.get("sekunden", 2.0)))
+            sp.setValue(float(node.get("sekunden", 1.0)))
             sp.setProperty("class", "input_dark")
-            add_row("Sekunden:", "sekunden", sp)
+            add_row("Dauer (s):", "sekunden", sp)
+        elif typ == "set_timer":
+            timer_btn = self._db_timer_picker_btn(node.get("timer_var", ""), dlg)
+            add_row("Timer:", "timer_var", timer_btn)
+            sp = QDoubleSpinBox()
+            sp.setRange(0.1, 3600.0)
+            sp.setSingleStep(1.0)
+            sp.setValue(float(node.get("dauer", 10)))
+            sp.setProperty("class", "input_dark")
+            add_row("Dauer (s):", "dauer", sp)
         elif typ == "bedingung":
+
             var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg)
             add_row("Variable:", "variable", var_btn)
             op_widget = QWidget()
@@ -1028,6 +1046,31 @@ class WorkflowEditorDialogQt(QDialog):
                         ls.addAction(b["name"], lambda ln=l["name"], bn=b["name"]: btn.setText(f"db::{ln}::{bn}"))
             except:
                 db_sub.addAction("(DB Fehler)").setEnabled(False)
+            menu.exec(QCursor.pos())
+        btn.clicked.connect(show)
+        return btn
+
+    def _db_timer_picker_btn(self, current: str, parent) -> QPushButton:
+        btn = QPushButton(current or "Timer wählen...")
+        btn.setObjectName("btn_logic_net")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        def show():
+            from core import daten_manager as dm
+            menu = QMenu(parent)
+            listen = dm.alle_listen()
+            found = False
+            for l in listen:
+                if l.get("typ") == "timer":
+                    found = True
+                    l_menu = menu.addMenu(f"⏳ {l['name']}")
+                    zeilen = dm.zeilen_der_liste(l["id"])
+                    for z in zeilen:
+                        var_path = f"db::{l['name']}::{z['name']}"
+                        act = QAction(z["name"], self)
+                        act.triggered.connect(lambda _, x=var_path: btn.setText(x))
+                        l_menu.addAction(act)
+            if not found:
+                menu.addAction("(Keine Timer-Listen gefunden)").setEnabled(False)
             menu.exec(QCursor.pos())
         btn.clicked.connect(show)
         return btn

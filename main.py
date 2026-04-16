@@ -52,6 +52,7 @@ from ui.widgets.collapsible_panel  import CollapsiblePanel
 from ui.dialogs.template_editor_qt import TemplateEditorQt
 from ui.dialogs.workflow_editor_qt import WorkflowEditorDialogQt
 from ui.dialogs.daten_editor_qt    import DatenListeEditorQt
+from ui.dialogs.timer_editor_qt    import TimerEditorDialogQt
 from ui.dialogs.einheiten_dialog_qt import EinheitenDialogQt
 from ui.dialogs.typ_dialog_qt      import TypDialog
 from ui.dialogs.legende_dialog_qt  import LegendDialog
@@ -651,6 +652,7 @@ class TilesBotWindow(QMainWindow):
 
         # Daten-Panel
         self.daten_panel.liste_bearbeiten_requested.connect(self._liste_bearbeiten_dialog)
+        self.daten_panel.timer_bearbeiten_requested.connect(self._timer_bearbeiten_dialog)
         self.daten_panel.einheiten_requested.connect(self._einheiten_dialog)
 
     # ── Display Loop ──────────────────────────────────────────────────────────
@@ -1422,6 +1424,17 @@ class TilesBotWindow(QMainWindow):
         dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
 
+        dlg.show()
+
+    def _timer_bearbeiten_dialog(self, listen_dict: dict):
+        dlg = TimerEditorDialogQt(listen_dict, parent=self)
+        dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)
+        
+        if not hasattr(self, "_active_dialogs"):
+            self._active_dialogs = []
+        self._active_dialogs.append(dlg)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
         dlg.show()
 
     def _einheiten_dialog(self):

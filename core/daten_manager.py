@@ -25,9 +25,16 @@ def datenbank_initialisieren():
             CREATE TABLE IF NOT EXISTS listen (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 name              TEXT NOT NULL UNIQUE,
-                update_intervall  INTEGER NOT NULL DEFAULT 30
+                update_intervall  INTEGER NOT NULL DEFAULT 30,
+                typ               TEXT NOT NULL DEFAULT 'daten'
             )
         """)
+        # typ-Spalte nachrüsten falls DB schon existiert
+        try:
+            conn.execute("ALTER TABLE listen ADD COLUMN typ TEXT NOT NULL DEFAULT 'daten'")
+            conn.commit()
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS spalten (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,12 +177,12 @@ def variable_umbenennen(listen_id, alter_name, neuer_name):
 
 # ── Listen ──────────────────────────────────────────────────────────────────
 
-def liste_erstellen(name, update_intervall=30):
+def liste_erstellen(name, update_intervall=30, typ="daten"):
     """Legt eine neue Liste an. Gibt die ID zurück."""
     with _verbinden() as conn:
         cur = conn.execute(
-            "INSERT INTO listen (name, update_intervall) VALUES (?, ?)",
-            (name, update_intervall)
+            "INSERT INTO listen (name, update_intervall, typ) VALUES (?, ?, ?)",
+            (name, update_intervall, typ)
         )
         conn.commit()
         return cur.lastrowid

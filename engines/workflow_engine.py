@@ -317,6 +317,27 @@ class WorkflowEngine:
                 return "true"
             return "false"
 
+        elif typ == "set_timer":
+            timer_var = node.get("timer_var", "")
+            dauer = float(node.get("dauer", 60.0))
+            if timer_var.startswith("db::"):
+                parts = timer_var.split("::")
+                if len(parts) >= 3:
+                    listen_name = parts[1]
+                    var_name = parts[2]
+                    try:
+                        from core import daten_manager as dm
+                        listen = dm.alle_listen()
+                        l_id = next((l["id"] for l in listen if l["name"] == listen_name), None)
+                        if l_id is not None:
+                            deadline = time.time() + dauer
+                            dm.cache_schreiben(l_id, f"Timer.{var_name}._deadline", str(deadline))
+                            if log_func:
+                                log_func(f"⏳ Timer gesetzt: {var_name} ({dauer}s)")
+                    except Exception as e:
+                        if log_func: log_func(f"!! Fehler beim Timer setzen: {e}")
+            return "out"
+
         return None  # Unbekannter Node-Typ
 
     def _logik_auswerten(self, graph, ocr_func, matches_func, return_memo=False):

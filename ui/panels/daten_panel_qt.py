@@ -82,6 +82,35 @@ class ListenBlock(QFrame):
 
         ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
 
+        # Spezial-Ansicht für Timer-Listen
+        if self.l.get("typ") == "timer":
+            if not zeilen_namen:
+                lbl = QLabel("(Keine Timer — Edit zum Konfigurieren)")
+                lbl.setProperty("class", "lbl_dim")
+                self.tabelle_layout.addWidget(lbl, 0, 0)
+                return
+
+            for r, z in enumerate(zeilen_namen):
+                is_alt = r % 2 != 0
+                lbl_name = QLabel(z["name"])
+                lbl_name.setObjectName("daten_tab_cell")
+                lbl_name.setProperty("class", "daten_tab_cell")
+                lbl_name.setProperty("alt", is_alt)
+                lbl_name.setStyleSheet("font-size: 13px; color: #cccccc; padding: 6px;")
+                self.tabelle_layout.addWidget(lbl_name, r, 0)
+
+                val = ocr_werte.get(z["name"], ("—", 0))[0]
+                anzeige = sekunden_formatieren(val) if val not in ("—", "?") else val
+                lbl_val = QLabel(anzeige)
+                lbl_val.setObjectName("daten_tab_cell")
+                lbl_val.setProperty("class", "daten_tab_cell")
+                lbl_val.setProperty("alt", is_alt)
+                lbl_val.setStyleSheet("font-size: 13px; font-family: 'Consolas'; color: #e91e63; padding: 6px;")
+                lbl_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.tabelle_layout.addWidget(lbl_val, r, 1)
+                self._wert_labels[(z["name"], 0)] = lbl_val
+            return
+
         if not spalten:
             lbl = QLabel("Keine Spalten — Edit zum Konfigurieren.")
             lbl.setProperty("class", "lbl_dim")
@@ -94,7 +123,7 @@ class ListenBlock(QFrame):
             self.tabelle_layout.addWidget(lbl, 0, 0)
             return
 
-        # Header
+        # Header (Standard)
         lbl_zeile = QLabel("Zeile")
         lbl_zeile.setObjectName("daten_tab_header")
         lbl_zeile.setProperty("class", "daten_tab_header")
@@ -160,6 +189,16 @@ class ListenBlock(QFrame):
             return
 
         ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        
+        if self.l.get("typ") == "timer":
+            for r, z in enumerate(zeilen_namen):
+                val = ocr_werte.get(z["name"], ("—", 0))[0]
+                anzeige = sekunden_formatieren(val) if val not in ("—", "?") else val
+                lbl = self._wert_labels.get((z["name"], 0))
+                if lbl:
+                    lbl.setText(anzeige)
+            return
+
         for r, z in enumerate(zeilen_namen):
             for ci, sp in enumerate(spalten):
                 ocr_var = zuordnungen.get((z["name"], sp["id"]))
@@ -190,6 +229,21 @@ class ListenBlock(QFrame):
         jetzt = time.time()
         neue_cache_werte = {}
 
+        # 1. Timer-Logik für Timer-Listen
+        if self.l.get("typ") == "timer":
+            for z in zeilen_namen:
+                t_name = z["name"]
+                de_key = f"Timer.{t_name}._deadline"
+                de_entry = db_cache.get(de_key)
+                if de_entry and de_entry[0] not in (None, "", "—", "?"):
+                    try:
+                        rest = max(0, int(float(de_entry[0]) - jetzt))
+                        ocr_werte[t_name] = (str(rest), jetzt)
+                        neue_cache_werte[t_name] = str(rest)
+                    except (ValueError, TypeError):
+                        pass
+
+        # 2. Live-OCR zu Cache
         for name, val in ocr_roh_live.items():
             if name in ausgabe_namen:
                 continue
@@ -197,6 +251,7 @@ class ListenBlock(QFrame):
                 ocr_werte[name] = (val, jetzt)
                 neue_cache_werte[name] = val
 
+        # 3. Transformationen
         for t in transformationen:
             rohwert = ocr_roh_live.get(t["ocr_var"])
             if rohwert not in (None, "", "—"):
@@ -219,6 +274,7 @@ class ListenBlock(QFrame):
                     except (ValueError, TypeError):
                         pass
 
+        # 4. Berechnungen
         berech_sortiert = (
             [b for b in berechnungen if b.get("typ") == "zwischen"] +
             [b for b in berechnungen if b.get("typ") != "zwischen"]
@@ -229,6 +285,7 @@ class ListenBlock(QFrame):
                 ocr_werte[b["name"]] = (ergebnis, jetzt)
                 neue_cache_werte[b["name"]] = ergebnis
 
+        # 5. Cache wegschreiben
         for var_name, wert in neue_cache_werte.items():
             cache_schreiben(self.l["id"], var_name, wert)
 
@@ -254,8 +311,11 @@ class ListenBlock(QFrame):
         return str(int(num)) if num == int(num) else str(round(num, 1))
 
 
+from ui.dialogs.daten_typ_dialog_qt import DatenTypDialog
+
 class DatenPanel(QWidget):
     liste_bearbeiten_requested = pyqtSignal(dict)   # listen_dict
+    timer_bearbeiten_requested = pyqtSignal(dict)   # listen_dict
     einheiten_requested        = pyqtSignal()
 
     def __init__(self, bot_ref=None, parent=None):
@@ -367,14 +427,22 @@ class DatenPanel(QWidget):
     def _dropdown_aktualisieren(self):
         self.dropdown.clear()
         for l in self._listen_cache:
-            self.dropdown.addItem(l["name"], l["id"])
+            icon = "⏳ " if l.get("typ") == "timer" else "📊 "
+            self.dropdown.addItem(icon + l["name"], l["id"])
 
     def _neue_liste(self):
-        name, ok = QInputDialog.getText(self, "Neue Liste", "Name der Liste:")
+        typ = DatenTypDialog.ausfuehren(self)
+        if not typ:
+            return
+
+        titel = "Neue Liste" if typ == "daten" else "Neue Timer-Liste"
+        msg = "Name der Liste:" if typ == "daten" else "Name der Timer-Liste:"
+        name, ok = QInputDialog.getText(self, titel, msg)
+        
         if ok and name.strip():
-            liste_erstellen(name.strip())
+            liste_erstellen(name.strip(), typ=typ)
             self._alles_aufbauen()
-            idx = self.dropdown.findText(name.strip())
+            idx = self.dropdown.findData(self._listen_cache[-1]["id"])
             if idx >= 0:
                 self.dropdown.setCurrentIndex(idx)
 
@@ -384,7 +452,10 @@ class DatenPanel(QWidget):
             return
         l = next((x for x in self._listen_cache if x["id"] == listen_id), None)
         if l:
-            self.liste_bearbeiten_requested.emit(l)
+            if l.get("typ") == "timer":
+                self.timer_bearbeiten_requested.emit(l)
+            else:
+                self.liste_bearbeiten_requested.emit(l)
 
     def _liste_loeschen_dialog(self):
         listen_id = self.dropdown.currentData()
