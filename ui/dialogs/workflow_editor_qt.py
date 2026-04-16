@@ -1199,10 +1199,18 @@ class WorkflowEditorDialogQt(QDialog):
                     if val in fi:
                         fi.remove(val)
 
+            # force_include für search_only Templates setzen (wie in workflow_ausfuehren)
+            sim_t_name = node.get("template") if typ in ("suche", "suche_optional", "klick") else None
+            if sim_t_name:
+                sim_state_func("add_force_include", sim_t_name)
+
             port = self.bot.workflow_engine._node_ausfuehren(
                 node, self._sim_engine, m_func, ocr_func=o_func,
                 log_func=self._sim_log, laeuft_func=lambda: self._sim_aktiv,
                 state_func=sim_state_func)
+
+            if sim_t_name:
+                sim_state_func("remove_force_include", sim_t_name)
             
             if port is None:
                 self._sim_log(f"!! Unbekannter Typ: {typ}", "failure")
