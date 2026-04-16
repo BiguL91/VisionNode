@@ -972,6 +972,12 @@ class WorkflowEditorDialogQt(QDialog):
         menu = QMenu(parent)
         engine = bot.template_engine
         settings = engine.settings
+        def _p_key(p, name):
+            """Baum-Schlüssel: immer Kurzname (letztes Segment), nie Vollpfad."""
+            if not p or p == name:
+                return ""
+            return p.split("/")[-1]
+
         def _fill_kat(submenu: QMenu, kat: str):
             baum = defaultdict(list)
             alle_keys = set()
@@ -983,14 +989,15 @@ class WorkflowEditorDialogQt(QDialog):
                     continue
                 alle_keys.add(name)
                 p = s.get("gruppe", "")
-                baum["" if p == name else p].append(name)
+                baum[_p_key(p, name)].append(name)
             for s_name, s in settings.items():
                 if s.get("typ") not in ("aktiv_gruppe", "passiv_gruppe") or s.get("kategorie", "workflow") != kat:
                     continue
                 alle_keys.add(s_name)
                 p = s.get("gruppe", "")
-                if s_name not in baum["" if p == s_name else p]:
-                    baum["" if p == s_name else p].append(s_name)
+                key = _p_key(p, s_name)
+                if s_name not in baum[key]:
+                    baum[key].append(s_name)
             if not alle_keys:
                 submenu.addAction("(keine Einträge)").setEnabled(False)
                 return
