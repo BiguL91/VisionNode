@@ -338,9 +338,23 @@ class TemplateEditorQt(QDialog):
         self.hg_checkbox.stateChanged.connect(lambda _: self._hg_vorschau_aktualisieren())
         hg_lay.addWidget(self.hg_checkbox)
 
-        lbl_tol = QLabel("Toleranz:")
+        self.smart_checkbox = QCheckBox("Smart Template")
+        self.smart_checkbox.setProperty("class", "lbl_orange")
+        self.smart_checkbox.setToolTip("Erlaubt das Finden mehrerer Instanzen und indexiert OCR-Bereiche (z.B. Name_1, Name_2).")
+        hg_lay.addWidget(self.smart_checkbox)
+
+        hg_lay.addStretch()
+        root.addWidget(hg_widget)
+
+        # ── Toleranz ──────────────────────────────────────────────────────────
+        tol_widget = QWidget()
+        tol_lay = QHBoxLayout(tol_widget)
+        tol_lay.setContentsMargins(0, 4, 0, 0)
+        tol_lay.setSpacing(8)
+
+        lbl_tol = QLabel("Hintergrund-Toleranz:")
         lbl_tol.setProperty("class", "lbl_info")
-        hg_lay.addWidget(lbl_tol)
+        tol_lay.addWidget(lbl_tol)
 
         self._hg_tol_slider = ClickStepSlider(Qt.Orientation.Horizontal)
         self._hg_tol_slider.setRange(5, 80)
@@ -353,10 +367,10 @@ class TemplateEditorQt(QDialog):
         self._hg_tol_slider.valueChanged.connect(lambda v: self._hg_tol_wert_lbl.setText(str(v)))
         self._hg_tol_slider.sliderReleased.connect(self._hg_vorschau_aktualisieren)
 
-        hg_lay.addWidget(self._hg_tol_slider)
-        hg_lay.addWidget(self._hg_tol_wert_lbl)
-        hg_lay.addStretch()
-        root.addWidget(hg_widget)
+        tol_lay.addWidget(self._hg_tol_slider)
+        tol_lay.addWidget(self._hg_tol_wert_lbl)
+        tol_lay.addStretch()
+        root.addWidget(tol_widget)
 
         # ── Buttons ───────────────────────────────────────────────────────────
         root.addSpacing(16)
@@ -421,6 +435,7 @@ class TemplateEditorQt(QDialog):
             if name in self.template_engine.settings:
                 s = self.template_engine.settings[name]
                 self.hg_checkbox.setChecked(s.get("hg_entfernen", True))
+                self.smart_checkbox.setChecked(s.get("is_smart", False))
                 v = s.get("hg_toleranz", 30)
                 self._hg_tol_slider.setValue(v)
                 self._hg_tol_wert_lbl.setText(str(v))
@@ -569,6 +584,7 @@ class TemplateEditorQt(QDialog):
 
         s = self.template_engine.settings.get(name, {})
         self.hg_checkbox.setChecked(s.get("hg_entfernen", True))
+        self.smart_checkbox.setChecked(s.get("is_smart", False))
         v = s.get("hg_toleranz", 30)
         self._hg_tol_slider.setValue(v)
         self._hg_tol_wert_lbl.setText(str(v))
@@ -647,7 +663,8 @@ class TemplateEditorQt(QDialog):
             neuer_name, self.orig_bild_ref, entferne_hg, list(self.ignore_regionen),
             hintergrund_toleranz=hg_toleranz, gruppe=gruppe_name,
             match_schwellwert=match_s, scan_regions=list(aktuelle_scan_regions),
-            condition_states=list(self.condition_states), set_states=dict(self.set_states))
+            condition_states=list(self.condition_states), set_states=dict(self.set_states),
+            is_smart=self.smart_checkbox.isChecked())
 
         self.bot._log(f"Neue Variante gespeichert: \"{neuer_name}\"")
         self.bot._panels_aktualisieren()
@@ -1062,6 +1079,7 @@ class TemplateEditorQt(QDialog):
                 kategorie=self.kategorie,
                 ausschnitt_form=self.ausschnitt_form,
                 search_only=self.search_only,
+                is_smart=self.smart_checkbox.isChecked(),
             )
 
             if self.typ == "aktiv_gruppe" and (umbenennen or gruppe_geandert):

@@ -5,12 +5,22 @@
 ## Priorität 1 (Next)
 
 
+- [ ] ** UI Bedinbarkeit. verbessern
+    - Speziell Verschiedene Panels neben dem Live Canvas individuell in der höhe skallieren.
+    - Danten-Liste anzeige verfeinern
+    
+
+
 - [ ] **Auto-Tuning Engine**
   - Automatischer Test neuer Templates gegen Snapshots; Schwellwert-Vorschläge & Live-Anpassung.
 
 - **Vision Engine Evolution**
   - [ ] **Auto-Tuning**: Bot schlägt Schwellwerte basierend auf Snapshots automatisch vor.
-  - [ ] **Erweiterte Ausschnitt-Formen**: Auswahl zwischen Rechteck und Kreis beim Einlernen.
+
+- [ ] ** Neue Node´s für komplexere Abläufe**
+  - Set Value
+  - Schleifen wiederholung
+  - Combi Node (suche+klick) in einem
 
 
 ---

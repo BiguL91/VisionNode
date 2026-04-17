@@ -187,7 +187,21 @@ class WorkflowEngine:
             if not any(m[0] == t_name for m in matches):
                 time.sleep(0.2)
                 matches = matches_func()
-            ok = action_engine.template_tippen(t_name, matches, log_func=log_func)
+
+            # Index auflösen (unterstützt Konstante oder ocr::Variable)
+            idx_raw = node.get("index", "1")
+            try:
+                # Falls es ein Variablen-Name ist (z.B. ocr::BesterIndex)
+                if isinstance(idx_raw, str) and (idx_raw.startswith("ocr::") or idx_raw.startswith("db::")):
+                    idx_val = self._variable_auflösen(idx_raw, ocr_func)
+                    # Sicherstellen dass wir eine Zahl haben
+                    match_index = int(float(idx_val)) if idx_val else 1
+                else:
+                    match_index = int(idx_raw)
+            except (ValueError, TypeError):
+                match_index = 1
+
+            ok = action_engine.template_tippen(t_name, matches, log_func=log_func, match_index=match_index)
             return "out" if ok else "failure"
 
         elif typ == "warten":

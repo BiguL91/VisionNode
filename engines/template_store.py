@@ -262,7 +262,7 @@ class TemplateStore:
                            hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85,
                            scan_regions=None, condition_states=None, set_states=None, typ=None,
                            ist_state_template=False, kategorie=None, alter_name=None,
-                           ausschnitt_form="box", search_only=False):
+                           ausschnitt_form="box", search_only=False, is_smart=False):
         bild_np = np.array(bild_pil.convert("RGB"))
         basis_name = name.split("__")[0]
         g_name = gruppe if gruppe and gruppe != name else ""
@@ -355,6 +355,7 @@ class TemplateStore:
             "kategorie":        kategorie,
             "ausschnitt_form":  ausschnitt_form,
             "search_only":      bool(search_only),
+            "is_smart":         bool(is_smart),
         }
         self._settings_speichern()
 

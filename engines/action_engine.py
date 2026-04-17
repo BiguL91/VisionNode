@@ -123,23 +123,27 @@ class ActionEngine:
             time.sleep(intervall)
         return False
 
-    def template_tippen(self, template_name, matches, umrechnen=True, log_func=None):
+    def template_tippen(self, template_name, matches, umrechnen=True, log_func=None, match_index=1):
         """Tippt auf die konfigurierte Klickzone eines erkannten Templates.
         Ohne Klickzone: Mitte des Match-Bereichs.
         matches: aktuelle Match-Liste [(name, x, y, w, h, score, phys_name), ...]
+        match_index: 1-basierter Index (welcher Treffer soll geklickt werden?).
         Gibt True zurück wenn Template gefunden und getippt."""
+        current_idx = 0
         for match in matches:
             if match[0] == template_name:
+                current_idx += 1
+                if current_idx < match_index:
+                    continue
+
                 # Entpacke nur die relevanten Teile (die ersten 6)
                 _, mx, my, mw, mh, _ = match[:6]
                 klick_x, klick_y = self.klickpunkt_berechnen(template_name, mx, my, mw, mh)
                 ax, ay = self._umrechnen(klick_x, klick_y) if umrechnen else (klick_x, klick_y)
                 if log_func:
-                    log_func(f"[Klick] Match: ({mx},{my}) {mw}x{mh}px | "
+                    log_func(f"[Klick] Match {current_idx}: ({mx},{my}) {mw}x{mh}px | "
                              f"Klick-Fenster: ({klick_x},{klick_y}) | "
-                             f"ADB: ({ax},{ay}) | "
-                             f"Fenster: {self.fenster_breite}x{self.fenster_hoehe} → "
-                             f"Android: {self.android_breite}x{self.android_hoehe}")
+                             f"ADB: ({ax},{ay})")
                 self.tippen(klick_x, klick_y, umrechnen=umrechnen)
                 return True
         return False

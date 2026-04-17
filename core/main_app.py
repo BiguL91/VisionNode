@@ -334,9 +334,6 @@ class TilesBotApp:
                     # Wir fangen frisch an, damit Werte von verschwundenen Templates "wegfallen"
                     neue_t_ocr = {}
                     
-                    # Alle aktuell gefundenen Basis-Namen
-                    gefundene_basis_namen = {m[0] for m in self.state.active_matches}
-                    
                     # 1. Gruppen-Konfigurationen vorbereiten
                     konf_nach_template = defaultdict(list)
                     for entry_name, k in ocr_konfig.items():
@@ -344,24 +341,40 @@ class TilesBotApp:
 
                     # Track entries we've already processed so lower-scoring matches don't overwrite the best match
                     processed_entries = set()
+                    smart_counters = defaultdict(int)
 
                     # 2. Nur die aktuell gefundenen Templates scannen
                     for match in self.state.active_matches:
                         d_name, p_name = match[0], match[6] if len(match) > 6 else match[0]
                         
+                        # Prüfen ob dieses Template "Smart" ist
+                        is_smart = self.template_engine.settings.get(p_name, {}).get("is_smart", False)
+                        if not is_smart and p_name != d_name:
+                             is_smart = self.template_engine.settings.get(d_name, {}).get("is_smart", False)
+
                         passende = konf_nach_template.get(p_name, [])
                         if not passende and p_name != d_name:
                             passende = konf_nach_template.get(d_name, [])
                         
                         for entry_name, k in passende:
-                            if entry_name in processed_entries:
+                            if not is_smart and entry_name in processed_entries:
                                 continue
                                 
-                            wert = self.ocr_engine.template_match_scannen(
-                                self.current_screenshot_pil, entry_name, match
-                            )
-                            neue_t_ocr[entry_name] = wert
-                            processed_entries.add(entry_name)
+                            if is_smart:
+                                smart_counters[entry_name] += 1
+                                idx = smart_counters[entry_name]
+                                indexed_name = f"{entry_name}_{idx}"
+                                
+                                wert = self.ocr_engine.template_match_scannen(
+                                    self.current_screenshot_pil, entry_name, match
+                                )
+                                neue_t_ocr[indexed_name] = wert
+                            else:
+                                wert = self.ocr_engine.template_match_scannen(
+                                    self.current_screenshot_pil, entry_name, match
+                                )
+                                neue_t_ocr[entry_name] = wert
+                                processed_entries.add(entry_name)
                     
                     self.state.template_ocr_values = neue_t_ocr
 

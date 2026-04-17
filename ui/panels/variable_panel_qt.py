@@ -1,4 +1,5 @@
 import time
+import re
 from lang import lang
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
@@ -32,6 +33,7 @@ class VariableGruppe(QFrame):
         self.setObjectName("variable_gruppe")
         self._wert_labels: dict[str, QLabel] = {}
         self._font_idx: dict[str, int] = {}
+        self._farbe = farbe
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 4, 4, 4)
@@ -44,10 +46,10 @@ class VariableGruppe(QFrame):
         self.balken.setStyleSheet(f"background-color: {farbe};") 
         outer.addWidget(self.balken)
 
-        inner = QVBoxLayout()
-        inner.setContentsMargins(6, 2, 0, 2)
-        inner.setSpacing(2)
-        outer.addLayout(inner)
+        self.inner = QVBoxLayout()
+        self.inner.setContentsMargins(6, 2, 0, 2)
+        self.inner.setSpacing(2)
+        outer.addLayout(self.inner)
 
         # Gruppen-Header
         kopf = QHBoxLayout()
@@ -57,43 +59,49 @@ class VariableGruppe(QFrame):
         lbl_name.setStyleSheet(f"color: {farbe};") 
         kopf.addWidget(lbl_name)
         kopf.addStretch()
-        inner.addLayout(kopf)
+        self.inner.addLayout(kopf)
 
         # Trennlinie
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setProperty("class", "separator")
-        inner.addWidget(line)
+        self.inner.addWidget(line)
 
         # Einträge
         for entry_name, anzeige_name, modus, kann_loeschen in eintraege:
-            zeile = QHBoxLayout()
-            zeile.setContentsMargins(0, 2, 0, 2)
-            zeile.setSpacing(4)
+            self.add_entry(entry_name, anzeige_name, modus)
 
-            # Links: Modus + Name
-            links = QVBoxLayout()
-            links.setSpacing(0)
-            lbl_modus = QLabel(f"[{modus}]")
-            lbl_modus.setObjectName(f"lbl_modus_{modus.lower()}")
-            lbl_anzeige = QLabel(anzeige_name)
-            lbl_anzeige.setProperty("class", "lbl_dim")
-            links.addWidget(lbl_modus)
-            links.addWidget(lbl_anzeige)
-            zeile.addLayout(links)
-            zeile.addStretch()
+    def add_entry(self, entry_name: str, anzeige_name: str, modus: str):
+        if entry_name in self._wert_labels:
+            return
+            
+        zeile = QHBoxLayout()
+        zeile.setContentsMargins(0, 2, 0, 2)
+        zeile.setSpacing(4)
 
-            # Wert-Label (rechts, groß)
-            wert_lbl = QLabel("–")
-            wert_lbl.setObjectName("variable_wert")
-            wert_lbl.setFont(QFont("Consolas", FONT_GROESSEN[0], QFont.Weight.Bold))
-            wert_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            wert_lbl.mouseDoubleClickEvent = lambda e, n=entry_name: self._schrift_wechseln(n)
-            zeile.addWidget(wert_lbl)
-            self._wert_labels[entry_name] = wert_lbl
-            self._font_idx[entry_name] = 0
+        # Links: Modus + Name
+        links = QVBoxLayout()
+        links.setSpacing(0)
+        lbl_modus = QLabel(f"[{modus}]")
+        lbl_modus.setObjectName(f"lbl_modus_{modus.lower()}")
+        lbl_anzeige = QLabel(anzeige_name)
+        lbl_anzeige.setProperty("class", "lbl_dim")
+        links.addWidget(lbl_modus)
+        links.addWidget(lbl_anzeige)
+        zeile.addLayout(links)
+        zeile.addStretch()
 
-            inner.addLayout(zeile)
+        # Wert-Label (rechts, groß)
+        wert_lbl = QLabel("–")
+        wert_lbl.setObjectName("variable_wert")
+        wert_lbl.setFont(QFont("Consolas", FONT_GROESSEN[0], QFont.Weight.Bold))
+        wert_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        wert_lbl.mouseDoubleClickEvent = lambda e, n=entry_name: self._schrift_wechseln(n)
+        zeile.addWidget(wert_lbl)
+        
+        self._wert_labels[entry_name] = wert_lbl
+        self._font_idx[entry_name] = 0
+        self.inner.addLayout(zeile)
 
     def _schrift_wechseln(self, name: str):
         idx = (self._font_idx.get(name, 0) + 1) % len(FONT_GROESSEN)
@@ -211,20 +219,37 @@ class VariablePanel(QWidget):
         # Strukturcheck
         aktuelle_keys = set(ocr_konfig.keys())
         if self._letzte_ocr_konfig_keys is not None and aktuelle_keys != self._letzte_ocr_konfig_keys:
-            return  # Rebuild nötig → Signal nach außen geben oder direkt aktualisieren()
+            return  # Rebuild nötig
 
-        # Zeitstempel für aktive Werte merken
+        # 1. Dynamische Einträge für Smart Templates (z.B. Distanz_1, Distanz_2)
+        for full_key, wert in ocr_werte.items():
+            if "_" in full_key:
+                # Prüfen ob es das Format Name_Zahl hat
+                m = re.search(r"^(.*)_(\d+)$", full_key)
+                if m:
+                    base_name, idx = m.groups()
+                    if base_name in ocr_konfig:
+                        k = ocr_konfig[base_name]
+                        tn = k.get("template", base_name)
+                        if tn in self._gruppen:
+                            # Display Name schön machen: "Distanz [1]"
+                            prefix = f"{tn}_"
+                            short_name = base_name[len(prefix):] if base_name.startswith(prefix) else base_name
+                            display_name = f"{short_name} [{idx}]"
+                            self._gruppen[tn].add_entry(full_key, display_name, k.get("modus", "Text"))
+
+        # 2. Zeitstempel für aktive Werte merken
         for n, v in ocr_werte.items():
             if v and v not in ("", "—", "-", "?"):
                 self._ocr_letzter_wert_zeit[n] = jetzt
 
-        # Werte setzen
+        # 3. Werte setzen
         for gname, gruppe in self._gruppen.items():
             for entry_name in gruppe.entry_names():
                 val = ocr_werte.get(entry_name, "–") or "–"
                 gruppe.wert_setzen(entry_name, val)
 
-        # Sichtbarkeit
+        # 4. Sichtbarkeit
         self._sichtbarkeit_aktualisieren(aktuelle_matches, jetzt)
 
     def set_nur_aktive(self, val: bool):

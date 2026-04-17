@@ -257,8 +257,14 @@ class NodeCanvas(QWidget):
             return self._sim_progress[nid]
         if typ in ("suche", "suche_optional", "klick"):
             tpl = node.get("template", "–")
-            to  = node.get("timeout")
-            return tpl + (f" [{to}s]" if to else "")
+            if typ == "klick":
+                idx = str(node.get("index", "1"))
+                if idx != "1":
+                    tpl += f" [#{idx}]"
+            else:
+                to  = node.get("timeout")
+                if to: tpl += f" [{to}s]"
+            return tpl
         elif typ == "warten":
             return f"{node.get('sekunden', 1.0)} s"
         elif typ == "bedingung":

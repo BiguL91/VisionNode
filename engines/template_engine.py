@@ -148,11 +148,11 @@ class TemplateEngine:
                            hintergrund_toleranz=30, gruppe=None, match_schwellwert=0.85,
                            scan_regions=None, condition_states=None, set_states=None, typ=None,
                            ist_state_template=False, kategorie=None, alter_name=None,
-                           ausschnitt_form="box", search_only=False):
+                           ausschnitt_form="box", search_only=False, is_smart=False):
         self._store.template_speichern(
             name, bild_pil, hintergrund_entfernen, ignore_regionen, hintergrund_toleranz,
             gruppe, match_schwellwert, scan_regions, condition_states, set_states, typ,
-            ist_state_template, kategorie, alter_name, ausschnitt_form, search_only
+            ist_state_template, kategorie, alter_name, ausschnitt_form, search_only, is_smart
         )
         self._templates_laden()
 

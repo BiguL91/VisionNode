@@ -194,6 +194,7 @@ class WorkflowEditorDialogQt(QDialog):
             node["timeout"] = 10
         elif typ == "klick":
             node["template"] = ""
+            node["index"] = "1"
         elif typ == "warten":
             node["sekunden"] = 1.0
         elif typ == "set_timer":
@@ -284,6 +285,9 @@ class WorkflowEditorDialogQt(QDialog):
                 sp.setValue(int(node.get("timeout", 10)))
                 sp.setProperty("class", "input_dark")
                 add_row("Timeout (s):", "timeout", sp)
+            elif typ == "klick":
+                idx_btn = self._variablen_picker_btn(str(node.get("index", "1")), dlg)
+                add_row("Match-Index:", "index", idx_btn)
         elif typ == "warten":
             sp = QDoubleSpinBox()
             sp.setRange(0.1, 300.0)
@@ -336,9 +340,15 @@ class WorkflowEditorDialogQt(QDialog):
             for key, w in felder.items():
                 if key == "operator":
                     node["operator"] = w[0]
-                elif key in ("template", "variable", "workflow"):
+                elif key in ("template", "variable", "workflow", "index"):
                     val = w.text()
-                    node[key] = "" if val == "Bitte wählen..." else val
+                    if key == "template":
+                        node[key] = "" if val == "Bitte wählen..." else val
+                    elif key == "index":
+                        # Standardwert "1" falls nichts gewählt
+                        node[key] = "1" if val in ("Bitte wählen...", "") else val
+                    else:
+                        node[key] = "" if val == "Bitte wählen..." else val
                 elif key == "timer_var":
                     val = w.text()
                     node["timer_var"] = "" if val == "Timer wählen..." else val
