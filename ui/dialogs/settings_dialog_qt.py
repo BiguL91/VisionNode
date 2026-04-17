@@ -86,6 +86,9 @@ class SettingsDialog(QDialog):
         self._skal_btns = self._radio_row(root, "Auflösung:",
             [(0.25, "25%"), (0.5, "50%"), (0.75, "75%"), (1.0, "100%")],
             self._ein.get("matching_skalierung", 0.5))
+        self._uebergang_btns = self._radio_row(root, "Übergangs-Schutz:",
+            [(0, "Aus"), (180, "Schwach"), (200, "Mittel"), (220, "Stark")],
+            self._ein.get("uebergang_schwellwert", 200))
 
         # ── Debug & Logging ───────────────────────────────────────────────────
         self._sektion(root, "Debug & Logging")
@@ -134,6 +137,10 @@ class SettingsDialog(QDialog):
         for wert, rb in self._skal_btns.items():
             if rb.isChecked():
                 updates["matching_skalierung"] = wert
+
+        for wert, rb in self._uebergang_btns.items():
+            if rb.isChecked():
+                updates["uebergang_schwellwert"] = wert
 
         for key, cb in self._log_checks.items():
             updates[key] = cb.isChecked()

@@ -118,7 +118,8 @@ class TilesBotApp:
             "log_matching": False,
             "log_capture": False,
             "log_daten_berechnungen": False,
-            "log_gpu_templates": False
+            "log_gpu_templates": False,
+            "uebergang_schwellwert": 200,
         }
         if os.path.exists(self.settings_path):
             try:
@@ -278,7 +279,15 @@ class TilesBotApp:
                                     self._log(f"[State] {s_name} -> {neue_states[s_name]} (verloren: {p_name})")
 
                 if changed:
-                    self.state.game_states = neue_states
+                    # Helle Übergangsframes (z.B. weiße Ladescreen) ignorieren
+                    schwellwert = self.settings.get("uebergang_schwellwert", 200)
+                    frame_zu_hell = (
+                        schwellwert > 0
+                        and self.current_screenshot_np is not None
+                        and self.current_screenshot_np.mean() > schwellwert
+                    )
+                    if not frame_zu_hell:
+                        self.state.game_states = neue_states
 
                 # Nach dem State-Update: Matches gegen die NEUEN States filtern.
                 # Verhindert, dass Treffer aus dem gleichen Frame aktiv bleiben,
