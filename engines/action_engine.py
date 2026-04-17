@@ -126,12 +126,19 @@ class ActionEngine:
     def template_tippen(self, template_name, matches, umrechnen=True, log_func=None, match_index=1):
         """Tippt auf die konfigurierte Klickzone eines erkannten Templates.
         Ohne Klickzone: Mitte des Match-Bereichs.
-        matches: aktuelle Match-Liste [(name, x, y, w, h, score, phys_name), ...]
+        matches: aktuelle Match-Liste [(name, x, y, w, h, score, phys_name, hierarchy), ...]
         match_index: 1-basierter Index (welcher Treffer soll geklickt werden?).
         Gibt True zurück wenn Template gefunden und getippt."""
         current_idx = 0
         for match in matches:
-            if match[0] == template_name:
+            # Match prüfen: Entweder d_name (match[0]), p_name (match[6]) oder hierarchy (match[7])
+            is_match = (match[0] == template_name)
+            if not is_match and len(match) > 6:
+                is_match = (match[6] == template_name)
+            if not is_match and len(match) > 7:
+                is_match = (template_name in match[7])
+
+            if is_match:
                 current_idx += 1
                 if current_idx < match_index:
                     continue

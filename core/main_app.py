@@ -346,17 +346,27 @@ class TilesBotApp:
                     # 2. Nur die aktuell gefundenen Templates scannen
                     for match in self.state.active_matches:
                         d_name, p_name = match[0], match[6] if len(match) > 6 else match[0]
+                        hierarchie_namen = match[7] if len(match) > 7 else [p_name]
                         
-                        # Prüfen ob dieses Template "Smart" ist
-                        is_smart = self.template_engine.settings.get(p_name, {}).get("is_smart", False)
-                        if not is_smart and p_name != d_name:
-                             is_smart = self.template_engine.settings.get(d_name, {}).get("is_smart", False)
-
-                        passende = konf_nach_template.get(p_name, [])
-                        if not passende and p_name != d_name:
-                            passende = konf_nach_template.get(d_name, [])
+                        # Prüfen ob dieses Template oder ein Parent "Smart" ist
+                        is_smart = any(
+                            self.template_engine.settings.get(h, {}).get("is_smart", False)
+                            for h in hierarchie_namen
+                        )
                         
+                        passende = []
+                        for h_name in hierarchie_namen:
+                            passende.extend(konf_nach_template.get(h_name, []))
+                        
+                        # Duplikate in passende vermeiden (falls durch Hierarchie doppelt)
+                        passende_gefiltert = []
+                        gesehene_entries = set()
                         for entry_name, k in passende:
+                            if entry_name not in gesehene_entries:
+                                passende_gefiltert.append((entry_name, k))
+                                gesehene_entries.add(entry_name)
+                        
+                        for entry_name, k in passende_gefiltert:
                             if not is_smart and entry_name in processed_entries:
                                 continue
                                 

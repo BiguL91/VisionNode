@@ -177,6 +177,62 @@ class TemplateMatcher:
                 break
         return False
 
+    def _is_smart_recursive(self, name_oder_pfad):
+        """Prüft ob ein Element oder seine Eltern-Kette 'is_smart' ist."""
+        basis_name = name_oder_pfad.split("__")[0] if "__" in name_oder_pfad else name_oder_pfad
+        s = self.settings.get(basis_name, {})
+        if not s and "/" in name_oder_pfad:
+            leaf = name_oder_pfad.split("/")[-1]
+            s    = self.settings.get(leaf, {})
+
+        if s and s.get("is_smart"):
+            return True
+
+        current_path = s.get("gruppe", "") if isinstance(s, dict) else ""
+        besucht = {name_oder_pfad}
+        while current_path:
+            teile = current_path.split("/")
+            leaf  = teile[-1]
+            if leaf in besucht: break
+            besucht.add(leaf)
+            ps = self.settings.get(leaf, {})
+            if isinstance(ps, dict):
+                if ps.get("is_smart"):
+                    return True
+                current_path = "/".join(teile[:-1]) if len(teile) > 1 else ps.get("gruppe", "")
+            else:
+                break
+        return False
+
+    def get_hierarchy_names(self, name_oder_pfad):
+        """Gibt eine Liste von Namen zurück (Self + Eltern)."""
+        namen = []
+        basis_name = name_oder_pfad.split("__")[0] if "__" in name_oder_pfad else name_oder_pfad
+        namen.append(basis_name)
+
+        s = self.settings.get(basis_name, {})
+        if not s and "/" in name_oder_pfad:
+            leaf = name_oder_pfad.split("/")[-1]
+            s    = self.settings.get(leaf, {})
+            if leaf != basis_name:
+                namen.append(leaf)
+
+        if s:
+            current_path = s.get("gruppe", "")
+            besucht = {name_oder_pfad}
+            while current_path:
+                teile = current_path.split("/")
+                leaf  = teile[-1]
+                if leaf in besucht: break
+                besucht.add(leaf)
+                namen.append(leaf)
+                ps = self.settings.get(leaf, {})
+                if isinstance(ps, dict):
+                    current_path = "/".join(teile[:-1]) if len(teile) > 1 else ps.get("gruppe", "")
+                else:
+                    break
+        return list(dict.fromkeys(namen)) # Duplikate vermeiden
+
     # ── GPU-Cache ─────────────────────────────────────────────────────────────
 
     def _get_gpu_template(self, name, s_eff):
@@ -306,6 +362,9 @@ class TemplateMatcher:
         for master_name, treffer_liste in treffer_pro_gruppe.items():
             kinder_namen = kinder_nach_gruppe[master_name]
             for m_treffer in treffer_liste:
+                # Master IMMER hinzufügen
+                final_results.append(m_treffer)
+                
                 m_rx, m_ry, m_rw, m_rh = m_treffer[1], m_treffer[2], m_treffer[3], m_treffer[4]
                 pad = 4
                 x0  = max(0, int(m_rx*s_eff)-pad)
@@ -314,23 +373,31 @@ class TemplateMatcher:
                 y1  = min(th_t, int((m_ry+m_rh)*s_eff)+pad)
                 if x1 > x0 and y1 > y0:
                     crop  = img_m[:, :, y0:y1, x0:x1]
+                    # Suche nach Kindern innerhalb des Master-Ausschnitts
                     k_res = self._batch_match(crop, kinder_namen, s_eff, schwellwert_override=0.7, is_full_scan=False)
+                    
                     if k_res:
-                        k_res.sort(key=lambda x: x[5], reverse=True)
-                        best_k = k_res[0]
-                        final_results.append([
-                            best_k[0],
-                            (x0/s_eff) + best_k[1],
-                            (y0/s_eff) + best_k[2],
-                            best_k[3], best_k[4], best_k[5],
-                        ])
-                    else:
-                        final_results.append(m_treffer)
+                        # Wir nehmen alle gefundenen Kinder (NMS filtert sie später global)
+                        for best_k in k_res:
+                            final_results.append([
+                                best_k[0],
+                                (x0/s_eff) + best_k[1],
+                                (y0/s_eff) + best_k[2],
+                                best_k[3], best_k[4], best_k[5],
+                            ])
 
         output = []
         for name, rx_ref, ry_ref, rw_ref, rh_ref, score in final_results:
             d_name = name.split("__")[0]
-            output.append((d_name, int(rx_ref*norm_sx), int(ry_ref*norm_sy), int(rw_ref*norm_sx), int(rh_ref*norm_sy), score, name))
+            hierarchy = self.get_hierarchy_names(name)
+            output.append((
+                d_name, 
+                int(rx_ref*norm_sx), int(ry_ref*norm_sy), 
+                int(rw_ref*norm_sx), int(rh_ref*norm_sy), 
+                score, 
+                name,
+                hierarchy
+            ))
         return self._nms(output), master_namen
 
     def _batch_match(self, img_tensor, template_namen, s_eff, schwellwert_override=None, offset=(0,0), is_full_scan=False):

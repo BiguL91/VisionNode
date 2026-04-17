@@ -208,6 +208,12 @@ class TemplateEngine:
     def _get_hierarchy_set_states(self, name_oder_pfad):
         return self._matcher._get_hierarchy_set_states(name_oder_pfad)
 
+    def _is_smart_recursive(self, name_oder_pfad):
+        return self._matcher._is_smart_recursive(name_oder_pfad)
+
+    def get_hierarchy_names(self, name_oder_pfad):
+        return self._matcher.get_hierarchy_names(name_oder_pfad)
+
     def _condition_states_erfuellt(self, conditions, game_states, ignore_states=None):
         return self._matcher._condition_states_erfuellt(conditions, game_states, ignore_states)
 
