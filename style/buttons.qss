@@ -205,3 +205,18 @@ QPushButton#btn_ignorieren_action[active="true"] {
 /* ── Master-Aktiv ── */
 QPushButton#btn_master_aktiv { color: #ffca28; padding: 4px 8px; min-width: 0; }
 QPushButton#btn_master_aktiv:hover { background-color: #3a3a1a; color: #ffd54f; }
+
+/* ── Node-Typ-Buttons (Workflow-Editor Toolbar) ── */
+QPushButton#btn_add_node { color: #ffffff; border: none; padding: 4px 10px; }
+QPushButton#btn_add_node[node_typ="start"]             { background-color: #2ea043; }
+QPushButton#btn_add_node[node_typ="suche"]             { background-color: #1e88e5; }
+QPushButton#btn_add_node[node_typ="suche_optional"]    { background-color: #00897b; }
+QPushButton#btn_add_node[node_typ="klick"]             { background-color: #fb8c00; }
+QPushButton#btn_add_node[node_typ="warten"]            { background-color: #546e7a; }
+QPushButton#btn_add_node[node_typ="zurueck"]           { background-color: #8e24aa; }
+QPushButton#btn_add_node[node_typ="home"]              { background-color: #8e24aa; }
+QPushButton#btn_add_node[node_typ="bedingung"]         { background-color: #f9a825; }
+QPushButton#btn_add_node[node_typ="call_workflow"]     { background-color: #673ab7; }
+QPushButton#btn_add_node[node_typ="priority_selector"] { background-color: #fbc02d; }
+QPushButton#btn_add_node[node_typ="set_timer"]         { background-color: #e91e63; }
+QPushButton#btn_add_node:hover { border: 1px solid rgba(255,255,255,0.4); }

@@ -21,8 +21,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QCursor,
 )
-from style.colors import NODE_FARBEN
-from ui.widgets.node_canvas import NodeCanvas
+from ui.widgets.node_canvas import NodeCanvas, NODE_BREITE, NODE_HOEHE
 
 
 def _neue_id():
@@ -126,7 +125,7 @@ class WorkflowEditorDialogQt(QDialog):
         for label, typ in typen:
             btn = QPushButton(label)
             btn.setObjectName("btn_add_node")
-            btn.setStyleSheet(f"background-color: {NODE_FARBEN.get(typ, '#555555')};")
+            btn.setProperty("node_typ", typ)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, t=typ: self._node_hinzufuegen(t))
             tb_lay.addWidget(btn)
