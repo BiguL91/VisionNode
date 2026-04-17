@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG
 from PyQt6.QtGui import (
-    QImage, QPixmap, QPainter, QPen, QColor, QFont, QCloseEvent,
+    QImage, QPixmap, QFont, QCloseEvent,
     QAction,
 )
 
@@ -50,6 +50,7 @@ from ui.panels.daten_panel_qt    import DatenPanel    as DatenPanelQt
 # ── Qt Widgets / Dialoge ──────────────────────────────────────────────────────
 from ui.widgets.collapsible_panel  import CollapsiblePanel
 from ui.widgets.vorschau_label     import VorschauLabel, _frame_to_qpixmap
+from ui.widgets.klick_canvas       import KlickCanvas
 from ui.dialogs.template_editor_qt import TemplateEditorQt
 from ui.dialogs.workflow_editor_qt import WorkflowEditorDialogQt
 from ui.dialogs.daten_editor_qt    import DatenListeEditorQt
@@ -706,7 +707,6 @@ class TilesBotWindow(QMainWindow):
     def _klick_dialog(self, name: str, pil_bild):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout
         from PyQt6.QtGui import QPixmap, QImage
-        from PyQt6.QtCore import QPoint
 
         dlg = QDialog(self)
         dlg.setWindowTitle(f"Klickzone — {name}")
@@ -719,51 +719,15 @@ class TilesBotWindow(QMainWindow):
         qimg = QImage(scaled.tobytes(), nw, nh, nw * 3, QImage.Format.Format_RGB888)
         pm = QPixmap.fromImage(qimg)
 
-        class KlickCanvas(QLabel):
-            klick_gesetzt = pyqtSignal(float, float)
-
-            def __init__(self):
-                super().__init__()
-                self.setPixmap(pm)
-                self._punkt: QPoint | None = None
-                konfig = self.window()  # can't access outer scope here
-                self.setCursor(Qt.CursorShape.CrossCursor)
-                self._rx = self._ry = None
-                k = None
-                try:
-                    import TilesBotWindow  # noop
-                except Exception:
-                    pass
-
-            def mousePressEvent(self, e):
-                self._punkt = e.pos()
-                self._rx = round(e.pos().x() / self.width()  * 100, 1)
-                self._ry = round(e.pos().y() / self.height() * 100, 1)
-                self.update()
-
-            def paintEvent(self, ev):
-                super().paintEvent(ev)
-                if self._punkt:
-                    p = QPainter(self)
-                    p.setPen(QPen(QColor("#ff6600"), 2))
-                    px, py = self._punkt.x(), self._punkt.y()
-                    p.drawLine(px - 8, py, px + 8, py)
-                    p.drawLine(px, py - 8, px, py + 8)
-                    p.end()
-
         root = QVBoxLayout(dlg)
-        canvas = KlickCanvas()
+        canvas = KlickCanvas(pm)
         root.addWidget(canvas)
 
         # Bestehenden Punkt laden
         konfig = self.action_engine.klickzonen_laden()
         if name in konfig:
             k = konfig[name]
-            canvas._rx = k["klick_rel_x"]
-            canvas._ry = k["klick_rel_y"]
-            canvas._punkt = QPoint(int(k["klick_rel_x"] / 100 * nw),
-                                   int(k["klick_rel_y"] / 100 * nh))
-            canvas.update()
+            canvas.set_punkt(k["klick_rel_x"], k["klick_rel_y"])
 
         info = QLabel("Klick-Punkt setzen.")
         info.setProperty("class", "lbl_info")
