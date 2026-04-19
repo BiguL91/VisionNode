@@ -20,7 +20,11 @@ class ActionEngine:
         self.fenster_breite = 1
         self.fenster_hoehe = 1
         self._klickzonen_cache = None  # Wird beim ersten Zugriff geladen
-        
+        self.chrome_top    = 0
+        self.chrome_left   = 0
+        self.chrome_right  = 0
+        self.chrome_bottom = 0
+
         self.log_func = log_func
         self.log_enabled = False
 
@@ -64,9 +68,9 @@ class ActionEngine:
             android_w = max(self.android_breite, self.android_hoehe)
             android_h = min(self.android_breite, self.android_hoehe)
             
-        ax = int(x / self.fenster_breite * android_w)
-        ay = int(y / self.fenster_hoehe * android_h)
-        
+        ax = int((x - self.chrome_left) / (self.fenster_breite - self.chrome_left - self.chrome_right)  * android_w)
+        ay = int((y - self.chrome_top)  / (self.fenster_hoehe  - self.chrome_top  - self.chrome_bottom) * android_h)
+
         if self.log_enabled and self.log_func:
             self.log_func(f"[Klick-Log] Fenster({self.fenster_breite}x{self.fenster_hoehe}) -> "
                           f"Android({android_w}x{android_h}) | Click({x},{y}) -> ADB({ax},{ay})")

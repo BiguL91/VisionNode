@@ -83,6 +83,10 @@ class TilesBotApp:
         self.action_engine.log_enabled = self.settings.get("log_klick_koordinaten", False)
         
         self.action_engine.verbinden()
+        self.action_engine.chrome_top    = self.settings.get("memu_chrome_top",    32)
+        self.action_engine.chrome_left   = self.settings.get("memu_chrome_left",    0)
+        self.action_engine.chrome_right  = self.settings.get("memu_chrome_right",  40)
+        self.action_engine.chrome_bottom = self.settings.get("memu_chrome_bottom",  0)
 
         # Alle bekannten State-Variablen aus Template-Settings mit False vorbelegen
         self._states_initialisieren()
