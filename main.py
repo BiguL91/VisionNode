@@ -224,11 +224,15 @@ class TilesBotWindow(QMainWindow):
         self.log_panel = LogPanelQt()
         self._dock_log = self._create_dock("Log", self.log_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_log")
 
-        self.daten_panel = DatenPanelQt(bot_ref=self)
+        self.global_vars_panel = DatenPanelQt(bot_ref=self, filter_typ="timer")
+        self._dock_global_vars = self._create_dock("Globale Var.", self.global_vars_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_global_vars")
+
+        self.daten_panel = DatenPanelQt(bot_ref=self, filter_typ="daten")
         self._dock_daten = self._create_dock("Daten-Listen", self.daten_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_daten")
 
-        # Log und Daten tabben (übereinander legen)
-        self.tabifyDockWidget(self._dock_log, self._dock_daten)
+        # Log, Globale Var und Daten tabben
+        self.tabifyDockWidget(self._dock_log, self._dock_global_vars)
+        self.tabifyDockWidget(self._dock_global_vars, self._dock_daten)
         self._dock_log.raise_() # Log standardmäßig vorne
 
         # ── Toolbar ───────────────────────────────────────────────────────────

@@ -16,8 +16,8 @@ from core.daten_manager import (
 )
 
 
-class ListenBlock(QFrame):
-    """Ein einzelner aufklappbarer Listen-Block mit QTableWidget."""
+class BaseListenBlock(QFrame):
+    """Basisklasse für aufklappbare Listen-Blöcke."""
 
     def __init__(self, listen_dict: dict, bot_ref, parent=None):
         super().__init__(parent)
@@ -48,7 +48,12 @@ class ListenBlock(QFrame):
         self.pfeil.setObjectName("collapse_arrow")
         h_layout.addWidget(self.pfeil)
 
-        lbl = QLabel(self.l["name"])
+        # Name anpassen (Timer -> Globale Var.)
+        display_name = self.l["name"]
+        if self.l.get("typ") == "timer" and display_name == "Timer":
+            display_name = "Globale Var."
+            
+        lbl = QLabel(display_name)
         lbl.setObjectName("panel_title")
         h_layout.addWidget(lbl)
         h_layout.addStretch()
@@ -69,12 +74,11 @@ class ListenBlock(QFrame):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(24)
         
-        # Spaltenbreiten speichern (Wird bei jeder Änderung getriggert)
+        # Spaltenbreiten speichern
         self.table.horizontalHeader().sectionResized.connect(self._save_header_state)
         
         # Performance & Style
         self.table.setProperty("class", "daten_tabelle")
-        
         root.addWidget(self.table)
 
     def _save_header_state(self):
@@ -98,98 +102,10 @@ class ListenBlock(QFrame):
             self._tabelle_zeichnen()
 
     def _tabelle_zeichnen(self):
-        """Initialer Aufbau der Tabelle."""
-        self._is_loading = True
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
-
-        if self.l.get("typ") == "timer":
-            self.table.setColumnCount(2)
-            self.table.setRowCount(len(zeilen_namen))
-            self.table.setHorizontalHeaderLabels(["Name", "Wert"])
-            self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-            self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-            
-            for r, z in enumerate(zeilen_namen):
-                full_name = z["name"]
-                display_name = full_name
-                if full_name.startswith("[T] "): display_name = full_name[4:]
-                elif full_name.startswith("[W] "): display_name = full_name[4:]
-                
-                self.table.setItem(r, 0, QTableWidgetItem(display_name))
-                item_val = QTableWidgetItem("—")
-                item_val.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table.setItem(r, 1, item_val)
-        else:
-            if not spalten:
-                self.table.setColumnCount(1)
-                self.table.setRowCount(1)
-                self.table.setHorizontalHeaderLabels(["Info"])
-                self.table.setItem(0, 0, QTableWidgetItem("Keine Spalten konfiguriert."))
-                self._is_loading = False
-                return
-
-            self.table.setColumnCount(len(spalten) + 1)
-            self.table.setRowCount(len(zeilen_namen))
-            headers = ["Zeile"] + [s["name"] for s in spalten]
-            self.table.setHorizontalHeaderLabels(headers)
-            
-            for r, z in enumerate(zeilen_namen):
-                self.table.setItem(r, 0, QTableWidgetItem(z["name"]))
-                for ci, sp in enumerate(spalten):
-                    item = QTableWidgetItem("—")
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                    self.table.setItem(r, ci + 1, item)
-
-        self._restore_header_state()
-        self.werte_aktualisieren()
-        self._is_loading = False
-
-        HEADER_H = 24
-        ROW_H = self.table.verticalHeader().defaultSectionSize()
-        h = HEADER_H + (self.table.rowCount() * ROW_H) + 2
-        self.table.setMinimumHeight(min(h, 400))
-        self.table.setMaximumHeight(h)
+        pass
 
     def werte_aktualisieren(self):
-        """Nur Werte in der bestehenden Tabelle updaten."""
-        if not self._aufgeklappt or self.table.rowCount() == 0:
-            return
-
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
-        
-        if self.l.get("typ") == "timer":
-            for r, z in enumerate(zeilen_namen):
-                full_name = z["name"]
-                is_timer = not full_name.startswith("[W] ")
-                val = ocr_werte.get(full_name, ("—", 0))[0]
-                anzeige = sekunden_formatieren(val) if is_timer and val not in ("—", "?") else str(val)
-                
-                item = self.table.item(r, 1)
-                if item:
-                    item.setText(anzeige)
-                    if is_timer: item.setForeground(QColor("#42a5f5"))
-        else:
-            for r, z in enumerate(zeilen_namen):
-                for ci, sp in enumerate(spalten):
-                    ocr_var = zuordnungen.get((z["name"], sp["id"]))
-                    if not ocr_var:
-                        ocr_var = sp.get("ocr_var")
-                        if ocr_var and "{row}" in ocr_var:
-                            ocr_var = ocr_var.replace("{row}", z["name"])
-
-                    entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
-                    wert = entry[0]
-                    anzeige = self._format_wert(wert, sp.get("format", "standard"))
-                    
-                    item = self.table.item(r, ci + 1)
-                    if item:
-                        item.setText(anzeige)
-                        if ocr_var in berech_namen:
-                            item.setForeground(QColor("#4fc3f7"))
-                        elif sp.get("typ") == "timer":
-                            item.setForeground(QColor("#e91e63"))
-                        else:
-                            item.setForeground(QColor("#cccccc"))
+        pass
 
     def _werte_berechnen(self):
         spalten       = spalten_der_liste(self.l["id"])
@@ -290,6 +206,118 @@ class ListenBlock(QFrame):
         return str(int(num)) if num == int(num) else str(round(num, 1))
 
 
+class NormalListenBlock(BaseListenBlock):
+    """Matrix-Ansicht: Zeilen x Spalten."""
+
+    def _tabelle_zeichnen(self):
+        self._is_loading = True
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+
+        if not spalten:
+            self.table.setColumnCount(1)
+            self.table.setRowCount(1)
+            self.table.setHorizontalHeaderLabels(["Info"])
+            self.table.setItem(0, 0, QTableWidgetItem("Keine Spalten konfiguriert."))
+            self._is_loading = False
+            return
+
+        self.table.setColumnCount(len(spalten) + 1)
+        self.table.setRowCount(len(zeilen_namen))
+        headers = ["Zeile"] + [s["name"] for s in spalten]
+        self.table.setHorizontalHeaderLabels(headers)
+        
+        for r, z in enumerate(zeilen_namen):
+            self.table.setItem(r, 0, QTableWidgetItem(z["name"]))
+            for ci, sp in enumerate(spalten):
+                item = QTableWidgetItem("—")
+                item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(r, ci + 1, item)
+
+        self._restore_header_state()
+        self.werte_aktualisieren()
+        self._is_loading = False
+
+        h = 24 + (self.table.rowCount() * self.table.verticalHeader().defaultSectionSize()) + 2
+        self.table.setMinimumHeight(min(h, 400))
+        self.table.setMaximumHeight(h)
+
+    def werte_aktualisieren(self):
+        if not self._aufgeklappt or self.table.rowCount() == 0:
+            return
+
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        for r, z in enumerate(zeilen_namen):
+            for ci, sp in enumerate(spalten):
+                ocr_var = zuordnungen.get((z["name"], sp["id"]))
+                if not ocr_var:
+                    ocr_var = sp.get("ocr_var")
+                    if ocr_var and "{row}" in ocr_var:
+                        ocr_var = ocr_var.replace("{row}", z["name"])
+
+                entry = ocr_werte.get(ocr_var, ("—", 0)) if ocr_var else ("—", 0)
+                wert = entry[0]
+                anzeige = self._format_wert(wert, sp.get("format", "standard"))
+                
+                item = self.table.item(r, ci + 1)
+                if item:
+                    item.setText(anzeige)
+                    if ocr_var in berech_namen:
+                        item.setForeground(QColor("#4fc3f7"))
+                    elif sp.get("typ") == "timer":
+                        item.setForeground(QColor("#e91e63"))
+                    else:
+                        item.setForeground(QColor("#cccccc"))
+
+
+class GlobalListenBlock(BaseListenBlock):
+    """Einfache Listen-Ansicht für Globale Variablen (Timer, etc.)."""
+
+    def _tabelle_zeichnen(self):
+        self._is_loading = True
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+
+        self.table.setColumnCount(2)
+        self.table.setRowCount(len(zeilen_namen))
+        self.table.setHorizontalHeaderLabels(["Name", "Wert"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        
+        for r, z in enumerate(zeilen_namen):
+            full_name = z["name"]
+            display_name = full_name
+            if full_name.startswith("[T] "): display_name = full_name[4:]
+            elif full_name.startswith("[W] "): display_name = full_name[4:]
+            
+            self.table.setItem(r, 0, QTableWidgetItem(display_name))
+            item_val = QTableWidgetItem("—")
+            item_val.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(r, 1, item_val)
+
+        self._restore_header_state()
+        self.werte_aktualisieren()
+        self._is_loading = False
+
+        h = 24 + (self.table.rowCount() * self.table.verticalHeader().defaultSectionSize()) + 2
+        self.table.setMinimumHeight(min(h, 400))
+        self.table.setMaximumHeight(h)
+
+    def werte_aktualisieren(self):
+        if not self._aufgeklappt or self.table.rowCount() == 0:
+            return
+
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        for r, z in enumerate(zeilen_namen):
+            full_name = z["name"]
+            is_timer = not full_name.startswith("[W] ")
+            val = ocr_werte.get(full_name, ("—", 0))[0]
+            anzeige = sekunden_formatieren(val) if is_timer and val not in ("—", "?") else str(val)
+            
+            item = self.table.item(r, 1)
+            if item:
+                item.setText(anzeige)
+                if is_timer: item.setForeground(QColor("#42a5f5"))
+
+
 from ui.dialogs.daten_typ_dialog_qt import DatenTypDialog
 
 class DatenPanel(QWidget):
@@ -298,11 +326,15 @@ class DatenPanel(QWidget):
     einheiten_requested        = pyqtSignal()
     geandert                   = pyqtSignal()
 
-    def __init__(self, bot_ref=None, parent=None):
+    def __init__(self, bot_ref=None, filter_typ="all", parent=None):
+        """
+        filter_typ: "all", "timer" oder "daten"
+        """
         super().__init__(parent)
         self.bot_ref = bot_ref
+        self.filter_typ = filter_typ
         self._listen_cache: list = []
-        self._bloecke: dict[int, ListenBlock] = {}
+        self._bloecke: dict[int, BaseListenBlock] = {}
         self._sichtbare_listen: set[int] = set() # listen_id
 
         datenbank_initialisieren()
@@ -328,18 +360,21 @@ class DatenPanel(QWidget):
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(8, 4, 8, 4)
         
-        lbl = QLabel("DATEN-LISTEN")
+        title = "DATEN-LISTEN"
+        if self.filter_typ == "timer": title = "GLOBALE VARIABLEN"
+        elif self.filter_typ == "daten": title = "DATEN-LISTEN"
+        
+        lbl = QLabel(title)
         lbl.setProperty("class", "lbl_dim")
         h_lay.addWidget(lbl)
         h_lay.addStretch()
 
-        # Filter Button (Dropdown Ersatz)
+        # Filter Button
         self.btn_filter = QPushButton("Auswahl ▼")
         self.btn_filter.setObjectName("btn_sm")
         self.btn_filter.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_filter.clicked.connect(self._show_filter_menu)
         h_lay.addWidget(self.btn_filter)
-        
         root.addWidget(header)
 
         # Buttons
@@ -376,7 +411,14 @@ class DatenPanel(QWidget):
     def _show_filter_menu(self):
         menu = QMenu(self)
         for l in self._listen_cache:
-            act = QAction(l["name"], menu)
+            # Nur Listen anzeigen, die zum Filter passen
+            if self.filter_typ == "timer" and l.get("typ") != "timer": continue
+            if self.filter_typ == "daten" and l.get("typ") == "timer": continue
+            
+            name = l["name"]
+            if l.get("typ") == "timer" and name == "Timer": name = "Globale Var."
+            
+            act = QAction(name, menu)
             act.setCheckable(True)
             act.setChecked(l["id"] in self._sichtbare_listen)
             act.triggered.connect(lambda *args, lid=l["id"]: self._toggle_liste(lid))
@@ -414,10 +456,15 @@ class DatenPanel(QWidget):
         self._bloecke.clear()
 
         listen = alle_listen()
+        # Filter anwenden
+        if self.filter_typ == "timer":
+            listen = [l for l in listen if l.get("typ") == "timer"]
+        elif self.filter_typ == "daten":
+            listen = [l for l in listen if l.get("typ") != "timer"]
+            
         listen.sort(key=lambda x: (x.get("typ", "daten"), x["name"]))
         self._listen_cache = listen
         
-        # Standardmäßig alle anzeigen, wenn Set leer
         if not self._sichtbare_listen:
             self._sichtbare_listen = {l["id"] for l in listen}
 
@@ -428,7 +475,11 @@ class DatenPanel(QWidget):
             return
 
         for i, l in enumerate(self._listen_cache):
-            block = ListenBlock(l, self.bot_ref)
+            if l.get("typ") == "timer":
+                block = GlobalListenBlock(l, self.bot_ref)
+            else:
+                block = NormalListenBlock(l, self.bot_ref)
+                
             self.container_layout.insertWidget(i, block)
             self._bloecke[l["id"]] = block
         
@@ -445,15 +496,31 @@ class DatenPanel(QWidget):
             self._alles_aufbauen()
 
     def _liste_bearbeiten(self):
-        # Wenn nur eine Liste sichtbar ist, diese direkt bearbeiten. Sonst fragen.
-        if len(self._sichtbare_listen) == 1:
-            lid = list(self._sichtbare_listen)[0]
+        # Nur sichtbare IDs sammeln
+        sichtbare_ids = [l["id"] for l in self._listen_cache if l["id"] in self._sichtbare_listen]
+        
+        if len(sichtbare_ids) == 1:
+            lid = sichtbare_ids[0]
         else:
-            namen = [l["name"] for l in self._listen_cache if l["id"] in self._sichtbare_listen]
+            namen = []
+            for l in self._listen_cache:
+                if l["id"] in self._sichtbare_listen:
+                    n = l["name"]
+                    if l.get("typ") == "timer" and n == "Timer": n = "Globale Var."
+                    namen.append(n)
+            
             if not namen: return
             name, ok = QInputDialog.getItem(self, "Bearbeiten", "Welche Liste?", namen, 0, False)
             if not ok: return
-            lid = next(l["id"] for l in self._listen_cache if l["name"] == name)
+            
+            lid = None
+            for l in self._listen_cache:
+                n = l["name"]
+                if l.get("typ") == "timer" and n == "Timer": n = "Globale Var."
+                if n == name:
+                    lid = l["id"]
+                    break
+            if lid is None: return
             
         l = next((x for x in self._listen_cache if x["id"] == lid), None)
         if l:
@@ -463,11 +530,25 @@ class DatenPanel(QWidget):
                 self.liste_bearbeiten_requested.emit(l)
 
     def _liste_loeschen_dialog(self):
-        namen = [l["name"] for l in self._listen_cache if l["id"] in self._sichtbare_listen]
+        namen = []
+        for l in self._listen_cache:
+            if l["id"] in self._sichtbare_listen:
+                n = l["name"]
+                if l.get("typ") == "timer" and n == "Timer": n = "Globale Var."
+                namen.append(n)
+                
         if not namen: return
         name, ok = QInputDialog.getItem(self, "Löschen", "Welche Liste?", namen, 0, False)
         if not ok: return
-        lid = next(l["id"] for l in self._listen_cache if l["name"] == name)
+        
+        lid = None
+        for l in self._listen_cache:
+            n = l["name"]
+            if l.get("typ") == "timer" and n == "Timer": n = "Globale Var."
+            if n == name:
+                lid = l["id"]
+                break
+        if lid is None: return
 
         if QMessageBox.question(self, "Löschen", f"Liste '{name}' wirklich löschen?") == QMessageBox.StandardButton.Yes:
             liste_loeschen(lid)
