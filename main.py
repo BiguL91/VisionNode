@@ -250,8 +250,13 @@ class TilesBotWindow(QMainWindow):
         main_layout = QVBoxLayout(main_container)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        main_layout.addWidget(toolbar_widget)
+        
+        # Erst das Live-Bild (Vorschau)
         main_layout.addWidget(self._vorschau_scroll, stretch=1)
+        
+        # Dann die Toolbar (Buttons) unten drunter
+        main_layout.addWidget(toolbar_widget)
+        
         self.setCentralWidget(main_container)
 
     def _setup_templates_widget(self) -> QWidget:
