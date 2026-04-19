@@ -18,6 +18,7 @@ from core.daten_manager import (
 
 class BaseListenBlock(QFrame):
     """Basisklasse für aufklappbare Listen-Blöcke."""
+    edit_requested = pyqtSignal(dict)
 
     def __init__(self, listen_dict: dict, bot_ref, parent=None):
         super().__init__(parent)
@@ -74,12 +75,24 @@ class BaseListenBlock(QFrame):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(24)
         
+        # Kontextmenü
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         # Spaltenbreiten speichern
         self.table.horizontalHeader().sectionResized.connect(self._save_header_state)
         
         # Performance & Style
         self.table.setProperty("class", "daten_tabelle")
         root.addWidget(self.table)
+
+    def _show_context_menu(self, pos):
+        """Zeigt ein Rechtsklick-Menü für die Liste an."""
+        menu = QMenu(self)
+        act_edit = QAction("✎ Bearbeiten...", self)
+        act_edit.triggered.connect(lambda: self.edit_requested.emit(self.l))
+        menu.addAction(act_edit)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _save_header_state(self):
         """Speichert den aktuellen Zustand des Tabellen-Headers (Breiten, etc.) in der DB."""
@@ -479,12 +492,20 @@ class DatenPanel(QWidget):
                 block = GlobalListenBlock(l, self.bot_ref)
             else:
                 block = NormalListenBlock(l, self.bot_ref)
-                
+            
+            block.edit_requested.connect(self._on_block_edit_requested)
             self.container_layout.insertWidget(i, block)
             self._bloecke[l["id"]] = block
         
         self._aktualisiere_sichtbarkeit()
         self.geandert.emit()
+
+    def _on_block_edit_requested(self, listen_dict: dict):
+        """Wird aufgerufen, wenn im Block 'Bearbeiten' gewählt wurde."""
+        if listen_dict.get("typ") == "timer":
+            self.timer_bearbeiten_requested.emit(listen_dict)
+        else:
+            self.liste_bearbeiten_requested.emit(listen_dict)
 
     def _neue_liste(self):
         typ = DatenTypDialog.ausfuehren(self)
