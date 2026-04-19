@@ -207,6 +207,7 @@ class WorkflowEditorDialogQt(QDialog):
             node["dauer"] = 60.0
         elif typ == "set_value":
             node["variable"] = ""
+            node["modus"] = "set"
             node["wert"] = "0"
         elif typ == "loop":
             node["count"] = 5
@@ -321,11 +322,29 @@ class WorkflowEditorDialogQt(QDialog):
             sp.setProperty("class", "input_dark")
             add_row("Dauer (s):", "dauer", sp)
         elif typ == "set_value":
-            var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg)
+            var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg, include_ocr=False, include_state=False)
             add_row("Variable:", "variable", var_btn)
+
+            modus_combo = QComboBox()
+            modus_combo.setProperty("class", "input_dark")
+            for lbl_m, key_m in [("= Wert setzen", "set"), ("= True", "true"), ("= False", "false"), ("+= Addieren", "add"), ("-= Subtrahieren", "sub")]:
+                modus_combo.addItem(lbl_m, key_m)
+            cur_modus = node.get("modus", "set")
+            modus_combo.setCurrentIndex(max(0, modus_combo.findData(cur_modus)))
+            add_row("Modus:", "modus", modus_combo)
+
+            wert_lbl = QLabel("Wert:")
             wert_edit = QLineEdit(str(node.get("wert", "0")))
             wert_edit.setProperty("class", "input_dark")
-            add_row("Wert:", "wert", wert_edit)
+            form.addRow(wert_lbl, wert_edit)
+            felder["wert"] = wert_edit
+
+            def _modus_changed():
+                braucht_wert = modus_combo.currentData() in ("set", "add", "sub")
+                wert_lbl.setVisible(braucht_wert)
+                wert_edit.setVisible(braucht_wert)
+            modus_combo.currentIndexChanged.connect(_modus_changed)
+            _modus_changed()
         elif typ == "loop":
             sp = QSpinBox()
             sp.setRange(1, 1000)
@@ -378,6 +397,8 @@ class WorkflowEditorDialogQt(QDialog):
                 elif key == "timer_var":
                     val = w.text()
                     node["timer_var"] = "" if val == "Timer wählen..." else val
+                elif isinstance(w, QComboBox):
+                    node[key] = w.currentData()
                 elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
                     node[key] = w.value()
                 elif isinstance(w, QLineEdit):
@@ -610,39 +631,67 @@ class WorkflowEditorDialogQt(QDialog):
         _fill_kat(wf, "workflow")
         return menu
 
-    def _variablen_picker_btn(self, current: str, parent) -> QPushButton:
+    def _variablen_picker_btn(self, current: str, parent, include_ocr=True, include_state=True) -> QPushButton:
         btn = QPushButton(current or "Bitte wählen...")
         btn.setObjectName("btn_logic_net")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         def show():
             menu = QMenu(parent)
-            st_sub = menu.addMenu("🚩 State")
-            try:
-                for n in sorted(self.bot.app.state.game_states.keys()):
-                    st_sub.addAction(n, lambda x=n: btn.setText(f"state::{x}"))
-            except:
-                st_sub.addAction("(keine)").setEnabled(False)
-            
-            ocr_sub = menu.addMenu("🔤 OCR")
-            if hasattr(self.bot.app.state, "get_all_ocr"):
-                ocr_vars = self.bot.app.state.get_all_ocr()
-            else:
-                ocr_vars = {**self.bot.app.state.ocr_values, **self.bot.app.state.template_ocr_values}
-            try:
-                for n in sorted(ocr_vars.keys()):
-                    ocr_sub.addAction(n, lambda x=n: btn.setText(f"ocr::{x}"))
-            except:
-                ocr_sub.addAction("(keine)").setEnabled(False)
-            
+            if include_state:
+                st_sub = menu.addMenu("🚩 State")
+                try:
+                    for n in sorted(self.bot.app.state.game_states.keys()):
+                        st_sub.addAction(n, lambda x=n: btn.setText(f"state::{x}"))
+                except:
+                    st_sub.addAction("(keine)").setEnabled(False)
+
+
+            if include_ocr:
+                ocr_sub = menu.addMenu("🔤 OCR")
+                if hasattr(self.bot.app.state, "get_all_ocr"):
+                    ocr_vars = self.bot.app.state.get_all_ocr()
+                else:
+                    ocr_vars = {**self.bot.app.state.ocr_values, **self.bot.app.state.template_ocr_values}
+                try:
+                    for n in sorted(ocr_vars.keys()):
+                        ocr_sub.addAction(n, lambda x=n: btn.setText(f"ocr::{x}"))
+                except:
+                    ocr_sub.addAction("(keine)").setEnabled(False)
+
             db_sub = menu.addMenu("📊 Daten")
             try:
                 from core import daten_manager as dm
-                for l in dm.alle_listen():
-                    ls = db_sub.addMenu(l["name"])
+                listen = dm.alle_listen()
+
+                global_sub = db_sub.addMenu("🌐 Global")
+                global_found = False
+                for l in listen:
+                    if l.get("typ") != "timer":
+                        continue
+                    zeilen = dm.zeilen_der_liste(l["id"])
+                    wert_zeilen = [z for z in zeilen if z["name"].startswith("[W] ")]
+                    if wert_zeilen:
+                        ls = global_sub.addMenu(f"⏳ {l['name']}")
+                        for z in wert_zeilen:
+                            display = z["name"][4:]
+                            ls.addAction(display, lambda ln=l["name"], zn=z["name"]: btn.setText(f"db::{ln}::{zn}"))
+                        global_found = True
+                if not global_found:
+                    global_sub.addAction("(keine)").setEnabled(False)
+
+                std_sub = db_sub.addMenu("📋 Standard")
+                std_found = False
+                for l in listen:
+                    if l.get("typ") != "daten":
+                        continue
+                    ls = std_sub.addMenu(l["name"])
                     for t in dm.transformationen_der_liste(l["id"]):
                         ls.addAction(t["name"], lambda ln=l["name"], tn=t["name"]: btn.setText(f"db::{ln}::{tn}"))
                     for b in dm.berechnungen_der_liste(l["id"]):
                         ls.addAction(b["name"], lambda ln=l["name"], bn=b["name"]: btn.setText(f"db::{ln}::{bn}"))
+                    std_found = True
+                if not std_found:
+                    std_sub.addAction("(keine)").setEnabled(False)
             except:
                 db_sub.addAction("(DB Fehler)").setEnabled(False)
             menu.exec(QCursor.pos())
@@ -661,12 +710,14 @@ class WorkflowEditorDialogQt(QDialog):
             for l in listen:
                 if l.get("typ") == "timer":
                     zeilen = sorted(dm.zeilen_der_liste(l["id"]), key=lambda x: x["name"].lower())
-                    if zeilen:
+                    timer_zeilen = [z for z in zeilen if not z["name"].startswith("[W] ")]
+                    if timer_zeilen:
                         sub = menu.addMenu(f"⏳ {l['name']}")
-                        for z in zeilen:
+                        for z in timer_zeilen:
                             found = True
                             var_path = f"db::{l['name']}::{z['name']}"
-                            sub.addAction(z["name"], lambda _, x=var_path: btn.setText(x))
+                            display = z["name"][4:] if z["name"].startswith("[T] ") else z["name"]
+                            sub.addAction(display, lambda x=var_path: btn.setText(x))
             if not found:
                 menu.addAction("(Keine Variable Listen gefunden)").setEnabled(False)
             menu.exec(QCursor.pos())

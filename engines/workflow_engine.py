@@ -354,20 +354,31 @@ class WorkflowEngine:
 
         elif typ == "set_value":
             var_name = node.get("variable", "")
-            wert = node.get("wert", "")
+            modus = node.get("modus", "set")
+            wert_str = str(node.get("wert", "0"))
             if var_name.startswith("db::"):
                 parts = var_name.split("::")
                 if len(parts) >= 3:
-                    listen_name = parts[1]
-                    key_name = parts[2]
+                    listen_name, key_name = parts[1], parts[2]
                     try:
                         from core import daten_manager as dm
                         listen = dm.alle_listen()
                         l_id = next((l["id"] for l in listen if l["name"] == listen_name), None)
                         if l_id is not None:
-                            dm.cache_schreiben(l_id, key_name, str(wert))
+                            if modus == "true":
+                                neuer_wert = "True"
+                            elif modus == "false":
+                                neuer_wert = "False"
+                            elif modus in ("add", "sub"):
+                                cache = dm.cache_lesen(l_id)
+                                aktuell = float(cache.get(key_name, ("0", 0))[0] or 0)
+                                delta = float(wert_str)
+                                neuer_wert = str(aktuell + delta if modus == "add" else aktuell - delta)
+                            else:
+                                neuer_wert = wert_str
+                            dm.cache_schreiben(l_id, key_name, neuer_wert)
                             if log_func:
-                                log_func(f"📝 Wert gesetzt: {key_name} = {wert}")
+                                log_func(f"📝 {key_name} {modus} {wert_str if modus not in ('true','false') else ''} = {neuer_wert}")
                     except Exception as e:
                         if log_func: log_func(f"!! Fehler beim Wert setzen: {e}")
             return "out"

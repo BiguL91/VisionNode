@@ -287,7 +287,13 @@ class NodeCanvas(QWidget):
             t_var = node.get("timer_var", "–")
             return f"{t_var} [{node.get('dauer', 60)}s]"
         elif typ == "set_value":
-            return f"{node.get('variable','?')} = {node.get('wert','0')}"
+            modus = node.get("modus", "set")
+            var = node.get("variable", "?").split("::")[-1]
+            if modus == "true":   return f"{var} = True"
+            if modus == "false":  return f"{var} = False"
+            if modus == "add":    return f"{var} += {node.get('wert','0')}"
+            if modus == "sub":    return f"{var} -= {node.get('wert','0')}"
+            return f"{var} = {node.get('wert','0')}"
         elif typ == "loop":
             return f"n = {node.get('count', 5)}"
         return ""
