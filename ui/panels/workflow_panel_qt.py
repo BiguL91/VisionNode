@@ -18,8 +18,7 @@ class WorkflowPanel(QWidget):
     workflow_kopieren_requested   = pyqtSignal(str) # name
     workflow_loeschen_requested   = pyqtSignal(str) # name
     logic_network_edit_requested  = pyqtSignal(str, str, str, str, dict) # wf_type, wf_name, node_id, port_name, graph
-    logic_network_copy_requested  = pyqtSignal(dict) # graph
-    logic_network_paste_requested = pyqtSignal(str, str, str, str) # wf_type, wf_name, node_id, port_name
+    logic_network_copy_requested  = pyqtSignal(str, str, str, str, dict) # wf_type, wf_name, node_id, port_name, graph
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,7 +116,7 @@ class WorkflowPanel(QWidget):
         layout.addWidget(self.logic_liste)
 
         l_btns = QHBoxLayout()
-        self.btn_logic_bearbeiten = QPushButton("✎ Netzwerk bearbeiten")
+        self.btn_logic_bearbeiten = QPushButton("✎ Bearbeiten")
         self.btn_logic_bearbeiten.setObjectName("btn_sm")
         self.btn_logic_bearbeiten.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_logic_bearbeiten.clicked.connect(self._logic_bearbeiten)
@@ -128,12 +127,6 @@ class WorkflowPanel(QWidget):
         self.btn_logic_kopieren.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_logic_kopieren.clicked.connect(self._logic_kopieren)
         l_btns.addWidget(self.btn_logic_kopieren)
-
-        self.btn_logic_einfuegen = QPushButton("📋 Einfügen")
-        self.btn_logic_einfuegen.setObjectName("btn_paste_sm")
-        self.btn_logic_einfuegen.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_logic_einfuegen.clicked.connect(self._logic_einfuegen)
-        l_btns.addWidget(self.btn_logic_einfuegen)
 
         layout.addLayout(l_btns)
 
@@ -261,12 +254,5 @@ class WorkflowPanel(QWidget):
     def _logic_kopieren(self):
         idx = self.logic_liste.currentRow()
         if 0 <= idx < len(self._logic_data):
-            # Der 5. Parameter in _logic_data ist der Graph (dict)
-            self.logic_network_copy_requested.emit(self._logic_data[idx][4])
-
-    def _logic_einfuegen(self):
-        idx = self.logic_liste.currentRow()
-        if 0 <= idx < len(self._logic_data):
-            # wf_type, wf_name, node_id, port_name
-            d = self._logic_data[idx]
-            self.logic_network_paste_requested.emit(d[0], d[1], d[2], d[3])
+            # Alle Daten (wf_type, wf_name, node_id, port_name, graph) senden
+            self.logic_network_copy_requested.emit(*self._logic_data[idx])

@@ -161,7 +161,7 @@ class NodeParamDialog(QDialog):
                     for z in zeilen:
                         found = True
                         var_path = f"db::{l['name']}::{z['name']}"
-                        sub.addAction(z["name"], lambda _, x=var_path: self._timer_btn.setText(x))
+                        sub.addAction(z["name"], lambda *args, x=var_path: self._timer_btn.setText(x))
             if kat_global.isEmpty():
                 kat_global.addAction("(keine)").setEnabled(False)
 
@@ -181,7 +181,7 @@ class NodeParamDialog(QDialog):
                     for v in timer_vars:
                         found = True
                         var_path = f"db::{l['name']}::{v}"
-                        sub.addAction(v, lambda _, x=var_path: self._timer_btn.setText(x))
+                        sub.addAction(v, lambda *args, x=var_path: self._timer_btn.setText(x))
             if kat_daten.isEmpty():
                 kat_daten.addAction("(keine)").setEnabled(False)
 
