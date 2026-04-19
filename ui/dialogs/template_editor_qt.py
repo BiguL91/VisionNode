@@ -1092,6 +1092,7 @@ class TemplateEditorQt(QDialog):
                     alter_name=orig_alter_name, **speichern_kwargs)
             elif umbenennen:
                 self.template_engine.template_umbenennen(alter_name, n, gruppe_name)
+                self.bot.ocr_engine.template_ocr_umbenennen(alter_name, n)
                 orig_alter_name = alter_name
                 self.bearbeiten_name = n
                 self.template_engine.template_speichern(

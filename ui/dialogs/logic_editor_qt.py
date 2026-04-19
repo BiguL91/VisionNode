@@ -2,7 +2,7 @@
 FUP Logik-Netzwerk Editor (Qt).
 
 Verwendung:
-    dlg = LogicEditorDialogQt(name, graph, game_states, templates, ocr_vars, parent)
+    dlg = LogicEditorDialogQt(name, graph, templates, parent, bot)
     dlg.gespeichert.connect(lambda g: ...)  # g = {"nodes": [...], "connections": [...]}
     dlg.exec()
 """
@@ -21,7 +21,7 @@ from ui.widgets.logic_graph import LogicView, NodeItem, LogicScene, TYPEN_LABEL
 
 # ── Parameter-Dialog ──────────────────────────────────────────────────────────
 class NodeParamDialog(QDialog):
-    def __init__(self, node: NodeItem, game_states: dict, templates: list, ocr_vars: dict, parent=None, bot=None):
+    def __init__(self, node: NodeItem, templates: list, parent=None, bot=None):
         super().__init__(parent)
         self.setWindowTitle(f"Konfiguration: {node.data['typ'].upper()}")
         self.setObjectName("logic_param_dialog")
@@ -29,9 +29,7 @@ class NodeParamDialog(QDialog):
         self.setFixedSize(420, 260)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self._node = node
-        self._game_states = game_states
         self._templates = templates
-        self._ocr_vars = ocr_vars
         self._bot = bot
         self._setup_ui()
 
@@ -48,7 +46,10 @@ class NodeParamDialog(QDialog):
             lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
-            self._var_btn = QPushButton(self._node.data.get("variable", "Bitte wählen..."))
+            from ui.variable_source import display_name as _dn
+            cur_var = self._node.data.get("variable", "")
+            self._var_btn = QPushButton(_dn(cur_var) if cur_var else "Bitte wählen...")
+            self._var_btn.setProperty("_val", cur_var)
             self._var_btn.setObjectName("btn_logic_net")
             self._var_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._var_btn.clicked.connect(self._var_menu_zeigen)
@@ -128,76 +129,17 @@ class NodeParamDialog(QDialog):
         layout.addWidget(btn_apply)
 
     def _var_menu_zeigen(self):
+        from ui.variable_source import get_picker_data, build_var_menu
+
+        def on_select(full_val, disp):
+            self._var_btn.setProperty("_val", full_val)
+            self._var_btn.setText(disp or full_val)
+
+        data = get_picker_data(self._bot) if self._bot else {}
         menu = QMenu(self)
-
-        # 1. Game States (Sortiert)
-        s_menu = menu.addMenu("🚩 Game States")
-        for s in sorted(self._game_states.keys()):
-            act = QAction(s, self)
-            act.triggered.connect(lambda _, x=s: self._var_btn.setText(f"state::{x}"))
-            s_menu.addAction(act)
-
-        # 2. OCR Werte (Strukturiert und Sortiert)
-        o_menu = menu.addMenu("🔤 OCR Werte")
-
-        # a) Global (Feste Regionen)
-        glob_vars = sorted(self._ocr_vars.get("global", {}).keys())
-        if glob_vars:
-            g_sub = o_menu.addMenu("🌐 Global")
-            for o in glob_vars:
-                act = QAction(o, self)
-                act.triggered.connect(lambda _, x=o: self._var_btn.setText(f"ocr::{x}"))
-                g_sub.addAction(act)
-
-        # b) Template OCR (Gruppiert nach Kategorie -> Template)
-        t_vars = self._ocr_vars.get("template", {})
-        if t_vars:
-            # Struktur aufbauen: { Kategorie: { TemplateName: [Variablen] } }
-            struk = {}
-            for en, cfg in t_vars.items():
-                tn = cfg.get("template", "Unbekannt")
-                # Kategorie aus Bot-Settings holen (falls verfügbar)
-                kat = "Workflow"
-                if self._bot:
-                    kat = self._bot.template_engine.settings.get(tn, {}).get("kategorie", "Workflow").capitalize()
-
-                if kat not in struk: struk[kat] = {}
-                if tn not in struk[kat]: struk[kat][tn] = []
-                struk[kat][tn].append(en)
-
-            # Menü nach Kategorien aufbauen
-            for kat in sorted(struk.keys()):
-                k_menu = o_menu.addMenu(f"📁 {kat}")
-                for tn in sorted(struk[kat].keys()):
-                    t_menu = k_menu.addMenu(f"🖼 {tn}")
-                    for en in sorted(struk[kat][tn]):
-                        # Anzeige-Name säubern (Präfix entfernen)
-                        v_anzeige = en[len(tn)+1:] if en.startswith(f"{tn}_") else en
-                        act = QAction(v_anzeige, self)
-                        act.triggered.connect(lambda _, x=en: self._var_btn.setText(f"ocr::{x}"))
-                        t_menu.addAction(act)
-
-        # 3. Datenbank (Daten-Listen)
-        try:
-            from core import daten_manager as dm
-            listen = dm.alle_listen()
-            if listen:
-                d_menu = menu.addMenu("📋 Datenbank")
-                for l in listen:
-                    l_sub = d_menu.addMenu(f"📋 {l['name']}")
-                    spalten = dm.spalten_der_liste(l["id"])
-                    trans = dm.transformationen_der_liste(l["id"])
-                    vars = sorted(list(set([s["name"] for s in spalten] + [t["name"] for t in trans])))
-                    for v in vars:
-                        act = QAction(v, self)
-                        act.triggered.connect(lambda _, ln=l["name"], vn=v: self._var_btn.setText(f"db::{ln}::{vn}"))
-                        l_sub.addAction(act)
-        except Exception:
-            pass
-
+        build_var_menu(menu, data, on_select)
         if menu.isEmpty():
             menu.addAction("(Keine Variablen verfügbar)").setEnabled(False)
-
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
 
     def _timer_menu_zeigen(self):
@@ -271,7 +213,8 @@ class NodeParamDialog(QDialog):
     def _speichern(self):
         for key, widget in self._felder.items():
             if isinstance(widget, QPushButton):
-                val = widget.text()
+                actual = widget.property("_val")
+                val = actual if actual is not None else widget.text()
                 self._node.data[key] = "" if val in ("Bitte wählen...", "Timer wählen...") else val
             elif isinstance(widget, QLineEdit):
                 self._node.data[key] = widget.text()
@@ -292,21 +235,19 @@ class LogicEditorDialogQt(QDialog):
     gespeichert = pyqtSignal(dict)
 
     def __init__(self, name: str, graph: dict,
-                 game_states: dict | None = None,
                  templates: list | None = None,
-                 ocr_vars: dict | None = None,
                  parent=None,
-                 bot=None):
+                 bot=None,
+                 # Legacy-Parameter – werden ignoriert, bleiben für Rückwärtskompatibilität
+                 game_states=None, ocr_vars=None):
         super().__init__(parent)
         self.setWindowTitle(f"Logik-Netzwerk: {name}")
         self.setModal(False)
         self.resize(1100, 700)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
-        self._game_states = game_states or {}
         self._templates = templates or []
-        self._ocr_vars = ocr_vars or {}
-        
+
         # Falls bot ein Fenster ist, nimm die app-Instanz
         self._bot = bot
         if hasattr(bot, "app"):
@@ -387,7 +328,7 @@ class LogicEditorDialogQt(QDialog):
     def _edit_node(self, node: NodeItem):
         if node.data["typ"] in ("l_and", "l_or", "l_not", "l_result"):
             return
-        dlg = NodeParamDialog(node, self._game_states, self._templates, self._ocr_vars, self, bot=self._bot)
+        dlg = NodeParamDialog(node, self._templates, self, bot=self._bot)
         dlg.exec()
 
     def _update_live_preview(self):
@@ -440,13 +381,12 @@ class LogicEditorDialogQt(QDialog):
 
     @staticmethod
     def ausfuehren(name: str, graph: dict,
-                   game_states: dict | None = None,
                    templates: list | None = None,
-                   ocr_vars: dict | None = None,
                    parent=None,
-                   bot=None) -> dict | None:
+                   bot=None,
+                   game_states=None, ocr_vars=None) -> dict | None:
         result = {}
-        dlg = LogicEditorDialogQt(name, graph, game_states, templates, ocr_vars, parent, bot=bot)
+        dlg = LogicEditorDialogQt(name, graph, templates=templates, parent=parent, bot=bot)
         dlg.gespeichert.connect(lambda g: result.update(g))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return result

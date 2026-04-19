@@ -999,12 +999,7 @@ class TilesBotWindow(QMainWindow):
         dlg = LogicEditorDialogQt(
             name=f"{wf_name} → {port_name}",
             graph=graph,
-            game_states=self.app.state.game_states,
             templates=list(self.template_engine.templates.keys()),
-            ocr_vars={
-                "global": self.ocr_engine.regionen, 
-                "template": self.ocr_engine.template_ocr_konfigurationen()
-            },
             parent=self,
             bot=self.app
         )

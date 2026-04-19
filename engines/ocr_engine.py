@@ -368,6 +368,19 @@ class OCREngine:
         konfig.pop(eintrag_name, None)
         self._template_ocr_speichern(konfig)
 
+    def template_ocr_umbenennen(self, alter_name, neuer_name):
+        """Benennt alle OCR-Einträge eines Templates um (template-Feld + Entry-Key)."""
+        konfig = self._template_ocr_laden()
+        neu_konfig = {}
+        for key, cfg in konfig.items():
+            if cfg.get("template") == alter_name:
+                cfg = dict(cfg)
+                cfg["template"] = neuer_name
+                suffix = key[len(alter_name)+1:] if key.startswith(alter_name + "_") else key
+                key = f"{neuer_name}_{suffix}"
+            neu_konfig[key] = cfg
+        self._template_ocr_speichern(neu_konfig)
+
     def template_ocr_alle_loeschen(self, template_name):
         """Löscht alle OCR-Einträge, die zu einem bestimmten Template gehören."""
         konfig = self._template_ocr_laden()

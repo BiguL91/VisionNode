@@ -386,11 +386,11 @@ class WorkflowEditorDialogQt(QDialog):
                 if key == "operator":
                     node["operator"] = w[0]
                 elif key in ("template", "variable", "workflow", "index"):
-                    val = w.text()
+                    actual = w.property("_val")
+                    val = actual if actual is not None else w.text()
                     if key == "template":
                         node[key] = "" if val == "Bitte wählen..." else val
                     elif key == "index":
-                        # Standardwert "1" falls nichts gewählt
                         node[key] = "1" if val in ("Bitte wählen...", "") else val
                     else:
                         node[key] = "" if val == "Bitte wählen..." else val
@@ -455,12 +455,7 @@ class WorkflowEditorDialogQt(QDialog):
                     g = a_obj.get("logic_graph") or {"nodes": [], "connections": []}
                     dlg2 = LogicEditorDialogQt(
                         name=a_obj.get("port", "Port"), graph=g,
-                        game_states=self.bot.app.state.game_states,
                         templates=list(self.bot.template_engine.templates.keys()),
-                        ocr_vars={
-                            "global": self.bot.ocr_engine.regionen, 
-                            "template": self.bot.ocr_engine.template_ocr_konfigurationen()
-                        },
                         parent=parent_dlg, bot=self.bot)
                     dlg2.gespeichert.connect(lambda ng: (a_obj.__setitem__("logic_graph", ng), b.setText("★ Netzwerk")))
                     
@@ -632,69 +627,26 @@ class WorkflowEditorDialogQt(QDialog):
         return menu
 
     def _variablen_picker_btn(self, current: str, parent, include_ocr=True, include_state=True) -> QPushButton:
-        btn = QPushButton(current or "Bitte wählen...")
+        from ui.variable_source import get_picker_data, build_var_menu, display_name
+
+        def _set_val(full_val, disp=None):
+            btn.setProperty("_val", full_val)
+            btn.setText(disp or display_name(full_val) or "Bitte wählen...")
+
+        btn = QPushButton(display_name(current) if current else "Bitte wählen...")
+        btn.setProperty("_val", current or "")
         btn.setObjectName("btn_logic_net")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
         def show():
+            data = get_picker_data(self.bot)
             menu = QMenu(parent)
-            if include_state:
-                st_sub = menu.addMenu("🚩 State")
-                try:
-                    for n in sorted(self.bot.app.state.game_states.keys()):
-                        st_sub.addAction(n, lambda x=n: btn.setText(f"state::{x}"))
-                except:
-                    st_sub.addAction("(keine)").setEnabled(False)
-
-
-            if include_ocr:
-                ocr_sub = menu.addMenu("🔤 OCR")
-                if hasattr(self.bot.app.state, "get_all_ocr"):
-                    ocr_vars = self.bot.app.state.get_all_ocr()
-                else:
-                    ocr_vars = {**self.bot.app.state.ocr_values, **self.bot.app.state.template_ocr_values}
-                try:
-                    for n in sorted(ocr_vars.keys()):
-                        ocr_sub.addAction(n, lambda x=n: btn.setText(f"ocr::{x}"))
-                except:
-                    ocr_sub.addAction("(keine)").setEnabled(False)
-
-            db_sub = menu.addMenu("📊 Daten")
-            try:
-                from core import daten_manager as dm
-                listen = dm.alle_listen()
-
-                global_sub = db_sub.addMenu("🌐 Global")
-                global_found = False
-                for l in listen:
-                    if l.get("typ") != "timer":
-                        continue
-                    zeilen = dm.zeilen_der_liste(l["id"])
-                    wert_zeilen = [z for z in zeilen if z["name"].startswith("[W] ")]
-                    if wert_zeilen:
-                        ls = global_sub.addMenu(f"⏳ {l['name']}")
-                        for z in wert_zeilen:
-                            display = z["name"][4:]
-                            ls.addAction(display, lambda ln=l["name"], zn=z["name"]: btn.setText(f"db::{ln}::{zn}"))
-                        global_found = True
-                if not global_found:
-                    global_sub.addAction("(keine)").setEnabled(False)
-
-                std_sub = db_sub.addMenu("📋 Standard")
-                std_found = False
-                for l in listen:
-                    if l.get("typ") != "daten":
-                        continue
-                    ls = std_sub.addMenu(l["name"])
-                    for t in dm.transformationen_der_liste(l["id"]):
-                        ls.addAction(t["name"], lambda ln=l["name"], tn=t["name"]: btn.setText(f"db::{ln}::{tn}"))
-                    for b in dm.berechnungen_der_liste(l["id"]):
-                        ls.addAction(b["name"], lambda ln=l["name"], bn=b["name"]: btn.setText(f"db::{ln}::{bn}"))
-                    std_found = True
-                if not std_found:
-                    std_sub.addAction("(keine)").setEnabled(False)
-            except:
-                db_sub.addAction("(DB Fehler)").setEnabled(False)
+            build_var_menu(menu, data, _set_val,
+                           include_state=include_state,
+                           include_ocr=include_ocr,
+                           include_db=True)
             menu.exec(QCursor.pos())
+
         btn.clicked.connect(show)
         return btn
 
