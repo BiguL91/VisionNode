@@ -152,9 +152,26 @@ class TemplateEditorQt(QDialog):
         btn_states.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_states.clicked.connect(self._states_konfigurieren)
 
+        # ── Neu aufnehmen ────────────────────────────────────────────────────
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.VLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        line.setFixedWidth(2)
+        line.setStyleSheet("background: #444; margin: 4px 2px;")
+        
+        btn_capture = QPushButton("📷")
+        btn_capture.setToolTip("Neu vom Bildschirm aufnehmen")
+        btn_capture.setObjectName("btn_capture_new")
+        btn_capture.setFixedSize(32, 32)
+        btn_capture.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_capture.clicked.connect(self._neue_aufnahme_starten)
+
         for btn in [self._btn_ignorieren, self._btn_klick, btn_roi, btn_ocr, btn_states]:
             tb_lay.addWidget(btn)
         tb_lay.addStretch()
+        tb_lay.addWidget(line)
+        tb_lay.addWidget(btn_capture)
+        
         root.addWidget(tb)
         root.addSpacing(6)
 
@@ -1155,3 +1172,33 @@ class TemplateEditorQt(QDialog):
         if self.einlern_modus_callback:
             self.einlern_modus_callback()
         super().closeEvent(event)
+
+    # ── Neue Aufnahme ────────────────────────────────────────────────────────
+
+    def _neue_aufnahme_starten(self):
+        """Minimiert den Editor und startet den Einlern-Modus im Hauptfenster."""
+        self.showMinimized()
+        if hasattr(self.parent(), "_einlern_modus_umschalten"):
+            # Wir signalisieren dem Parent, dass wir ein neues Bild wollen
+            # und setzen uns selbst als aktiven Editor.
+            self.parent()._geplanter_typ = self.typ
+            self.parent()._geplante_kategorie = self.kategorie
+            self.parent()._einlern_editor = self
+            self.parent()._einlern_modus_umschalten()
+
+    def neues_bild_setzen(self, bild_pil: Image.Image):
+        """Wird vom Hauptfenster aufgerufen, wenn ein neues Bild aufgenommen wurde."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        
+        # Reset der Regionen (optional, meistens will man bei neuem Bild auch neue Regionen)
+        self.ignore_regionen = []
+        self.klick_zone = [None]
+        self.klick_info.setText("Klick-Zone: nicht gesetzt")
+        self.klick_info.setProperty("class", "lbl_dim")
+        self.klick_info.setStyle(self.klick_info.style())
+        
+        tw, th = bild_pil.size
+        self._vorschau_setzen(bild_pil, tw, th)
+        self.bot._log("Neues Bild in Editor geladen.")

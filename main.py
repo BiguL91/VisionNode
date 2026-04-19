@@ -579,6 +579,7 @@ class TilesBotWindow(QMainWindow):
                 ausschnitt.putalpha(mask)
 
             self._aktueller_ausschnitt = (ausschnitt, x1 - x0, y1 - y0, form)
+            
             # Öffne/update Template-Editor
             try:
                 editor_offen = (hasattr(self, "_einlern_editor") and
@@ -587,8 +588,11 @@ class TilesBotWindow(QMainWindow):
             except RuntimeError:
                 editor_offen = False
                 self._einlern_editor = None
+                
             if editor_offen:
-                self._einlern_editor._vorschau_setzen(ausschnitt, x1 - x0, y1 - y0)
+                # Nutzt die neue Methode zur sauberen Bild-Aktualisierung
+                self._einlern_editor.neues_bild_setzen(ausschnitt)
+                self._einlern_modus_umschalten()
             else:
                 self._einlern_dialog_oeffnen()
 
