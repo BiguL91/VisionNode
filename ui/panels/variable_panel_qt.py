@@ -169,33 +169,7 @@ class VariablePanel(QWidget):
 
         hat = False
 
-        # 1. Globale Variablen (aus Timer-Listen)
-        try:
-            from core.daten_manager import alle_listen, zeilen_der_liste
-            l_timer = [l for l in alle_listen() if l.get("typ") == "timer"]
-            if l_timer:
-                hat = True
-                eintraege = []
-                for l in l_timer:
-                    zeilen = zeilen_der_liste(l["id"])
-                    for z in zeilen:
-                        full_name = z["name"]
-                        display_name = full_name
-                        modus = "Timer" if not full_name.startswith("[W] ") else "Zahl"
-                        
-                        if full_name.startswith("[T] "): display_name = full_name[4:]
-                        elif full_name.startswith("[W] "): display_name = full_name[4:]
-                        
-                        # Technischer Name für Cache-Lookup
-                        cache_key = f"db::{l['name']}::{full_name}"
-                        eintraege.append((cache_key, display_name, modus, False))
-                
-                if eintraege:
-                    self._gruppe_hinzufuegen("_global_", "Globale Variablen", "#00c853", eintraege)
-        except Exception:
-            pass
-
-        # 2. Feste Regionen
+        # 1. Feste Regionen
         if regionen:
             hat = True
             eintraege = [
