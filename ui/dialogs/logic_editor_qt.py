@@ -143,52 +143,70 @@ class NodeParamDialog(QDialog):
         menu.exec(self._var_btn.mapToGlobal(self._var_btn.rect().bottomLeft()))
 
     def _timer_menu_zeigen(self):
-        """Spezialisierter Picker für Timer-Variablen – zwei Kategorien."""
+        """Strukturierter Picker für Timer-Variablen."""
         from core import daten_manager as dm
+        from ui.variable_source import get_picker_data, _get_or_create_sub_menu
+        
         menu = QMenu(self)
-        try:
-            listen = sorted(dm.alle_listen(), key=lambda x: x["name"].lower())
-            found = False
+        data = get_picker_data(self._bot) if self._bot else {}
+        
+        # ── 1. OCR-basierte Timer (aus Templates) ───────────────────────────
+        ocr_timers = data.get("ocr_template", {})
+        if ocr_timers:
+            ocr_sub = menu.addMenu("🔤 OCR Timer")
+            for kat, grp_dict in ocr_timers.items():
+                k_sub = ocr_sub.addMenu(f"📁 {kat}")
+                for grp, tmpl_dict in grp_dict.items():
+                    # Untergruppen auflösen
+                    if grp != "Keine Gruppe":
+                        parts = grp.replace("\\", "/").split("/")
+                        g_sub = _get_or_create_sub_menu(k_sub, parts)
+                    else:
+                        g_sub = k_sub.addMenu("📦 (ohne Gruppe)") if len(grp_dict) > 1 else k_sub
+                    
+                    for tmpl, entries in tmpl_dict.items():
+                        t_sub = g_sub.addMenu(f"🖼 {tmpl}")
+                        for disp, entry_key in entries:
+                            t_sub.addAction(disp, lambda *args, x=f"ocr::{entry_key}": self._timer_btn.setText(x))
 
-            # ── Kategorie 1: Globale Timer-Listen (typ == "timer") ────────────
-            kat_global = menu.addMenu("⏳ Globale Variable Liste")
-            for l in listen:
-                if l.get("typ") != "timer":
-                    continue
-                zeilen = sorted(dm.zeilen_der_liste(l["id"]), key=lambda x: x["name"].lower())
-                if zeilen:
-                    sub = kat_global.addMenu(l["name"])
-                    for z in zeilen:
-                        found = True
-                        var_path = f"db::{l['name']}::{z['name']}"
-                        sub.addAction(z["name"], lambda *args, x=var_path: self._timer_btn.setText(x))
-            if kat_global.isEmpty():
-                kat_global.addAction("(keine)").setEnabled(False)
+        # ── 2. Datenbank-Timer (Global & Standard) ─────────────────────────
+        db_menu = menu.addMenu("📊 Datenbank Timer")
+        
+        # Globale Timer-Listen
+        db_global = data.get("db_global", {})
+        if db_global:
+            g_sub = db_menu.addMenu("🌐 Global")
+            for liste, entries in db_global.items():
+                l_sub = g_sub.addMenu(f"⏳ {liste}")
+                for disp, stored in entries:
+                    var_path = f"db::{liste}::{stored}"
+                    l_sub.addAction(disp, lambda *args, x=var_path: self._timer_btn.setText(x))
+        
+        # Standard Daten-Listen (gefiltert nach Timer-Spalten)
+        db_std = data.get("db_standard", {})
+        if db_std:
+            s_sub = db_menu.addMenu("📋 Listen-Spalten")
+            for liste, vars_ in db_std.items():
+                # Hier müssen wir filtern, welche Spalten wirklich Timer sind
+                # Da wir das in data["db_standard"] nicht wissen, müssen wir dm fragen
+                l_id = next((l["id"] for l in dm.alle_listen() if l["name"] == liste), None)
+                if l_id:
+                    timer_vars = []
+                    spalten = dm.spalten_der_liste(l_id)
+                    for s in spalten:
+                        if s.get("typ") == "timer": timer_vars.append(s["name"])
+                    trans = dm.transformationen_der_liste(l_id)
+                    for t in trans:
+                        if t.get("typ") == "timer": timer_vars.append(t["name"])
+                    
+                    if timer_vars:
+                        l_sub = s_sub.addMenu(liste)
+                        for v in sorted(list(set(timer_vars)), key=str.casefold):
+                            var_path = f"db::{liste}::{v}"
+                            l_sub.addAction(v, lambda *args, x=var_path: self._timer_btn.setText(x))
 
-            # ── Kategorie 2: Standard Daten-Listen mit Timer-Spalten/Transforms ─
-            kat_daten = menu.addMenu("📊 Standard Daten-Liste")
-            for l in listen:
-                timer_vars = []
-                spalten = dm.spalten_der_liste(l["id"])
-                for s in spalten:
-                    if s.get("typ") == "timer": timer_vars.append(s["name"])
-                trans = dm.transformationen_der_liste(l["id"])
-                for t in trans:
-                    if t.get("typ") == "timer": timer_vars.append(t["name"])
-                timer_vars = sorted(list(set(timer_vars)), key=lambda x: x.lower())
-                if timer_vars:
-                    sub = kat_daten.addMenu(l["name"])
-                    for v in timer_vars:
-                        found = True
-                        var_path = f"db::{l['name']}::{v}"
-                        sub.addAction(v, lambda *args, x=var_path: self._timer_btn.setText(x))
-            if kat_daten.isEmpty():
-                kat_daten.addAction("(keine)").setEnabled(False)
-
-            if not found:
-                menu.addAction("(Keine Timer gefunden)").setEnabled(False)
-        except Exception as e:
-            menu.addAction(f"Fehler: {e}").setEnabled(False)
+        if menu.isEmpty():
+            menu.addAction("(Keine Timer verfügbar)").setEnabled(False)
 
         menu.exec(self._timer_btn.mapToGlobal(self._timer_btn.rect().bottomLeft()))
 

@@ -44,30 +44,47 @@ def get_picker_data(bot) -> dict:
     except Exception:
         pass
 
-    # ── OCR Template (gruppiert nach Kategorie → Template) ───────────────────
+    # ── OCR Template (gruppiert nach Kategorie → Gruppe → Template) ──────────
     try:
         t_konfig = bot.ocr_engine.template_ocr_konfigurationen()
-        grouped: dict[str, dict[str, list]] = {}
+        # Struktur: { kategorie: { gruppe: { template: [ (display, key) ] } } }
+        grouped: dict[str, dict[str, dict[str, list]]] = {}
+        
         for entry_key, cfg in t_konfig.items():
             tmpl = cfg.get("template", "?")
             try:
-                s = bot.template_engine.settings
-                kat = (s.get(tmpl, {}).get("kategorie")
-                       or s.get(tmpl.replace("_", "-"), {}).get("kategorie")
-                       or "Allgemein")
-                kat = kat.capitalize()
+                # Priorität 1: Die Gruppe aus dem Template-Objekt (basiert auf Dateipfad)
+                t_obj = bot.template_engine.templates.get(tmpl, {})
+                # Priorität 2: Die Gruppe aus den Settings (logische Gruppe)
+                t_set = bot.template_engine.settings.get(tmpl, {})
+                
+                kat = (t_set.get("kategorie") or "Allgemein").capitalize()
+                
+                # Wenn im Template-Objekt eine Gruppe steht (Pfad), nehmen wir die.
+                # Sonst die aus den Settings.
+                grp = t_obj.get("gruppe") or t_set.get("gruppe") or "Keine Gruppe"
             except Exception:
                 kat = "Allgemein"
+                grp = "Keine Gruppe"
+                
             display = entry_key[len(tmpl) + 1:] if entry_key.startswith(tmpl + "_") else entry_key
-            grouped.setdefault(kat, {}).setdefault(tmpl, []).append((display, entry_key))
+            
+            if kat not in grouped: grouped[kat] = {}
+            if grp not in grouped[kat]: grouped[kat][grp] = {}
+            if tmpl not in grouped[kat][grp]: grouped[kat][grp][tmpl] = []
+            
+            grouped[kat][grp][tmpl].append((display, entry_key))
 
-        data["ocr_template"] = {
-            kat: {
-                tmpl: sorted(entries, key=lambda e: e[0].casefold())
-                for tmpl, entries in sorted(tmpl_dict.items(), key=lambda x: x[0].casefold())
-            }
-            for kat, tmpl_dict in sorted(grouped.items(), key=lambda x: x[0].casefold())
-        }
+        # Sortieren
+        sorted_data = {}
+        for kat, grp_dict in sorted(grouped.items(), key=lambda x: x[0].casefold()):
+            sorted_data[kat] = {}
+            for grp, tmpl_dict in sorted(grp_dict.items(), key=lambda x: x[0].casefold()):
+                sorted_data[kat][grp] = {}
+                for tmpl, entries in sorted(tmpl_dict.items(), key=lambda x: x[0].casefold()):
+                    sorted_data[kat][grp][tmpl] = sorted(entries, key=lambda e: e[0].casefold())
+        
+        data["ocr_template"] = sorted_data
     except Exception:
         pass
 
@@ -140,6 +157,23 @@ def display_name(full_value: str, picker_data: dict | None = None) -> str:
     return full_value
 
 
+def _get_or_create_sub_menu(parent_menu, path_parts: list[str], icon: str = "📦") -> QMenu:
+    """Findet oder erstellt rekursiv ein Untermenü für eine Liste von Pfad-Teilen."""
+    current = parent_menu
+    for part in path_parts:
+        if not part: continue
+        # Suchen ob bereits ein Menü mit diesem Namen existiert
+        found = False
+        for action in current.actions():
+            if action.menu() and action.text() == f"{icon} {part}":
+                current = action.menu()
+                found = True
+                break
+        if not found:
+            current = current.addMenu(f"{icon} {part}")
+    return current
+
+
 def build_var_menu(menu, data: dict, on_select,
                    include_state=True, include_ocr=True, include_db=True):
     """
@@ -160,15 +194,24 @@ def build_var_menu(menu, data: dict, on_select,
         ocr_data = data.get("ocr_template", {})
         o_sub = menu.addMenu("🔤 OCR")
         if ocr_data:
-            for kat, tmpl_dict in ocr_data.items():
+            for kat, grp_dict in ocr_data.items():
                 k_sub = o_sub.addMenu(f"📁 {kat}")
-                for tmpl, entries in tmpl_dict.items():
-                    t_sub = k_sub.addMenu(f"🖼 {tmpl}")
-                    for disp, entry_key in entries:
-                        t_sub.addAction(
-                            disp,
-                            lambda d=disp, k=entry_key: on_select(f"ocr::{k}", d)
-                        )
+                for grp, tmpl_dict in grp_dict.items():
+                    # Untergruppen-Pfad auflösen (z.B. "Kampf/PVP" -> zwei Menü-Ebenen)
+                    if grp != "Keine Gruppe":
+                        parts = grp.replace("\\", "/").split("/")
+                        g_sub = _get_or_create_sub_menu(k_sub, parts)
+                    else:
+                        # Falls es andere Gruppen in dieser Kategorie gibt, "Keine Gruppe" separat zeigen
+                        g_sub = k_sub.addMenu("📦 (ohne Gruppe)") if len(grp_dict) > 1 else k_sub
+                        
+                    for tmpl, entries in tmpl_dict.items():
+                        t_sub = g_sub.addMenu(f"🖼 {tmpl}")
+                        for disp, entry_key in entries:
+                            t_sub.addAction(
+                                disp,
+                                lambda d=disp, k=entry_key: on_select(f"ocr::{k}", d)
+                            )
         else:
             o_sub.addAction("(keine)").setEnabled(False)
 
