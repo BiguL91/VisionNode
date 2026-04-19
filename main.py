@@ -1148,6 +1148,11 @@ class TilesBotWindow(QMainWindow):
             self.einstellungen.update(result)
             self.template_engine.matching_skalierung = result.get(
                 "matching_skalierung", self.template_engine.matching_skalierung)
+            
+            # Workflow-Delay sofort anwenden
+            if "workflow_node_delay" in result:
+                self.app.workflow_engine.node_delay = result["workflow_node_delay"]
+
             self.app.save_settings()
             # FPS des Display-Timers anpassen
             if hasattr(self, "_display_timer"):

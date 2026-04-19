@@ -16,6 +16,7 @@ class WorkflowEngine:
         self.master_workflows = {} # name -> graph (Schrittketten/Orchestrator)
         self.aktiver_master = None # Name des aktuell gewählten Master-Flows
         self.schedule  = []        # (Legacy/Kompabilität)
+        self.node_delay = 0.5      # Konfigurierbares Delay zwischen Nodes (Sekunden)
         
         # ── SPS-Gedächtnis (Instanz-Daten für Selector/Master-Flows) ──────────
         # Struktur: { "node_id_port_name": {"last_run": 0, "runs": 0} }
@@ -752,7 +753,8 @@ class WorkflowEngine:
 
                 # Kurzes Delay zwischen Nodes (außer Start-Node) – force_include bleibt aktiv!
                 if typ != "start" and (not laeuft_func or laeuft_func()):
-                    time.sleep(0.5)
+                    if self.node_delay > 0:
+                        time.sleep(self.node_delay)
 
                 # Nächsten Node über Verbindung suchen
                 aktueller_node = self._naechsten_node(node_id, port_aus, nodes_index, connections)

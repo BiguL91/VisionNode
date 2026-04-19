@@ -77,6 +77,7 @@ class TilesBotApp:
         self.ocr_engine = OCREngine()
         self.action_engine = ActionEngine()
         self.workflow_engine = WorkflowEngine()
+        self.workflow_engine.node_delay = self.settings.get("workflow_node_delay", 0.5)
         self.action_engine.verbinden()
 
         # Alle bekannten State-Variablen aus Template-Settings mit False vorbelegen

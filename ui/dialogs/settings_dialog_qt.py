@@ -90,6 +90,12 @@ class SettingsDialog(QDialog):
             [(0, "Aus"), (180, "Schwach"), (200, "Mittel"), (220, "Stark")],
             self._ein.get("uebergang_schwellwert", 200))
 
+        # ── Workflow ───────────────────────────────────────────────────────────
+        self._sektion(root, "Workflow")
+        self._delay_btns = self._radio_row(root, "Node-Delay:",
+            [(0.1, "0.1s"), (0.2, "0.2s"), (0.5, "0.5s"), (1.0, "1.0s")],
+            self._ein.get("workflow_node_delay", 0.5))
+
         # ── Debug & Logging ───────────────────────────────────────────────────
         self._sektion(root, "Debug & Logging")
         self._log_checks: dict[str, QCheckBox] = {}
@@ -141,6 +147,10 @@ class SettingsDialog(QDialog):
         for wert, rb in self._uebergang_btns.items():
             if rb.isChecked():
                 updates["uebergang_schwellwert"] = wert
+
+        for wert, rb in self._delay_btns.items():
+            if rb.isChecked():
+                updates["workflow_node_delay"] = wert
 
         for key, cb in self._log_checks.items():
             updates[key] = cb.isChecked()
