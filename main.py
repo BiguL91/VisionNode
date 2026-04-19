@@ -19,11 +19,108 @@ from PyQt6.QtWidgets import (
     QMessageBox, QScrollArea, QSizePolicy, QApplication, QFrame,
     QMenu, QDockWidget,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG, QSize
 from PyQt6.QtGui import (
     QImage, QPixmap, QFont, QCloseEvent,
     QAction,
 )
+
+class CustomDockTitleBar(QWidget):
+    """Eigene Titelzeile für Docks mit Einklapp-Funktion."""
+    def __init__(self, title, dock, parent=None):
+        super().__init__(parent)
+        self.dock = dock
+        self._collapsed = False
+        self.setFixedHeight(30)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 5, 0)
+        layout.setSpacing(6)
+
+        # Titel
+        self.lbl = QLabel(title)
+        self.lbl.setStyleSheet("font-weight: bold; color: #bbbbbb; background: transparent; border: none; font-size: 12px;")
+        layout.addWidget(self.lbl)
+        layout.addStretch()
+
+        # Button Style (Noch dezenter und kleiner)
+        btn_style = """
+            QPushButton { 
+                background-color: #333333; 
+                border: 1px solid #3d3d3d; 
+                color: #777777; 
+                font-family: 'Arial';
+                font-size: 10px; 
+                border-radius: 2px;
+                min-width: 18px;
+                min-height: 18px;
+            }
+            QPushButton:hover { 
+                background-color: #444444; 
+                color: #ffffff; 
+                border: 1px solid #555555;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+        """
+
+        # Einklapp-Button
+        self.btn_collapse = QPushButton("▲")
+        self.btn_collapse.setFixedSize(18, 18)
+        self.btn_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_collapse.setStyleSheet(btn_style)
+        self.btn_collapse.clicked.connect(self.toggle_collapse)
+        layout.addWidget(self.btn_collapse)
+
+        # Rauslösen-Button (Float)
+        self.btn_float = QPushButton("❐")
+        self.btn_float.setFixedSize(18, 18)
+        self.btn_float.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_float.setStyleSheet(btn_style)
+        self.btn_float.clicked.connect(lambda: self.dock.setFloating(not self.dock.isFloating()))
+        layout.addWidget(self.btn_float)
+
+        self.setStyleSheet("background-color: #2d2d2d; border-bottom: 1px solid #3d3d3d;")
+
+    def toggle_collapse(self):
+        content = self.dock.widget()
+        if not content: return
+
+        self._collapsed = not self._collapsed
+        
+        if self._collapsed:
+            # Größe merken
+            self._last_width = self.dock.width()
+            self._last_height = self.dock.height()
+            self.btn_collapse.setText("▼")
+            content.hide()
+            
+            # Dock auf Titelzeile fixieren
+            self.dock.setMinimumHeight(30)
+            self.dock.setMaximumHeight(30)
+            self.dock.setMinimumWidth(self._last_width)
+            self.dock.setMaximumWidth(self._last_width)
+        else:
+            self.btn_collapse.setText("▲")
+            
+            # 1. Erstmal alle Schranken auf
+            self.dock.setMinimumSize(0, 0)
+            self.dock.setMaximumSize(16777215, 16777215)
+            
+            # 2. Inhalt zeigen
+            content.show()
+            
+            # 3. Alte Größe forcieren (kurzzeitig fixieren, damit Qt sie übernimmt)
+            if hasattr(self, "_last_height"):
+                self.dock.resize(self._last_width, self._last_height)
+                # Kleiner Hack: Kurzzeitig als Minimum setzen, damit das Layout aufspringt
+                self.dock.setMinimumHeight(self._last_height)
+                QTimer.singleShot(50, lambda: self.dock.setMinimumHeight(0))
+        
+        self.dock.updateGeometry()
+        if self.dock.parentWidget():
+            self.dock.parentWidget().update()
 
 try:
     import cv2
@@ -176,11 +273,16 @@ class TilesBotWindow(QMainWindow):
         self._log("UI Layout zurückgesetzt.")
 
     def _create_dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, object_name: str) -> QDockWidget:
-        """Erstellt ein QDockWidget mit den gewünschten Eigenschaften."""
+        """Erstellt ein QDockWidget mit einer eigenen einklappbaren Titelzeile."""
         dock = QDockWidget(title, self)
         dock.setObjectName(object_name)
         dock.setWidget(widget)
         dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        
+        # Eigene Titelzeile setzen
+        title_bar = CustomDockTitleBar(title, dock)
+        dock.setTitleBarWidget(title_bar)
+        
         self.addDockWidget(area, dock)
         return dock
 

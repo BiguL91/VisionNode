@@ -133,6 +133,17 @@ QPushButton#btn_debug_toggle[active="true"] {
     color: #2a2a2a;
 }
 
+/* ── Dock Separators (Linien zwischen Panels) ─────────────────────────────── */
+QMainWindow::separator {
+    background: #2a2a2a;
+    width: 2px;
+    height: 2px;
+}
+
+QMainWindow::separator:hover {
+    background: #4fc3f7; /* Highlight-Farbe beim Drüberfahren */
+}
+
 /* Tooltips */
 QToolTip {
     background-color: #2a2a2a;
