@@ -62,6 +62,7 @@ class ListenBlock(QFrame):
         self.tabelle_widget = QWidget()
         self.tabelle_layout = QGridLayout(self.tabelle_widget)
         self.tabelle_layout.setSpacing(0)
+        self.tabelle_layout.setContentsMargins(0, 0, 0, 0)
         inhalt_layout.addWidget(self.tabelle_widget)
 
         root.addWidget(self.inhalt)
@@ -404,7 +405,11 @@ class DatenPanel(QWidget):
                 item.widget().deleteLater()
         self._bloecke.clear()
 
-        self._listen_cache = alle_listen()
+        # Listen laden und sortieren: Erst 'daten' (Standard), dann 'timer' (Global)
+        listen = alle_listen()
+        listen.sort(key=lambda x: (x.get("typ", "daten"), x["name"]))
+        self._listen_cache = listen
+        
         self._dropdown_aktualisieren()
 
         if not self._listen_cache:

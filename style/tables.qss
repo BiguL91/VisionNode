@@ -108,7 +108,7 @@ QLabel#daten_tab_header,
     color: #888888;
     font-size: 18px !important;
     font-weight: bold;
-    padding: 10px 8px;
+    padding: 2px 2px;
     background-color: #1e1e1e;
     border-bottom: 2px solid #2a2a2a;
 }
@@ -118,8 +118,8 @@ QLabel#daten_tab_cell,
     color: #cccccc;
     font-family: "Consolas", "Courier New", monospace;
     font-size: 16px !important;
-    padding: 10px 12px;
-    min-height: 35px;
+    padding: 2px 2px;
+    min-height: 20px;
 }
 
 QLabel#daten_tab_cell[alt="true"],

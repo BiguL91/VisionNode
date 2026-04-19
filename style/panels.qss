@@ -143,14 +143,14 @@ QLabel#daten_tab_header {
     color: #888888;
     font-size: 14px;
     font-weight: bold;
-    padding: 6px;
+    padding: 2px 2px;
     background-color: #1e1e1e;
 }
 
 QLabel#daten_tab_cell {
     color: #cccccc;
     font-size: 13px;
-    padding: 6px;
+    padding: 2px 2px;
     background-color: #1a1a1a;
 }
 
@@ -161,7 +161,7 @@ QLabel#daten_tab_cell[alt="true"] {
 QLabel#daten_tab_val {
     color: #cccccc;
     font-size: 13px;
-    padding: 6px;
+    padding: 2px 2px;
     font-family: "Consolas";
     background-color: #1a1a1a;
 }
