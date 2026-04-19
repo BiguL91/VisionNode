@@ -177,7 +177,9 @@ class OCREngine:
             avg_bright = np.mean(grau)
             std_dev = np.std(grau)
             
-            if modus in ["Timer", "Zahl"]:
+            adaptive_threshold = region.get("adaptive_threshold", modus in ["Timer", "Zahl"])
+            
+            if adaptive_threshold:
                 # Adaptives Thresholding ist viel robuster gegen transparente Hintergründe/Fortschrittsbalken.
                 # Es berechnet Schwellwerte lokal in kleinen Blöcken.
                 thresh = cv2.adaptiveThreshold(grau, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
@@ -245,22 +247,10 @@ class OCREngine:
             
             # Filtere nach Konfidenz (mind. 0.35)
             text_teile = []
+
             for res in ergebnisse:
                 if res[2] >= 0.35:
                     box, text, conf = res
-                    # Heuristik: '7' zu '1' korrigieren, wenn Box sehr schmal
-                    if modus == "Zahl" and "7" in text:
-                        # Berechne Breite/Höhe der Box
-                        w = box[1][0] - box[0][0]
-                        h = box[2][1] - box[0][1]
-                        if h > 0:
-                            ratio = w / h
-                            # Ein '1' ist meist < 0.35 breit, eine '7' meist > 0.5
-                            if text == "7" and ratio < 0.42:
-                                text = "1"
-                            elif text == "77" and ratio < 0.75:
-                                text = "11"
-                    
                     text_teile.append(text)
             
             text = " ".join(text_teile)
@@ -311,7 +301,11 @@ class OCREngine:
             m = re.search(r"[+-]?\d+", text)
             return m.group(0) if m else ""
         else:
-            return text.strip()
+            # Modus "Text": Radikale Sprach-Säuberung
+            # Behalte nur Lateinische Zeichen, Umlaute, Ziffern und gängige Sonderzeichen.
+            # Kyrillisch etc. wird hierdurch entfernt.
+            gesaeubert = re.sub(r"[^A-Za-z0-9ÄÖÜäöüß.,!?:;()\[\]{} \-+*/=%&@#_]", "", text)
+            return gesaeubert.strip()
 
     def alle_scannen(self, screenshot_pil):
         """Scannt alle definierten Regionen und gibt Ergebnisse direkt zurück."""

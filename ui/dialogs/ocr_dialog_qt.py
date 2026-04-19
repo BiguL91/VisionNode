@@ -210,6 +210,17 @@ class OCRKonfigDialog(QDialog):
         blocklist_row.addWidget(self._blocklist_edit)
         pl.addLayout(blocklist_row)
 
+        # Neue Checkbox für Binarisierung
+        proc_row = QHBoxLayout()
+        proc_row.setContentsMargins(70, 0, 0, 0)
+        self._cb_adaptive = QCheckBox("Adaptives Thresholding")
+        self._cb_adaptive.setToolTip("Berechnet Schwellenwerte lokal (besser bei Verläufen/Hintergründen)")
+        self._cb_adaptive.stateChanged.connect(self._ocr_vorschau_starten)
+
+        proc_row.addWidget(self._cb_adaptive)
+        proc_row.addStretch()
+        pl.addLayout(proc_row)
+
         root.addWidget(param_frame)
 
         # Farbfilter
@@ -492,6 +503,7 @@ class OCRKonfigDialog(QDialog):
                 v.get("decoder", "greedy"),      # index 15
                 v.get("beamWidth", 5),           # index 16
                 v.get("blocklist", ""),          # index 17
+                v.get("adaptive_threshold", v.get("adaptive_threshold", v.get("modus") in ["Timer", "Zahl"])) # index 18
             ])
         self._tabelle_aktualisieren()
 
