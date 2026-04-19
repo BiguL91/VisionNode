@@ -308,15 +308,6 @@ class TilesBotWindow(QMainWindow):
         
         # 2. Rechts: OCR & States
         self.ocr_panel = VariablePanelQt()
-        # Header-Button für OCR Panel (Nur Aktive)
-        self._btn_nur_aktive = QPushButton("Nur Aktive")
-        self._btn_nur_aktive.setCheckable(True)
-        self._btn_nur_aktive.setObjectName("btn_sm")
-        self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_nur_aktive.toggled.connect(self._nur_aktive_toggle)
-        # Da QDockWidget keine direkte Header-Extra-API hat, packen wir den Button 
-        # in das Panel-Widget oder lassen ihn weg. Für jetzt lassen wir ihn im Panel.
-        
         self._dock_ocr = self._create_dock("OCR Variablen", self.ocr_panel, Qt.DockWidgetArea.RightDockWidgetArea, "dock_ocr")
 
         self.state_panel = StatePanelQt()
@@ -614,8 +605,7 @@ class TilesBotWindow(QMainWindow):
         self.ocr_panel.werte_aktualisieren(
             alle_ocr_werte,
             match_namen,
-            ocr_konf,
-            self._nur_aktive_variablen,
+            ocr_konf
         )
         self.state_panel.werte_aktualisieren(dict(self.app.state.game_states))
 
