@@ -668,7 +668,7 @@ class WorkflowEditorDialogQt(QDialog):
                             var_path = f"db::{l['name']}::{z['name']}"
                             sub.addAction(z["name"], lambda _, x=var_path: btn.setText(x))
             if not found:
-                menu.addAction("(Keine Timer-Listen gefunden)").setEnabled(False)
+                menu.addAction("(Keine Variable Listen gefunden)").setEnabled(False)
             menu.exec(QCursor.pos())
         btn.clicked.connect(show)
         return btn

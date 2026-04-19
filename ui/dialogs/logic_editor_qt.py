@@ -209,7 +209,7 @@ class NodeParamDialog(QDialog):
             found = False
 
             # ── Kategorie 1: Globale Timer-Listen (typ == "timer") ────────────
-            kat_global = menu.addMenu("⏳ Globale Timer Liste")
+            kat_global = menu.addMenu("⏳ Globale Variable Liste")
             for l in listen:
                 if l.get("typ") != "timer":
                     continue

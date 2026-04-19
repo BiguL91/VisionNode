@@ -38,6 +38,7 @@ except ImportError:
 # ── Core ─────────────────────────────────────────────────────────────────────
 from core.main_app import TilesBotApp
 from core.helpers import _template_farbe
+from core.daten_manager import alle_listen, cache_lesen, sekunden_formatieren
 
 # ── Qt Panels ─────────────────────────────────────────────────────────────────
 from ui.panels.log_panel_qt      import LogPanel      as LogPanelQt
@@ -396,6 +397,7 @@ class TilesBotWindow(QMainWindow):
         self.daten_panel.liste_bearbeiten_requested.connect(self._liste_bearbeiten_dialog)
         self.daten_panel.timer_bearbeiten_requested.connect(self._timer_bearbeiten_dialog)
         self.daten_panel.einheiten_requested.connect(self._einheiten_dialog)
+        self.daten_panel.geandert.connect(self._panels_aktualisieren)
 
     # ── Display Loop ──────────────────────────────────────────────────────────
 
@@ -444,6 +446,31 @@ class TilesBotWindow(QMainWindow):
             )
 
         alle_ocr_werte = {**self.app.state.ocr_values, **self.app.state.template_ocr_values}
+        
+        # Globale Variablen (DB) hinzufügen
+        try:
+            jetzt = time.time()
+            for l in alle_listen():
+                if l.get("typ") == "timer":
+                    cache = cache_lesen(l["id"])
+                    for var_name, (val, ts) in cache.items():
+                        if var_name.endswith("._deadline"): continue
+                        
+                        full_key = f"db::{l['name']}::{var_name}"
+                        is_timer = not var_name.startswith("[W] ")
+                        
+                        if is_timer:
+                            de = cache.get(f"Timer.{var_name}._deadline")
+                            if de:
+                                rest = max(0, int(float(de[0]) - jetzt))
+                                alle_ocr_werte[full_key] = sekunden_formatieren(rest)
+                            else:
+                                alle_ocr_werte[full_key] = "–"
+                        else:
+                            alle_ocr_werte[full_key] = str(val)
+        except Exception:
+            pass
+
         self.ocr_panel.werte_aktualisieren(
             alle_ocr_werte,
             match_namen,
@@ -1135,7 +1162,8 @@ class TilesBotWindow(QMainWindow):
     def _timer_bearbeiten_dialog(self, listen_dict: dict):
         dlg = TimerEditorDialogQt(listen_dict, parent=self)
         dlg.gespeichert.connect(self.daten_panel.listen_neu_laden)
-        
+        dlg.finished.connect(self.daten_panel.listen_neu_laden)
+
         if not hasattr(self, "_active_dialogs"):
             self._active_dialogs = []
         self._active_dialogs.append(dlg)

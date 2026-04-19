@@ -93,22 +93,33 @@ class ListenBlock(QFrame):
 
             for r, z in enumerate(zeilen_namen):
                 is_alt = r % 2 != 0
-                lbl_name = QLabel(z["name"])
+                full_name = z["name"]
+                display_name = full_name
+                is_timer = not full_name.startswith("[W] ") # Standardmäßig Timer, außer [W]
+                
+                if full_name.startswith("[T] "): display_name = full_name[4:]
+                elif full_name.startswith("[W] "): display_name = full_name[4:]
+
+                lbl_name = QLabel(display_name)
                 lbl_name.setObjectName("daten_tab_cell")
                 lbl_name.setProperty("class", "daten_tab_cell")
                 lbl_name.setProperty("alt", is_alt)
                 self.tabelle_layout.addWidget(lbl_name, r, 0)
 
-                val = ocr_werte.get(z["name"], ("—", 0))[0]
-                anzeige = sekunden_formatieren(val) if val not in ("—", "?") else val
+                val = ocr_werte.get(full_name, ("—", 0))[0]
+                if is_timer and val not in ("—", "?"):
+                    anzeige = sekunden_formatieren(val)
+                else:
+                    anzeige = str(val)
+
                 lbl_val = QLabel(anzeige)
                 lbl_val.setObjectName("daten_tab_val")
                 lbl_val.setProperty("class", "daten_tab_val")
                 lbl_val.setProperty("alt", is_alt)
-                lbl_val.setProperty("timer_val", True)
+                if is_timer: lbl_val.setProperty("timer_val", True)
                 lbl_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.tabelle_layout.addWidget(lbl_val, r, 1)
-                self._wert_labels[(z["name"], 0)] = lbl_val
+                self._wert_labels[(full_name, 0)] = lbl_val
             return
 
         if not spalten:
@@ -187,9 +198,16 @@ class ListenBlock(QFrame):
         
         if self.l.get("typ") == "timer":
             for r, z in enumerate(zeilen_namen):
-                val = ocr_werte.get(z["name"], ("—", 0))[0]
-                anzeige = sekunden_formatieren(val) if val not in ("—", "?") else val
-                lbl = self._wert_labels.get((z["name"], 0))
+                full_name = z["name"]
+                is_timer = not full_name.startswith("[W] ")
+                val = ocr_werte.get(full_name, ("—", 0))[0]
+                
+                if is_timer and val not in ("—", "?"):
+                    anzeige = sekunden_formatieren(val)
+                else:
+                    anzeige = str(val)
+                    
+                lbl = self._wert_labels.get((full_name, 0))
                 if lbl:
                     lbl.setText(anzeige)
             return
@@ -312,6 +330,7 @@ class DatenPanel(QWidget):
     liste_bearbeiten_requested = pyqtSignal(dict)   # listen_dict
     timer_bearbeiten_requested = pyqtSignal(dict)   # listen_dict
     einheiten_requested        = pyqtSignal()
+    geandert                   = pyqtSignal()       # NEU: Signal für Listen-Änderungen
 
     def __init__(self, bot_ref=None, parent=None):
         super().__init__(parent)
@@ -411,6 +430,7 @@ class DatenPanel(QWidget):
         self._listen_cache = listen
         
         self._dropdown_aktualisieren()
+        self.geandert.emit()  # Signal senden
 
         if not self._listen_cache:
             lbl = QLabel("Keine Listen vorhanden.")
@@ -434,14 +454,14 @@ class DatenPanel(QWidget):
         if not typ:
             return
 
-        titel = "Neue Liste" if typ == "daten" else "Neue Timer-Liste"
-        msg = "Name der Liste:" if typ == "daten" else "Name der Timer-Liste:"
+        titel = "Neue Liste" if typ == "daten" else "Neue Variable Liste"
+        msg = "Name der Liste:" if typ == "daten" else "Name der Variable Liste:"
         name, ok = QInputDialog.getText(self, titel, msg)
         
         if ok and name.strip():
-            liste_erstellen(name.strip(), typ=typ)
+            new_id = liste_erstellen(name.strip(), typ=typ)
             self._alles_aufbauen()
-            idx = self.dropdown.findData(self._listen_cache[-1]["id"])
+            idx = self.dropdown.findData(new_id)
             if idx >= 0:
                 self.dropdown.setCurrentIndex(idx)
 

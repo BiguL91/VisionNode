@@ -48,8 +48,8 @@ class DatenTypDialog(QDialog):
     TYPEN = [
         {"key": "daten", "label": "Standard Daten-Liste", "icon": "📊",
          "beschreibung": "Klassische Tabelle mit Spalten, Zeilen, OCR-Mapping und Berechnungen."},
-        {"key": "timer", "label": "Globale Timer Liste", "icon": "⏳",
-         "beschreibung": "Verwaltung von Countdowns, die im Workflow gesetzt und im FUP abgefragt werden können."},
+        {"key": "timer", "label": "Globale Variable Liste", "icon": "⏳",
+         "beschreibung": "Verwaltung von globalen Variablen und Countdowns, die im Workflow gesetzt und im FUP abgefragt werden können."},
     ]
 
     def __init__(self, parent=None):

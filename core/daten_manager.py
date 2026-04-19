@@ -29,12 +29,17 @@ def datenbank_initialisieren():
                 typ               TEXT NOT NULL DEFAULT 'daten'
             )
         """)
-        # typ-Spalte nachrüsten falls DB schon existiert
-        try:
-            conn.execute("ALTER TABLE listen ADD COLUMN typ TEXT NOT NULL DEFAULT 'daten'")
-            conn.commit()
-        except Exception:
-            pass
+        
+        # Spalten prüfen und nachrüsten
+        cursor = conn.execute("PRAGMA table_info(listen)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "typ" not in columns:
+            try:
+                conn.execute("ALTER TABLE listen ADD COLUMN typ TEXT NOT NULL DEFAULT 'daten'")
+                conn.commit()
+            except Exception:
+                pass
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS spalten (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,12 +52,16 @@ def datenbank_initialisieren():
                 position  INTEGER NOT NULL DEFAULT 0
             )
         """)
-        # format-Spalte nachrüsten falls DB schon existiert
-        try:
-            conn.execute("ALTER TABLE spalten ADD COLUMN format TEXT NOT NULL DEFAULT 'standard'")
-            conn.commit()
-        except Exception:
-            pass
+        
+        cursor = conn.execute("PRAGMA table_info(spalten)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "format" not in columns:
+            try:
+                conn.execute("ALTER TABLE spalten ADD COLUMN format TEXT NOT NULL DEFAULT 'standard'")
+                conn.commit()
+            except Exception:
+                pass
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS zeilen (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +71,7 @@ def datenbank_initialisieren():
                 UNIQUE(listen_id, name)
             )
         """)
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS transformationen (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +82,7 @@ def datenbank_initialisieren():
                 UNIQUE(listen_id, name)
             )
         """)
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS berechnungen (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,12 +93,16 @@ def datenbank_initialisieren():
                 UNIQUE(listen_id, name)
             )
         """)
-        # typ-Spalte nachrüsten falls DB schon existiert
-        try:
-            conn.execute("ALTER TABLE berechnungen ADD COLUMN typ TEXT NOT NULL DEFAULT 'ausgabe'")
-            conn.commit()
-        except Exception:
-            pass
+
+        cursor = conn.execute("PRAGMA table_info(berechnungen)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "typ" not in columns:
+            try:
+                conn.execute("ALTER TABLE berechnungen ADD COLUMN typ TEXT NOT NULL DEFAULT 'ausgabe'")
+                conn.commit()
+            except Exception:
+                pass
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS werte_cache (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -824,4 +839,3 @@ def _einheit_zu_zahl(text):
     if ergebnis == int(ergebnis):
         return str(int(ergebnis))
     return str(round(ergebnis, 2))
-

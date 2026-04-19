@@ -20,7 +20,7 @@ class TimerEditorDialogQt(QDialog):
 
     def __init__(self, liste: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Timer verwalten: {liste['name']}")
+        self.setWindowTitle(f"Variablen verwalten: {liste['name']}")
         self.setModal(False)
         self.setMinimumWidth(400)
         self.setMinimumHeight(500)
@@ -61,10 +61,17 @@ class TimerEditorDialogQt(QDialog):
 
         # Buttons unten
         btn_row = QHBoxLayout()
-        btn_add = QPushButton("+ Timer hinzufügen")
-        btn_add.setObjectName("btn_new_sm")
-        btn_add.clicked.connect(self._timer_hinzufuegen)
-        btn_row.addWidget(btn_add)
+        btn_add_t = QPushButton("+ Timer")
+        btn_add_t.setObjectName("btn_new_sm")
+        btn_add_t.setToolTip("Einen neuen Countdown-Timer hinzufügen")
+        btn_add_t.clicked.connect(self._timer_hinzufuegen)
+        btn_row.addWidget(btn_add_t)
+
+        btn_add_w = QPushButton("+ Wert")
+        btn_add_w.setObjectName("btn_new_sm")
+        btn_add_w.setToolTip("Eine einfache Variable hinzufügen")
+        btn_add_w.clicked.connect(self._wert_hinzufuegen)
+        btn_row.addWidget(btn_add_w)
         
         btn_del_liste = QPushButton("✕ Liste löschen")
         btn_del_liste.setObjectName("btn_del_sm")
@@ -97,12 +104,23 @@ class TimerEditorDialogQt(QDialog):
         l = QHBoxLayout(f)
         l.setContentsMargins(6, 4, 6, 4)
 
-        lbl = QLabel("⏳")
+        # Icon basierend auf Präfix
+        name = z["name"]
+        icon = "⏳"
+        if name.startswith("[W] "): icon = "🔢"
+        
+        lbl = QLabel(icon)
         l.addWidget(lbl)
 
-        edit = QLineEdit(z["name"])
-        edit.setPlaceholderText("Timer Name (z.B. Cooldown_X)")
-        edit.editingFinished.connect(lambda zid=z["id"], e=edit: self._timer_umbenennen(zid, e.text()))
+        # Präfix für Anzeige entfernen
+        display_name = name
+        if name.startswith("[T] "): display_name = name[4:]
+        elif name.startswith("[W] "): display_name = name[4:]
+
+        edit = QLineEdit(display_name)
+        edit.setPlaceholderText("Name...")
+        # Beim Speichern das Präfix wieder hinzufügen
+        edit.editingFinished.connect(lambda zid=z["id"], e=edit, old=name: self._variable_speichern(zid, e.text(), old))
         l.addWidget(edit)
 
         btn_del = QPushButton("✕")
@@ -113,13 +131,23 @@ class TimerEditorDialogQt(QDialog):
         return f
 
     def _timer_hinzufuegen(self):
-        zeile_hinzufuegen(self._liste["id"], f"Timer_{len(self._zeilen)+1}")
+        zeile_hinzufuegen(self._liste["id"], f"[T] Timer_{len(self._zeilen)+1}")
         self._liste_aktualisieren()
 
-    def _timer_umbenennen(self, zid, neuer_name):
+    def _wert_hinzufuegen(self):
+        zeile_hinzufuegen(self._liste["id"], f"[W] Wert_{len(self._zeilen)+1}")
+        self._liste_aktualisieren()
+
+    def _variable_speichern(self, zid, neuer_name, alter_name_komplett):
         neuer_name = neuer_name.strip()
-        if neuer_name:
-            zeile_umbenennen(zid, neuer_name)
+        if not neuer_name: return
+        
+        # Präfix beibehalten
+        prefix = "[T] "
+        if alter_name_komplett.startswith("[W] "):
+            prefix = "[W] "
+            
+        zeile_umbenennen(zid, f"{prefix}{neuer_name}")
 
     def _timer_loeschen(self, zid):
         zeile_loeschen(zid)
@@ -134,8 +162,8 @@ class TimerEditorDialogQt(QDialog):
 
     def _liste_loeschen(self):
         msg = QMessageBox(self)
-        msg.setWindowTitle("Timer-Liste löschen")
-        msg.setText(f"Möchtest du die Timer-Liste '{self._liste['name']}' wirklich löschen?")
+        msg.setWindowTitle("Variable Liste löschen")
+        msg.setText(f"Möchtest du die Variable Liste '{self._liste['name']}' wirklich löschen?")
         msg.setIcon(QMessageBox.Icon.Question)
         btn_ja = msg.addButton("Ja", QMessageBox.ButtonRole.YesRole)
         btn_nein = msg.addButton("Nein", QMessageBox.ButtonRole.NoRole)
