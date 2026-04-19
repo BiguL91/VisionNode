@@ -18,7 +18,7 @@ MODUS_FARBEN = {
 }
 
 # Schriftgrößen für Doppelklick-Wechsel
-FONT_GROESSEN = [18, 14, 11]
+FONT_GROESSEN = [10, 9, 8]
 
 
 class VariableBlock(QFrame):
@@ -50,12 +50,13 @@ class VariableBlock(QFrame):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Header
+        # Header (24px Höhe wie Daten-Panel)
         self.header = QFrame()
         self.header.setObjectName("collapsible_header")
+        self.header.setFixedHeight(24)
         self.header.setCursor(Qt.CursorShape.PointingHandCursor)
         h_layout = QHBoxLayout(self.header)
-        h_layout.setContentsMargins(8, 6, 8, 6)
+        h_layout.setContentsMargins(6, 0, 6, 0)
 
         self.pfeil = QLabel("▼")
         self.pfeil.setObjectName("collapse_arrow")
@@ -69,7 +70,7 @@ class VariableBlock(QFrame):
         # Match-Indikator (kleiner Punkt)
         self.match_indicator = QLabel(" ●")
         self.match_indicator.setVisible(False)
-        self.match_indicator.setStyleSheet(f"color: {self.farbe}; font-size: 14px; font-weight: bold;")
+        self.match_indicator.setStyleSheet(f"color: {self.farbe}; font-size: 12px; font-weight: bold;")
         h_layout.addWidget(self.match_indicator)
         
         h_layout.addStretch()
@@ -85,23 +86,20 @@ class VariableBlock(QFrame):
         self.table.setShowGrid(False)
         self.table.setFrameShape(QFrame.Shape.NoFrame)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(30)
+        self.table.verticalHeader().setDefaultSectionSize(24)
         
         self.table.horizontalHeader().setVisible(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
-        
-        # Mouse events for double click on cells
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
         
         root.addWidget(self.table)
 
     def _on_cell_double_clicked(self, row, col):
         if col == 1:
-            # Key für diese Reihe finden
             for k, it in self._wert_labels.items():
                 if it.row() == row:
                     self._schrift_wechseln(k)
@@ -129,23 +127,21 @@ class VariableBlock(QFrame):
     def add_entry_at_row(self, r: int, entry_name: str, anzeige_name: str, modus: str):
         self._entry_modi[entry_name] = modus
 
-        # Spalte 0: Nur noch der Name (Modus entfernt)
-        c0_widget = QWidget()
-        c0_lay = QVBoxLayout(c0_widget)
-        c0_lay.setContentsMargins(8, 4, 8, 4)
-        c0_lay.setSpacing(0)
+        # Spalte 0: Name (10pt Standard)
+        item_n = QTableWidgetItem(anzeige_name)
+        item_n.setForeground(QColor("#cccccc"))
+        font_n = QFont()
+        font_n.setPointSize(10)
+        item_n.setFont(font_n)
+        item_n.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(r, 0, item_n)
         
-        lbl_n = QLabel(anzeige_name)
-        lbl_n.setProperty("class", "lbl_dim")
-        lbl_n.setStyleSheet("font-size: 12px; font-weight: bold;")
-        
-        c0_lay.addWidget(lbl_n)
-        self.table.setCellWidget(r, 0, c0_widget)
-        
-        # Spalte 1: Wert
+        # Spalte 1: Wert (10pt Standard, kein Consolas/Bold mehr)
         item_val = QTableWidgetItem("–")
         item_val.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        item_val.setFont(QFont("Consolas", FONT_GROESSEN[0], QFont.Weight.Bold))
+        font_v = QFont()
+        font_v.setPointSize(FONT_GROESSEN[0])
+        item_val.setFont(font_v)
         item_val.setForeground(QColor("#444444"))
         self.table.setItem(r, 1, item_val)
         
@@ -162,7 +158,6 @@ class VariableBlock(QFrame):
                 target_key = k
                 break
         if not target_key: return
-
         menu = QMenu(self)
         act_del = QAction("✕ Löschen", self)
         act_del.triggered.connect(lambda: self.loeschen_requested.emit(target_key))
@@ -174,32 +169,29 @@ class VariableBlock(QFrame):
         self._font_idx[name] = idx
         item = self._wert_labels.get(name)
         if item:
-            item.setFont(QFont("Consolas", FONT_GROESSEN[idx], QFont.Weight.Bold))
+            font = QFont()
+            font.setPointSize(FONT_GROESSEN[idx])
+            item.setFont(font)
 
     def wert_setzen(self, entry_name: str, wert: str, is_live: bool = False):
         item = self._wert_labels.get(entry_name)
         if not item: return
         if not wert: wert = "–"
-        
         modus = self._entry_modi.get(entry_name, "Text")
         hat_wert = wert not in ("–", "-", "?", "")
         item.setText(str(wert))
-        
         if not hat_wert:
             item.setForeground(QColor("#333333"))
         elif is_live:
-            # Farbe des Datentyps wenn aktiv
             color = MODUS_FARBEN.get(modus, "#ffffff")
             item.setForeground(QColor(color))
         else:
-            # Gedimmtes Grau wenn alt
             item.setForeground(QColor("#777777"))
 
     def set_matched(self, matched: bool):
         if self._is_matched == matched: return
         self._is_matched = matched
         self.match_indicator.setVisible(matched)
-        # Wir entfernen die Header-Styling-Änderungen, damit das Zuklapp-Symbol frei bleibt.
 
     def _update_table_height(self):
         h = self.table.rowCount() * self.table.verticalHeader().defaultSectionSize() + 2
@@ -221,34 +213,27 @@ class VariablePanel(QWidget):
         self._nur_aktive = False
         self._letzte_ocr_konfig_keys: set | None = None
         self._ocr_letzter_wert_zeit: dict[str, float] = {}
-
         self._setup_ui()
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-
-        # Header
         header = QWidget()
         header.setObjectName("panel_header_lite")
         h_lay = QHBoxLayout(header)
         h_lay.setContentsMargins(8, 4, 8, 4)
-        
         lbl = QLabel("OCR VARIABLEN")
         lbl.setProperty("class", "lbl_dim")
         h_lay.addWidget(lbl)
         h_lay.addStretch()
-
         self._btn_nur_aktive = QPushButton("Nur Aktive")
         self._btn_nur_aktive.setCheckable(True)
         self._btn_nur_aktive.setObjectName("btn_sm")
         self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_nur_aktive.toggled.connect(self.set_nur_aktive)
         h_lay.addWidget(self._btn_nur_aktive)
-        
         root.addWidget(header)
-
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -268,20 +253,17 @@ class VariablePanel(QWidget):
         self._bloecke.clear()
         self._reihenfolge.clear()
         self._letzte_ocr_konfig_keys = set(ocr_konfig.keys())
-
         hat = False
         if regionen:
             hat = True
             eintraege = [(n, n, r.get("modus", "Text"), True) for n, r in regionen.items()]
             block = self._block_hinzufuegen("_feste_", "Feste Regionen", "#888888", eintraege)
             block.loeschen_requested.connect(self.feste_region_loeschen)
-
         grp: dict[str, list] = {}
         for en, k in ocr_konfig.items():
             tn = k.get("template", en)
             if tn not in grp: grp[tn] = []
             if is_smart_func and is_smart_func(tn): continue
-
             display_name = en
             if "_" in en:
                 prefix = f"{tn}_"
@@ -290,28 +272,21 @@ class VariablePanel(QWidget):
                     teile = en.split("_", 1)
                     if len(teile) > 1: display_name = teile[1]
             grp[tn].append((en, display_name, k.get("modus", "Text"), True))
-
         for tn, eintraege in sorted(grp.items()):
             hat = True
             farbe = template_farbe_func(tn)
             block = self._block_hinzufuegen(tn, tn, farbe, eintraege)
             block.loeschen_requested.connect(self.template_ocr_loeschen)
-
         if not hat:
             lbl = QLabel("(Keine Variablen)")
             lbl.setProperty("class", "lbl_empty_hint")
             self.list_layout.insertWidget(0, lbl)
 
-    def werte_aktualisieren(self, ocr_werte: dict, aktuelle_matches: set,
-                             ocr_konfig: dict):
+    def werte_aktualisieren(self, ocr_werte: dict, aktuelle_matches: set, ocr_konfig: dict):
         jetzt = time.time()
-        # self._nur_aktive wird jetzt direkt über den Button-Toggle gesteuert
-
         aktuelle_keys = set(ocr_konfig.keys())
-
         if self._letzte_ocr_konfig_keys is not None and aktuelle_keys != self._letzte_ocr_konfig_keys:
             return 
-
         for full_key, wert in ocr_werte.items():
             if "_" in full_key:
                 m = re.search(r"^(.*)_(\d+)$", full_key)
@@ -325,28 +300,20 @@ class VariablePanel(QWidget):
                             short_name = base_name[len(prefix):] if base_name.startswith(prefix) else base_name
                             display_name = f"{short_name} [{idx}]"
                             self._bloecke[tn].add_entry(full_key, display_name, k.get("modus", "Text"))
-
         for key, block in self._bloecke.items():
             is_m = key in aktuelle_matches
             block.set_matched(is_m)
             for entry_name in block.entry_names():
                 val = ocr_werte.get(entry_name, "–") or "–"
-                
-                # Check ob der Wert live ist (in den letzten 2 Sek aktualisiert)
                 is_live = False
                 if val not in ("–", "-", "?", ""):
-                    # Wir gehen davon aus, dass wenn der Wert in ocr_werte ist, 
-                    # er "neu" ist, sofern das Template gematched ist
                     if is_m:
                         self._ocr_letzter_wert_zeit[entry_name] = jetzt
                         is_live = True
                     else:
-                        # Wenn Template nicht gematched, prüfen wir das Alter
                         last_t = self._ocr_letzter_wert_zeit.get(entry_name, 0)
                         is_live = (jetzt - last_t < 1.5)
-                
                 block.wert_setzen(entry_name, val, is_live=is_live)
-
         for tn in self._reihenfolge:
             block = self._bloecke.get(tn)
             if block:
