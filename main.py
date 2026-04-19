@@ -25,13 +25,14 @@ from PyQt6.QtGui import (
     QAction,
 )
 
-class CustomDockTitleBar(QWidget):
+class CustomDockTitleBar(QFrame):
     """Eigene Titelzeile für Docks mit Einklapp-Funktion."""
     def __init__(self, title, dock, parent=None):
         super().__init__(parent)
         self.dock = dock
         self._collapsed = False
         self.setFixedHeight(30)
+        self.setObjectName("dock_title_bar")
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 5, 0)
@@ -39,7 +40,7 @@ class CustomDockTitleBar(QWidget):
 
         # Titel
         self.lbl = QLabel(title)
-        self.lbl.setStyleSheet("font-weight: bold; color: #bbbbbb; background: transparent; border: none; font-size: 12px;")
+        self.lbl.setStyleSheet("font-weight: bold; color: #888888; background: transparent; border: none; font-size: 12px;")
         layout.addWidget(self.lbl)
         layout.addStretch()
 
@@ -81,7 +82,21 @@ class CustomDockTitleBar(QWidget):
         self.btn_float.clicked.connect(lambda: self.dock.setFloating(not self.dock.isFloating()))
         layout.addWidget(self.btn_float)
 
-        self.setStyleSheet("background-color: #2d2d2d; border-bottom: 1px solid #3d3d3d;")
+        self.setStyleSheet("""
+            QFrame#dock_title_bar {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2d2d2d, stop:1 #252525); 
+                border-bottom: 1px solid #3d3d3d;
+            }
+            QFrame#dock_title_bar:hover {
+                background-color: #444444;
+            }
+            QFrame#dock_title_bar QLabel {
+                color: #888888;
+            }
+            QFrame#dock_title_bar:hover QLabel {
+                color: #ffffff;
+            }
+        """)
 
     def toggle_collapse(self):
         content = self.dock.widget()
