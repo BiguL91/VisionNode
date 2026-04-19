@@ -129,6 +129,18 @@ def datenbank_initialisieren():
                 UNIQUE(listen_id, zeile_name, spalte_id)
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS eintraege (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                listen_id   INTEGER NOT NULL REFERENCES listen(id) ON DELETE CASCADE,
+                zeile_name  TEXT NOT NULL,
+                spalte_id   INTEGER NOT NULL REFERENCES spalten(id) ON DELETE CASCADE,
+                wert        TEXT,
+                gescant_am  REAL,
+                UNIQUE(listen_id, zeile_name, spalte_id)
+            )
+        """)
         conn.commit()
 
 
