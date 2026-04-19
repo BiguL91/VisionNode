@@ -98,6 +98,22 @@ class WorkflowEngine:
             self._schedule_speichern()
         self._workflows_speichern()
 
+    def workflow_kopieren(self, name):
+        """Erstellt eine Kopie eines Workflows mit einem neuen Namen."""
+        if name not in self.workflows:
+            return None
+        
+        neuer_name = f"{name} (Kopie)"
+        zaehler = 1
+        while neuer_name in self.workflows:
+            zaehler += 1
+            neuer_name = f"{name} (Kopie {zaehler})"
+            
+        import copy
+        self.workflows[neuer_name] = copy.deepcopy(self.workflows[name])
+        self._workflows_speichern()
+        return neuer_name
+
     # ── Master-Workflows ─────────────────────────────────────────────────────
 
     def master_workflow_speichern(self, name, graph, alter_name=None):

@@ -15,8 +15,11 @@ class WorkflowPanel(QWidget):
     master_aktiv_requested    = pyqtSignal(str)     # name
     workflow_neu_requested    = pyqtSignal()
     workflow_bearbeiten_requested = pyqtSignal(str) # name
+    workflow_kopieren_requested   = pyqtSignal(str) # name
     workflow_loeschen_requested   = pyqtSignal(str) # name
     logic_network_edit_requested  = pyqtSignal(str, str, str, str, dict) # wf_type, wf_name, node_id, port_name, graph
+    logic_network_copy_requested  = pyqtSignal(dict) # graph
+    logic_network_paste_requested = pyqtSignal(str, str, str, str) # wf_type, wf_name, node_id, port_name
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,15 +84,18 @@ class WorkflowPanel(QWidget):
         self.btn_wf_neu.setObjectName("btn_new_sm")
         self.btn_wf_bearbeiten = QPushButton("✎ Bearbeiten")
         self.btn_wf_bearbeiten.setObjectName("btn_sm")
+        self.btn_wf_kopieren   = QPushButton("❐ Kopieren")
+        self.btn_wf_kopieren.setObjectName("btn_copy_sm")
         self.btn_wf_loeschen  = QPushButton("✕")
         self.btn_wf_loeschen.setObjectName("btn_del_sm")
-        for btn in [self.btn_wf_neu, self.btn_wf_bearbeiten, self.btn_wf_loeschen]:
+        for btn in [self.btn_wf_neu, self.btn_wf_bearbeiten, self.btn_wf_kopieren, self.btn_wf_loeschen]:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             wf_btns.addWidget(btn)
         layout.addLayout(wf_btns)
 
         self.btn_wf_neu.clicked.connect(self.workflow_neu_requested)
         self.btn_wf_bearbeiten.clicked.connect(self._wf_bearbeiten)
+        self.btn_wf_kopieren.clicked.connect(self._wf_kopieren)
         self.btn_wf_loeschen.clicked.connect(self._wf_loeschen)
         self.workflow_liste.itemDoubleClicked.connect(self._wf_bearbeiten)
 
@@ -116,6 +122,19 @@ class WorkflowPanel(QWidget):
         self.btn_logic_bearbeiten.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_logic_bearbeiten.clicked.connect(self._logic_bearbeiten)
         l_btns.addWidget(self.btn_logic_bearbeiten)
+
+        self.btn_logic_kopieren = QPushButton("❐ Kopieren")
+        self.btn_logic_kopieren.setObjectName("btn_copy_sm")
+        self.btn_logic_kopieren.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_logic_kopieren.clicked.connect(self._logic_kopieren)
+        l_btns.addWidget(self.btn_logic_kopieren)
+
+        self.btn_logic_einfuegen = QPushButton("📋 Einfügen")
+        self.btn_logic_einfuegen.setObjectName("btn_paste_sm")
+        self.btn_logic_einfuegen.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_logic_einfuegen.clicked.connect(self._logic_einfuegen)
+        l_btns.addWidget(self.btn_logic_einfuegen)
+
         layout.addLayout(l_btns)
 
     # ── Öffentliche API ────────────────────────────────────────────────────────
@@ -224,6 +243,11 @@ class WorkflowPanel(QWidget):
         if name:
             self.workflow_bearbeiten_requested.emit(name)
 
+    def _wf_kopieren(self):
+        name = self._get_workflow_name()
+        if name:
+            self.workflow_kopieren_requested.emit(name)
+
     def _wf_loeschen(self):
         name = self._get_workflow_name()
         if name:
@@ -233,3 +257,16 @@ class WorkflowPanel(QWidget):
         idx = self.logic_liste.currentRow()
         if 0 <= idx < len(self._logic_data):
             self.logic_network_edit_requested.emit(*self._logic_data[idx])
+
+    def _logic_kopieren(self):
+        idx = self.logic_liste.currentRow()
+        if 0 <= idx < len(self._logic_data):
+            # Der 5. Parameter in _logic_data ist der Graph (dict)
+            self.logic_network_copy_requested.emit(self._logic_data[idx][4])
+
+    def _logic_einfuegen(self):
+        idx = self.logic_liste.currentRow()
+        if 0 <= idx < len(self._logic_data):
+            # wf_type, wf_name, node_id, port_name
+            d = self._logic_data[idx]
+            self.logic_network_paste_requested.emit(d[0], d[1], d[2], d[3])

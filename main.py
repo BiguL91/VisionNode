@@ -93,6 +93,7 @@ class TilesBotWindow(QMainWindow):
         self._aktueller_ausschnitt = None
         self._aktiver_template_panel = None
         self._nur_aktive_variablen   = False
+        self._logic_clipboard = None
 
         self._gui_aufbauen()
         self._connect_signals()
@@ -369,8 +370,11 @@ class TilesBotWindow(QMainWindow):
         self.workflow_panel.master_aktiv_requested.connect(self._master_aktiv_setzen)
         self.workflow_panel.workflow_neu_requested.connect(self._workflow_neu)
         self.workflow_panel.workflow_bearbeiten_requested.connect(self._workflow_bearbeiten)
+        self.workflow_panel.workflow_kopieren_requested.connect(self._workflow_kopieren)
         self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
         self.workflow_panel.logic_network_edit_requested.connect(self._logic_netzwerk_bearbeiten)
+        self.workflow_panel.logic_network_copy_requested.connect(self._logic_kopieren)
+        self.workflow_panel.logic_network_paste_requested.connect(self._logic_einfuegen)
 
         # Template-Panels
         self.template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
@@ -992,6 +996,49 @@ class TilesBotWindow(QMainWindow):
             self.workflow_engine.workflow_loeschen(name)
             self._panels_aktualisieren()
             self._log(f"Workflow gelöscht: {name}")
+
+    def _workflow_kopieren(self, name: str):
+        neuer_name = self.workflow_engine.workflow_kopieren(name)
+        if neuer_name:
+            self._panels_aktualisieren()
+            self._log(f"Workflow kopiert: {name} → {neuer_name}")
+
+    def _logic_kopieren(self, graph: dict):
+        import copy
+        self._logic_clipboard = copy.deepcopy(graph)
+        self._log("Logik-Netzwerk in Zwischenablage kopiert.")
+
+    def _logic_einfuegen(self, wf_type: str, wf_name: str, node_id: str, port_name: str):
+        if not self._logic_clipboard:
+            self._log("Zwischenablage ist leer.")
+            return
+            
+        # Workflow finden und updaten
+        wf_dict = self.workflow_engine.master_workflows if wf_type == "master" else self.workflow_engine.workflows
+        target_wf = wf_dict.get(wf_name)
+        if not target_wf: return
+        
+        import copy
+        gefundener_node = False
+        for node in target_wf.get("nodes", []):
+            if node.get("id") == node_id:
+                if node.get("typ") == "priority_selector":
+                    for aus in node.get("ausgaenge", []):
+                        if aus.get("port") == port_name:
+                            aus["logic_graph"] = copy.deepcopy(self._logic_clipboard)
+                            gefundener_node = True
+                            break
+        
+        if gefundener_node:
+            if wf_type == "master":
+                self.workflow_engine.master_workflow_speichern(wf_name, target_wf)
+            else:
+                self.workflow_engine.workflow_speichern(wf_name, target_wf)
+            
+            self._panels_aktualisieren()
+            self._log(f"Logik-Netzwerk in [{wf_name}] → {port_name} eingefügt.")
+        else:
+            self._log(f"Ziel-Node {node_id} nicht gefunden.")
 
     def _logic_netzwerk_bearbeiten(self, wf_type: str, wf_name: str, node_id: str, port_name: str, graph: dict):
         from ui.dialogs.logic_editor_qt import LogicEditorDialogQt

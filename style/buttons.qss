@@ -123,6 +123,32 @@ QPushButton#btn_move_sm:hover {
     color: #81d4fa;
 }
 
+/* ── Klein blau (Kopieren) ── */
+QPushButton#btn_copy_sm {
+    padding: 4px 8px;
+    min-width: 0;
+    color: #4fc3f7;
+    border-color: #1e88e5;
+}
+
+QPushButton#btn_copy_sm:hover {
+    background-color: #1a2a3a;
+    color: #81d4fa;
+}
+
+/* ── Klein lila (Einfügen) ── */
+QPushButton#btn_paste_sm {
+    padding: 4px 8px;
+    min-width: 0;
+    color: #b39ddb;
+    border-color: #673ab7;
+}
+
+QPushButton#btn_paste_sm:hover {
+    background-color: #2a1a3a;
+    color: #d1c4e9;
+}
+
 /* ── Start / Stop (Toolbar, bewusst groß) ── */
 QPushButton#btn_start {
     background-color: #2ea043;
