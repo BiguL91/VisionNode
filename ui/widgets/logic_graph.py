@@ -149,13 +149,36 @@ class NodeItem(QGraphicsItem):
             self.update()
 
     def _build_ports(self):
+        # WICHTIG: Qt über Geometrie-Änderung informieren (für boundingRect/Rendering)
+        self.prepareGeometryChange()
+
+        # Alte Ports entfernen falls vorhanden
+        for p in list(self._ports.values()):
+            if self.scene():
+                self.scene().removeItem(p)
+        self._ports.clear()
+
         typ = self.data["typ"]
-        ins, outs = PORTS.get(typ, ([], []))
+        # Falls in data["ins"] bereits Eingänge definiert sind, diese nehmen
+        if "ins" not in self.data:
+            ins_default, _ = PORTS.get(typ, ([], []))
+            self.data["ins"] = list(ins_default)
+
+        ins = self.data["ins"]
+        _, outs = PORTS.get(typ, ([], []))
+
+        # Dynamische Höhe berechnen
+        min_h = TH + 24 + len(ins) * 24 + 10
+        self._dynamic_height = max(NH, min_h)
+        h = self._dynamic_height
+
+        # Ports erstellen
         for i, name in enumerate(ins):
             py = TH + 24 + i * 24
             self._ports[name] = PortItem(self, name, "in", 0, py)
         for name in outs:
-            py = NH / 2 + 12
+            # Output-Port mittig zur AKTUELLEN Höhe h
+            py = h / 2
             self._ports[name] = PortItem(self, name, "out", NW, py)
 
     def get_port(self, name: str) -> PortItem | None:
@@ -165,10 +188,12 @@ class NodeItem(QGraphicsItem):
         return self.data["id"]
 
     def boundingRect(self) -> QRectF:
-        return QRectF(-2, -2, NW + 4, NH + 4)
+        h = getattr(self, "_dynamic_height", NH)
+        return QRectF(-2, -2, NW + 4, h + 4)
 
     def paint(self, painter: QPainter, option, widget=None):
         typ = self.data["typ"]
+        h = getattr(self, "_dynamic_height", NH)
         farbe = QColor(FARBEN.get(typ, "#555555"))
         selected = self.isSelected()
 
@@ -183,11 +208,11 @@ class NodeItem(QGraphicsItem):
 
         painter.setBrush(QBrush(QColor("#111111")))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(QRectF(3, 3, NW, NH), 5, 5)
+        painter.drawRoundedRect(QRectF(3, 3, NW, h), 5, 5)
 
         painter.setPen(QPen(border_color, border_width))
         painter.setBrush(QBrush(QColor("#252525")))
-        painter.drawRoundedRect(0, 0, NW, NH, 5, 5)
+        painter.drawRoundedRect(0, 0, NW, h, 5, 5)
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(farbe))
@@ -199,10 +224,10 @@ class NodeItem(QGraphicsItem):
 
         painter.setPen(QColor("#aaaaaa"))
         painter.setFont(QFont("Segoe UI", 8))
-        painter.drawText(8, TH + 4, NW - 16, NH - TH - 4,
+        painter.drawText(8, TH + 4, NW - 16, h - TH - 4,
                          Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, self._detail())
 
-        ins, _ = PORTS.get(typ, ([], []))
+        ins = self.data.get("ins", [])
         painter.setFont(QFont("Segoe UI", 7))
         painter.setPen(QColor("#666666"))
         for i, name in enumerate(ins):
@@ -336,7 +361,18 @@ class LogicScene(QGraphicsScene):
         self._connections.append(conn)
 
     def update_connections_for(self, node: NodeItem):
+        # Wenn die Node ihre Ports neu gebaut hat, sind die alten PortItem-Objekte 
+        # in den ConnectionItems ungültig. Wir müssen sie anhand des Namens neu finden.
         for conn in self._connections:
+            # Falls diese Verbindung an die geänderte Node geht:
+            if conn.src_port.node is node:
+                neuer_port = node.get_port(conn.src_port.port_name)
+                if neuer_port: conn.src_port = neuer_port
+            if conn.dst_port.node is node:
+                neuer_port = node.get_port(conn.dst_port.port_name)
+                if neuer_port: conn.dst_port = neuer_port
+            
+            # Pfad grafisch aktualisieren
             if conn.src_port.node is node or conn.dst_port.node is node:
                 conn.update_path()
 
@@ -405,6 +441,50 @@ class LogicScene(QGraphicsScene):
         conn = ConnectionItem(src, dst, cd)
         self.addItem(conn)
         self._connections.append(conn)
+        
+        # Prüfung auf Erweiterung (AND/OR)
+        self._check_and_expand_node(dst.node)
+
+    def _check_and_expand_node(self, node: NodeItem):
+        typ = node.data["typ"]
+        if typ not in ("l_and", "l_or"):
+            return
+        
+        ins = node.data.get("ins", [])
+        # Prüfen, ob alle Eingänge belegt sind
+        belegte_ports = {c.dst_port.port_name for c in self._connections if c.dst_port.node is node}
+        
+        if len(belegte_ports) == len(ins):
+            # Neuen Port hinzufügen
+            neuer_name = f"in{len(ins) + 1}"
+            ins.append(neuer_name)
+            node.data["ins"] = ins
+            node._build_ports()
+            # Alle Verbindungen für diese Node müssen grafisch aktualisiert werden, 
+            # da sich die Position der Ports (insb. Output) verschoben haben könnte
+            self.update_connections_for(node)
+
+    def _check_and_shrink_node(self, node: NodeItem):
+        typ = node.data["typ"]
+        if typ not in ("l_and", "l_or"):
+            return
+            
+        ins = node.data.get("ins", [])
+        if len(ins) <= 2:
+            return
+            
+        # Prüfen, ob der letzte Port unbesetzt ist
+        while len(ins) > 2:
+            letzter_port = ins[-1]
+            ist_belegt = any(c.dst_port.port_name == letzter_port for c in self._connections if c.dst_port.node is node)
+            if not ist_belegt:
+                ins.pop()
+            else:
+                break
+        
+        node.data["ins"] = ins
+        node._build_ports()
+        self.update_connections_for(node)
 
     def _redraw_connections(self):
         for item in list(self.items()):
@@ -445,8 +525,10 @@ class LogicScene(QGraphicsScene):
         menu = QMenu()
         act_del = menu.addAction("🗑 Verbindung löschen")
         def _loeschen():
+            dst_node = conn.dst_port.node
             if conn in self._connections:
                 self._connections.remove(conn)
             self.removeItem(conn)
+            self._check_and_shrink_node(dst_node)
         act_del.triggered.connect(_loeschen)
         menu.exec(pos)
