@@ -75,9 +75,13 @@ class TilesBotApp:
             log_enabled_func=lambda: self.settings.get("log_dateitransfers", True)
         )
         self.ocr_engine = OCREngine()
-        self.action_engine = ActionEngine()
+        self.action_engine = ActionEngine(log_func=self._log)
         self.workflow_engine = WorkflowEngine()
         self.workflow_engine.node_delay = self.settings.get("workflow_node_delay", 0.5)
+        
+        # Logging-Status für Klicks setzen
+        self.action_engine.log_enabled = self.settings.get("log_klick_koordinaten", False)
+        
         self.action_engine.verbinden()
 
         # Alle bekannten State-Variablen aus Template-Settings mit False vorbelegen

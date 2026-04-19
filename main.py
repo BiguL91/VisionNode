@@ -1156,6 +1156,10 @@ class TilesBotWindow(QMainWindow):
             # Workflow-Delay sofort anwenden
             if "workflow_node_delay" in result:
                 self.app.workflow_engine.node_delay = result["workflow_node_delay"]
+            
+            # Klick-Logging sofort anwenden
+            if "log_klick_koordinaten" in result:
+                self.app.action_engine.log_enabled = result["log_klick_koordinaten"]
 
             self.app.save_settings()
             # FPS des Display-Timers anpassen

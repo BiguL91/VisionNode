@@ -10,7 +10,7 @@ KLICKZONEN_DATEI = os.path.join("templates", "settings", "template_klicks.json")
 
 
 class ActionEngine:
-    def __init__(self, adb_pfad=ADB_PFAD, geraet=ADB_GERAET):
+    def __init__(self, adb_pfad=ADB_PFAD, geraet=ADB_GERAET, log_func=None):
         self.adb_pfad = adb_pfad
         self.geraet = geraet
         # Android-Auflösung (wird beim ersten Verbinden abgefragt)
@@ -20,6 +20,9 @@ class ActionEngine:
         self.fenster_breite = 1
         self.fenster_hoehe = 1
         self._klickzonen_cache = None  # Wird beim ersten Zugriff geladen
+        
+        self.log_func = log_func
+        self.log_enabled = False
 
     def _adb(self, *args):
         """Führt einen ADB-Befehl aus und gibt stdout zurück."""
@@ -60,16 +63,27 @@ class ActionEngine:
             # Landscape-Modus
             android_w = max(self.android_breite, self.android_hoehe)
             android_h = min(self.android_breite, self.android_hoehe)
+            
         ax = int(x / self.fenster_breite * android_w)
         ay = int(y / self.fenster_hoehe * android_h)
+        
+        if self.log_enabled and self.log_func:
+            self.log_func(f"[Klick-Log] Fenster({self.fenster_breite}x{self.fenster_hoehe}) -> "
+                          f"Android({android_w}x{android_h}) | Click({x},{y}) -> ADB({ax},{ay})")
+        
         return ax, ay
 
     # ── Aktionen ─────────────────────────────────────────────────────────────
 
     def tippen(self, x, y, umrechnen=True):
         """Tippt an Position (x, y). Koordinaten in Fenster-px oder Android-px."""
+        orig_x, orig_y = x, y
         if umrechnen:
             x, y = self._umrechnen(x, y)
+            
+        if self.log_enabled and self.log_func:
+            self.log_func(f"[Klick-Log] input tap {x} {y} (Fenster: {orig_x},{orig_y})")
+            
         self._adb("shell", "input", "tap", str(x), str(y))
 
     def wischen(self, x1, y1, x2, y2, dauer_ms=300, umrechnen=True):
