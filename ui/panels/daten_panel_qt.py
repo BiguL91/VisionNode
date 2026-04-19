@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QSizePolicy, QMessageBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QMenu
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QByteArray
 from PyQt6.QtGui import QFont, QColor, QAction
 
 from core.daten_manager import (
@@ -24,6 +24,7 @@ class ListenBlock(QFrame):
         self.l = listen_dict
         self.bot_ref = bot_ref
         self._aufgeklappt = True
+        self._is_loading = False
 
         self.setObjectName("collapsible_panel")
         self._setup_ui()
@@ -68,10 +69,26 @@ class ListenBlock(QFrame):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(24)
         
+        # Spaltenbreiten speichern (Wird bei jeder Änderung getriggert)
+        self.table.horizontalHeader().sectionResized.connect(self._save_header_state)
+        
         # Performance & Style
         self.table.setProperty("class", "daten_tabelle")
         
         root.addWidget(self.table)
+
+    def _save_header_state(self):
+        """Speichert den aktuellen Zustand des Tabellen-Headers (Breiten, etc.) in der DB."""
+        if self._is_loading: return
+        state = self.table.horizontalHeader().saveState()
+        cache_schreiben(self.l["id"], "UI.header_state", state.toHex().data().decode())
+
+    def _restore_header_state(self):
+        """Stellt den gespeicherten Zustand des Tabellen-Headers aus der DB wieder her."""
+        saved = cache_lesen(self.l["id"]).get("UI.header_state")
+        if saved:
+            state_hex = saved[0]
+            self.table.horizontalHeader().restoreState(QByteArray.fromHex(state_hex.encode()))
 
     def _toggle(self):
         self._aufgeklappt = not self._aufgeklappt
@@ -82,6 +99,7 @@ class ListenBlock(QFrame):
 
     def _tabelle_zeichnen(self):
         """Initialer Aufbau der Tabelle."""
+        self._is_loading = True
         ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
 
         if self.l.get("typ") == "timer":
@@ -107,6 +125,7 @@ class ListenBlock(QFrame):
                 self.table.setRowCount(1)
                 self.table.setHorizontalHeaderLabels(["Info"])
                 self.table.setItem(0, 0, QTableWidgetItem("Keine Spalten konfiguriert."))
+                self._is_loading = False
                 return
 
             self.table.setColumnCount(len(spalten) + 1)
@@ -121,7 +140,10 @@ class ListenBlock(QFrame):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                     self.table.setItem(r, ci + 1, item)
 
+        self._restore_header_state()
         self.werte_aktualisieren()
+        self._is_loading = False
+
         HEADER_H = 24
         ROW_H = self.table.verticalHeader().defaultSectionSize()
         h = HEADER_H + (self.table.rowCount() * ROW_H) + 2
