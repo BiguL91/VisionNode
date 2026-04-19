@@ -493,14 +493,16 @@ class WorkflowEngine:
                 res = n.get("wert", "")
             
             elif typ == "l_and":
-                v1 = self._wert_zu_bool(_get_input_val(nid, "in1"))
-                v2 = self._wert_zu_bool(_get_input_val(nid, "in2"))
-                res = v1 and v2
+                # Dynamisch alle Eingänge prüfen (Standard in1, in2)
+                ins = n.get("ins", ["in1", "in2"])
+                vals = [self._wert_zu_bool(_get_input_val(nid, p)) for p in ins]
+                res = all(vals) if vals else False
                 
             elif typ == "l_or":
-                v1 = self._wert_zu_bool(_get_input_val(nid, "in1"))
-                v2 = self._wert_zu_bool(_get_input_val(nid, "in2"))
-                res = v1 or v2
+                # Dynamisch alle Eingänge prüfen (Standard in1, in2)
+                ins = n.get("ins", ["in1", "in2"])
+                vals = [self._wert_zu_bool(_get_input_val(nid, p)) for p in ins]
+                res = any(vals) if vals else False
                 
             elif typ == "l_not":
                 v = self._wert_zu_bool(_get_input_val(nid, "in"))
