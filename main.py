@@ -440,6 +440,7 @@ class TilesBotWindow(QMainWindow):
                 dict(self.ocr_engine.regionen),
                 ocr_konf,
                 _template_farbe,
+                is_smart_func=self.template_engine._is_smart_recursive
             )
 
         alle_ocr_werte = {**self.app.state.ocr_values, **self.app.state.template_ocr_values}
@@ -1201,6 +1202,7 @@ class TilesBotWindow(QMainWindow):
                 dict(self.ocr_engine.regionen),
                 dict(self.ocr_engine.template_ocr_konfigurationen()),
                 _template_farbe,
+                is_smart_func=self.template_engine._is_smart_recursive
             )
         if hasattr(self, "workflow_panel"):
             self.workflow_panel.aktualisieren(

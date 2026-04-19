@@ -156,7 +156,7 @@ class VariablePanel(QWidget):
 
     # ── Öffentliche API ────────────────────────────────────────────────────────
 
-    def aktualisieren(self, regionen: dict, ocr_konfig: dict, template_farbe_func):
+    def aktualisieren(self, regionen: dict, ocr_konfig: dict, template_farbe_func, is_smart_func=None):
         """Vollständiger Rebuild — nur bei strukturellen Änderungen."""
         # Alle Widgets (Gruppen + leere Labels) aus dem Layout entfernen
         while self.list_layout.count() > 1:  # letztes Item = Stretch bleibt
@@ -183,6 +183,16 @@ class VariablePanel(QWidget):
         grp: dict[str, list] = {}
         for en, k in ocr_konfig.items():
             tn = k.get("template", en)
+            
+            # Sicherstellen, dass die Gruppe für das Template existiert (auch wenn sie leer startet)
+            if tn not in grp:
+                grp[tn] = []
+
+            # Wenn das Template "Smart" ist, überspringen wir den Basis-Eintrag in der statischen Liste.
+            # Diese Einträge werden stattdessen dynamisch in werte_aktualisieren mit Index ([1], [2]...) hinzugefügt.
+            if is_smart_func and is_smart_func(tn):
+                continue
+
             # Nur den OCR-Namen anzeigen (Teil nach dem ersten Unterstrich)
             display_name = en
             if "_" in en:
