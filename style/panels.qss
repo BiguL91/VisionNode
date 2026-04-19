@@ -1,5 +1,11 @@
 /* ── Panels & Layout ────────────────────────────────────────────────────────── */
 
+/* Kompakte Panel-Header für Dock-Widgets */
+QWidget#panel_header_lite {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a1a1a, stop:1 #121212);
+    border-bottom: 1px solid #222222;
+}
+
 /* Sidebar-Spalten */
 QFrame#sidebar {
     background-color: #141414;

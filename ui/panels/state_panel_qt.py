@@ -82,17 +82,37 @@ class StatePanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # Header mit "Nur Aktive" Button
+        header = QWidget()
+        header.setObjectName("panel_header_lite")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 4, 8, 4)
+        
+        lbl = QLabel("STATE VARIABLEN")
+        lbl.setProperty("class", "lbl_dim")
+        h_lay.addWidget(lbl)
+        h_lay.addStretch()
+
+        self._btn_nur_aktive = QPushButton("Nur Aktive")
+        self._btn_nur_aktive.setCheckable(True)
+        self._btn_nur_aktive.setObjectName("btn_sm")
+        self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_nur_aktive.toggled.connect(self.set_nur_aktive)
+        h_lay.addWidget(self._btn_nur_aktive)
+        
+        root.addWidget(header)
+
         # Scroll-Liste
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setMinimumHeight(200)  # Mindesthöhe für die Liste
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.list_container = QWidget()
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(4, 4, 4, 4)
         self.list_layout.setSpacing(2)
         self.list_layout.addStretch()
         self.scroll.setWidget(self.list_container)
-        root.addWidget(self.scroll)
+        root.addWidget(self.scroll, stretch=1)
 
         # Button-Leiste
         btn_bar = QHBoxLayout()

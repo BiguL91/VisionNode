@@ -355,7 +355,18 @@ class DatenPanel(QWidget):
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(4)
+        root.setSpacing(0)
+
+        # Header
+        header = QWidget()
+        header.setObjectName("panel_header_lite")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 4, 8, 4)
+        
+        lbl = QLabel("DATEN-LISTEN")
+        lbl.setProperty("class", "lbl_dim")
+        h_lay.addWidget(lbl)
+        root.addWidget(header)
 
         # Zeile 1: Dropdown
         zeile1 = QHBoxLayout()
@@ -370,7 +381,7 @@ class DatenPanel(QWidget):
 
         # Zeile 2: Buttons (strecken sich)
         zeile2 = QHBoxLayout()
-        zeile2.setContentsMargins(4, 0, 4, 0)
+        zeile2.setContentsMargins(4, 4, 4, 4)
         zeile2.setSpacing(4)
 
         self.btn_neu = QPushButton("+ Neu")
@@ -402,13 +413,14 @@ class DatenPanel(QWidget):
         # Scrollbarer Bereich
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.container = QWidget()
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setContentsMargins(4, 4, 4, 4)
         self.container_layout.setSpacing(4)
         self.container_layout.addStretch()
         self.scroll.setWidget(self.container)
-        root.addWidget(self.scroll)
+        root.addWidget(self.scroll, stretch=1)
 
     # ── Öffentliche API ────────────────────────────────────────────────────────
 

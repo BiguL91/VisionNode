@@ -26,9 +26,26 @@ class WorkflowPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Header
+        header = QWidget()
+        header.setObjectName("panel_header_lite")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 4, 8, 4)
+        
+        lbl = QLabel("WORKFLOWS")
+        lbl.setProperty("class", "lbl_dim")
+        h_lay.addWidget(lbl)
+        root.addWidget(header)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
+        root.addWidget(container, stretch=1)
 
         # ── Master-Flows ───────────────────────────────────────────────────────
         lbl_master = QLabel("MASTER-FLOWS (Schrittketten)")

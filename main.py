@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QPushButton, QLabel, QLineEdit, QComboBox, QInputDialog,
     QMessageBox, QScrollArea, QSizePolicy, QApplication, QFrame,
-    QMenu,
+    QMenu, QDockWidget,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG
 from PyQt6.QtGui import (
@@ -49,7 +49,6 @@ from ui.panels.template_panel_qt import TemplatePanel as TemplatePanelQt
 from ui.panels.daten_panel_qt    import DatenPanel    as DatenPanelQt
 
 # ── Qt Widgets / Dialoge ──────────────────────────────────────────────────────
-from ui.widgets.collapsible_panel  import CollapsiblePanel
 from ui.widgets.vorschau_label     import VorschauLabel, _frame_to_qpixmap
 from ui.widgets.klick_canvas       import KlickCanvas
 from ui.dialogs.template_editor_qt import TemplateEditorQt
@@ -102,6 +101,9 @@ class TilesBotWindow(QMainWindow):
         # Panels initial befüllen
         self._panels_aktualisieren()
 
+        # Menü & Toolbar
+        self._setup_menus()
+
         # Start-Sequenz
         if self.app.find_memu():
             self.app.start()
@@ -112,134 +114,162 @@ class TilesBotWindow(QMainWindow):
 
     # ── GUI Aufbau ────────────────────────────────────────────────────────────
 
+    def _setup_menus(self):
+        """Erstellt die Menüleiste."""
+        menubar = self.menuBar()
+        
+        # Ansicht-Menü
+        view_menu = menubar.addMenu("Ansicht")
+        
+        # Dock-Toggles
+        docks = [
+            ("Workflows", self._dock_workflows),
+            ("Templates", self._dock_templates),
+            ("OCR Variablen", self._dock_ocr),
+            ("State Variablen", self._dock_states),
+            ("Log", self._dock_log),
+            ("Daten-Listen", self._dock_daten),
+        ]
+        for title, dock in docks:
+            view_menu.addAction(dock.toggleViewAction())
+            
+        view_menu.addSeparator()
+        act_reset = QAction("Layout zurücksetzen", self)
+        act_reset.triggered.connect(self._reset_layout)
+        view_menu.addAction(act_reset)
+
+    def _reset_layout(self):
+        """Setzt das Dock-Layout auf den IDE-Klassik Standard zurück."""
+        # Alle Docks einblenden
+        self._dock_workflows.show()
+        self._dock_templates.show()
+        self._dock_ocr.show()
+        self._dock_states.show()
+        self._dock_log.show()
+        self._dock_daten.show()
+        
+        # Positionen erzwingen
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_workflows)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_ocr)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_states)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_log)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_daten)
+        
+        # Tabbing unten
+        self.tabifyDockWidget(self._dock_log, self._dock_daten)
+        self._dock_log.raise_()
+        
+        # Größen (ungefähr)
+        self.resizeDocks([self._dock_workflows, self._dock_templates], [300, 400], Qt.Orientation.Vertical)
+        self.resizeDocks([self._dock_ocr, self._dock_states], [400, 200], Qt.Orientation.Vertical)
+        
+        self._fenster_geometrie_speichern()
+        self._log("UI Layout zurückgesetzt.")
+
+    def _create_dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, object_name: str) -> QDockWidget:
+        """Erstellt ein QDockWidget mit den gewünschten Eigenschaften."""
+        dock = QDockWidget(title, self)
+        dock.setObjectName(object_name)
+        dock.setWidget(widget)
+        dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self.addDockWidget(area, dock)
+        return dock
+
     def _gui_aufbauen(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
-        root.setContentsMargins(8, 8, 8, 0)
-        root.setSpacing(0)
-
-        # ── Haupt-Splitter ────────────────────────────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(4)
-        splitter.setChildrenCollapsible(False)
-        root.addWidget(splitter, stretch=1)
-
-        # Linke Spalte (Workflows)
-        self._spalte_links = self._setup_linke_spalte()
-        self._spalte_links.setMinimumWidth(320)
-        splitter.addWidget(self._spalte_links)
-
-        # Mitte (Live-Vorschau)
+        # ── Zentrales Widget (Live-Vorschau) ──────────────────────────────────
         self._vorschau = VorschauLabel()
         self._vorschau.setMinimumWidth(400)
         
-        # In ScrollArea packen damit große Screenshots nicht gestaucht werden
         self._vorschau_scroll = QScrollArea()
         self._vorschau_scroll.setWidgetResizable(True)
         self._vorschau_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._vorschau_scroll.setWidget(self._vorschau)
+        self.setCentralWidget(self._vorschau_scroll)
+
+        # ── Docks Erstellen ───────────────────────────────────────────────────
         
-        splitter.addWidget(self._vorschau_scroll)
-
-        # Rechte Spalte 1 (Templates, OCR, State, Log)
-        self._spalte_rechts1 = self._setup_rechte_spalte1()
-        self._spalte_rechts1.setMinimumWidth(320)
-        splitter.addWidget(self._spalte_rechts1)
-
-        # Rechte Spalte 2 (Daten-Listen)
-        self._spalte_rechts2 = self._setup_rechte_spalte2()
-        self._spalte_rechts2.setMinimumWidth(450)
-        splitter.addWidget(self._spalte_rechts2)
-
-        splitter.setSizes([320, 800, 320, 450])
-        splitter.setStretchFactor(1, 1)  # Vorschau nimmt restlichen Platz
-
-        # ── Toolbar ───────────────────────────────────────────────────────────
-        toolbar = self._setup_toolbar()
-        root.addWidget(toolbar)
-
-    def _setup_linke_spalte(self) -> QWidget:
-        w = QWidget()
-        w.setMinimumWidth(200)
-        l = QVBoxLayout(w)
-        l.setContentsMargins(0, 0, 4, 0)
-        l.setSpacing(0)
-
-        panel = CollapsiblePanel("WORKFLOWS", expanded=True, stretch=True)
+        # 1. Links: Workflows & Templates
         self.workflow_panel = WorkflowPanelQt()
-        panel.content_layout.addWidget(self.workflow_panel)
-        l.addWidget(panel, stretch=1)
-        return w
+        self._dock_workflows = self._create_dock("Workflows", self.workflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_workflows")
 
-    def _setup_rechte_spalte1(self) -> QWidget:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(260)
-
-        container = QWidget()
-        l = QVBoxLayout(container)
-        l.setContentsMargins(4, 0, 0, 0)
-        l.setSpacing(0)
-
-        # Workflow-Templates
-        wt_panel = CollapsiblePanel("WORKFLOW TEMPLATES", expanded=True, stretch=True)
-        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=False)
-        def select_workflow():
-            self._aktiver_template_panel = self.template_panel
-            self.state_template_panel.auswahl_aufheben()
-        self.template_panel.liste.itemClicked.connect(select_workflow)
-        wt_panel.content_layout.addWidget(self.template_panel)
-        l.addWidget(wt_panel, stretch=2)
-
-        # State-Templates
-        st_panel = CollapsiblePanel("STATE TEMPLATES", expanded=True)
-        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=False)
-        def select_state():
-            self._aktiver_template_panel = self.state_template_panel
-            self.template_panel.auswahl_aufheben()
-        self.state_template_panel.liste.itemClicked.connect(select_state)
-        st_panel.content_layout.addWidget(self.state_template_panel)
-        l.addWidget(st_panel)
-
-        # Geteilte Template-Buttons (für beide Listen)
-        self._setup_shared_template_buttons(l)
-
-        # OCR-Variablen
-        ocr_panel_coll = CollapsiblePanel("OCR VARIABLEN", expanded=True, stretch=True)
+        self._widget_templates = self._setup_templates_widget()
+        self._dock_templates = self._create_dock("Templates", self._widget_templates, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates")
+        
+        # 2. Rechts: OCR & States
         self.ocr_panel = VariablePanelQt()
-        ocr_panel_coll.content_layout.addWidget(self.ocr_panel)
-        # Nur-Aktive Button im Header
+        # Header-Button für OCR Panel (Nur Aktive)
         self._btn_nur_aktive = QPushButton("Nur Aktive")
         self._btn_nur_aktive.setCheckable(True)
         self._btn_nur_aktive.setObjectName("btn_sm")
         self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_nur_aktive.toggled.connect(self._nur_aktive_toggle)
-        ocr_panel_coll.set_header_extra(self._btn_nur_aktive)
-        l.addWidget(ocr_panel_coll, stretch=2)
+        # Da QDockWidget keine direkte Header-Extra-API hat, packen wir den Button 
+        # in das Panel-Widget oder lassen ihn weg. Für jetzt lassen wir ihn im Panel.
+        
+        self._dock_ocr = self._create_dock("OCR Variablen", self.ocr_panel, Qt.DockWidgetArea.RightDockWidgetArea, "dock_ocr")
 
-        # State-Variablen
-        sv_panel = CollapsiblePanel("STATE VARIABLEN", expanded=True)
         self.state_panel = StatePanelQt()
-        sv_panel.content_layout.addWidget(self.state_panel)
-        btn_nur_aktive_st = QPushButton("Nur Aktive")
-        btn_nur_aktive_st.setObjectName("btn_sm")
-        btn_nur_aktive_st.setCheckable(True)
-        btn_nur_aktive_st.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_nur_aktive_st.toggled.connect(self.state_panel.set_nur_aktive)
-        sv_panel.set_header_extra(btn_nur_aktive_st)
-        l.addWidget(sv_panel)
+        self._dock_states = self._create_dock("State Variablen", self.state_panel, Qt.DockWidgetArea.RightDockWidgetArea, "dock_states")
 
-        # Log
-        log_panel_coll = CollapsiblePanel("LOG", expanded=True, stretch=True)
+        # 3. Unten: Log & Daten
         self.log_panel = LogPanelQt()
-        log_panel_coll.content_layout.addWidget(self.log_panel)
-        l.addWidget(log_panel_coll, stretch=2)
+        self._dock_log = self._create_dock("Log", self.log_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_log")
 
-        l.addStretch()
-        scroll.setWidget(container)
-        return scroll
+        self.daten_panel = DatenPanelQt(bot_ref=self)
+        self._dock_daten = self._create_dock("Daten-Listen", self.daten_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_daten")
+
+        # Log und Daten tabben (übereinander legen)
+        self.tabifyDockWidget(self._dock_log, self._dock_daten)
+        self._dock_log.raise_() # Log standardmäßig vorne
+
+        # ── Toolbar ───────────────────────────────────────────────────────────
+        # In QMainWindow nutzen wir die native Toolbar-Area
+        toolbar_widget = self._setup_toolbar()
+        # Wir betten das existierende Toolbar-Frame in ein QWidget ein, 
+        # oder nutzen addToolBar (bequemer). 
+        # Da wir das CSS für das Frame behalten wollen, fügen wir es oben im Layout hinzu.
+        
+        # Wir erstellen einen Container für das CentralWidget + Toolbar, 
+        # da setCentralWidget den ganzen Platz einnimmt.
+        # Alternativ: Die Toolbar bleibt ein QWidget im CentralWidget Layout.
+        
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(toolbar_widget)
+        main_layout.addWidget(self._vorschau_scroll, stretch=1)
+        self.setCentralWidget(main_container)
+
+    def _setup_templates_widget(self) -> QWidget:
+        """Kombiniert Workflow-, State-Templates und Buttons für das Dock."""
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setContentsMargins(4, 4, 4, 4)
+        l.setSpacing(4)
+
+        # Workflow-Templates
+        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=False)
+        def select_workflow():
+            self._aktiver_template_panel = self.template_panel
+            self.state_template_panel.auswahl_aufheben()
+        self.template_panel.liste.itemClicked.connect(select_workflow)
+        l.addWidget(QLabel("WORKFLOW TEMPLATES"))
+        l.addWidget(self.template_panel, stretch=2)
+
+        # State-Templates
+        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=False)
+        def select_state():
+            self._aktiver_template_panel = self.state_template_panel
+            self.template_panel.auswahl_aufheben()
+        self.state_template_panel.liste.itemClicked.connect(select_state)
+        l.addWidget(QLabel("STATE TEMPLATES"))
+        l.addWidget(self.state_template_panel, stretch=1)
+
+        # Geteilte Template-Buttons
+        self._setup_shared_template_buttons(l)
+        return w
 
     def _setup_shared_template_buttons(self, parent_layout: QVBoxLayout):
         """Gemeinsame Button-Leiste für Workflow- und State-Template-Panel."""
@@ -290,19 +320,6 @@ class TilesBotWindow(QMainWindow):
         btn_ocr.clicked.connect(lambda: _name() and self._ocr_konfigurieren(_name()))
         btn_klick.clicked.connect(lambda: _name() and self._klick_konfigurieren(_name()))
         btn_gruppe.clicked.connect(lambda: _gruppe() and self._gruppe_konfigurieren(_gruppe()))
-
-    def _setup_rechte_spalte2(self) -> QWidget:
-        w = QWidget()
-        w.setMinimumWidth(220)
-        l = QVBoxLayout(w)
-        l.setContentsMargins(4, 0, 0, 0)
-        l.setSpacing(0)
-
-        panel = CollapsiblePanel("DATEN-LISTEN", expanded=True, stretch=True)
-        self.daten_panel = DatenPanelQt(bot_ref=self)
-        panel.content_layout.addWidget(self.daten_panel)
-        l.addWidget(panel, stretch=1)
-        return w
 
     def _setup_toolbar(self) -> QWidget:
         toolbar = QFrame()
@@ -1306,22 +1323,30 @@ class TilesBotWindow(QMainWindow):
         if hasattr(self, "state_panel"):
             self.state_panel.aktualisieren(dict(self.app.state.game_states))
 
-    # ── Fenstergröße ─────────────────────────────────────────────────────────
+    # ── Fenstergröße & Layout Persistenz ──────────────────────────────────────
 
     def _fenster_groesse_initialisieren(self):
         try:
-            with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
-                config = json.load(f)
-            geo = config.get("fenster_geometrie")
-            if geo:
-                self.restoreGeometry(bytes.fromhex(geo))
-                return
+            if os.path.exists(APP_CONFIG_DATEI):
+                with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
+                    config = json.load(f)
+                
+                geo = config.get("fenster_geometrie")
+                if geo:
+                    self.restoreGeometry(bytes.fromhex(geo))
+                
+                state = config.get("fenster_status")
+                if state:
+                    self.restoreState(bytes.fromhex(state))
+                
+                if geo: return
         except Exception:
             pass
+
+        # Fallback Default
         screen = QApplication.primaryScreen().availableGeometry()
-        # 1800px Breite für alle 4 Spalten, aber maximal 95% der Bildschirmbreite
-        target_w = min(1800, int(screen.width() * 0.95))
-        self.resize(target_w, screen.height() - 80)
+        target_w = min(1600, int(screen.width() * 0.90))
+        self.resize(target_w, screen.height() - 100)
 
     def _fenster_geometrie_speichern(self):
         try:
@@ -1329,7 +1354,10 @@ class TilesBotWindow(QMainWindow):
             if os.path.exists(APP_CONFIG_DATEI):
                 with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
                     config = json.load(f)
+            
             config["fenster_geometrie"] = self.saveGeometry().toHex().data().decode()
+            config["fenster_status"]    = self.saveState().toHex().data().decode()
+            
             with open(APP_CONFIG_DATEI, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
         except Exception:

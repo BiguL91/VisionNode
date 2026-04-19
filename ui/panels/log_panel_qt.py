@@ -1,5 +1,5 @@
 import time
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit, QLabel
 from PyQt6.QtCore import Qt, QMetaObject, Q_ARG, pyqtSlot
 from PyQt6.QtGui import QTextCursor, QFont
 
@@ -10,14 +10,26 @@ class LogPanel(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("panel_header_lite")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 4, 8, 4)
+
+        lbl = QLabel("LOG")
+        lbl.setProperty("class", "lbl_dim")
+        h_lay.addWidget(lbl)
+        root.addWidget(header)
 
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setObjectName("log_text")
-        self.log_text.setMaximumBlockCount(500)  # Max 500 Zeilen, älteste fliegen raus
-        layout.addWidget(self.log_text)
+        self.log_text.setMaximumBlockCount(500)
+        root.addWidget(self.log_text, stretch=1)
+
 
     @pyqtSlot(str)
     def log(self, message: str):

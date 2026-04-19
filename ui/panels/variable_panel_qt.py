@@ -143,9 +143,31 @@ class VariablePanel(QWidget):
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Header mit "Nur Aktive" Button
+        header = QWidget()
+        header.setObjectName("panel_header_lite")
+        h_lay = QHBoxLayout(header)
+        h_lay.setContentsMargins(8, 4, 8, 4)
+        
+        lbl = QLabel("OCR VARIABLEN")
+        lbl.setProperty("class", "lbl_dim")
+        h_lay.addWidget(lbl)
+        h_lay.addStretch()
+
+        self._btn_nur_aktive = QPushButton("Nur Aktive")
+        self._btn_nur_aktive.setCheckable(True)
+        self._btn_nur_aktive.setObjectName("btn_sm")
+        self._btn_nur_aktive.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_nur_aktive.toggled.connect(self.set_nur_aktive)
+        h_lay.addWidget(self._btn_nur_aktive)
+        
+        root.addWidget(header)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.list_container = QWidget()
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(4, 4, 4, 4)
