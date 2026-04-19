@@ -324,6 +324,9 @@ class TilesBotApp:
                     frame_rgb = cv2.cvtColor(self.current_screenshot_np, cv2.COLOR_BGR2RGB)
                     self.current_screenshot_pil = Image.fromarray(frame_rgb)
                     
+                    # Debug-Filter aus Einstellungen synchronisieren
+                    self.ocr_engine.debug_filter = "Alle" if self.settings.get("log_ocr_debug", False) else "Aus"
+
                     # Feste Regionen
                     if self.ocr_engine.regionen:
                         self.state.ocr_values = self.ocr_engine.alle_scannen(self.current_screenshot_pil)
@@ -374,9 +377,10 @@ class TilesBotApp:
                                 smart_counters[entry_name] += 1
                                 idx = smart_counters[entry_name]
                                 indexed_name = f"{entry_name}_{idx}"
-                                
+
                                 wert = self.ocr_engine.template_match_scannen(
-                                    self.current_screenshot_pil, entry_name, match
+                                    self.current_screenshot_pil, entry_name, match,
+                                    debug_name=indexed_name
                                 )
                                 neue_t_ocr[indexed_name] = wert
                             else:

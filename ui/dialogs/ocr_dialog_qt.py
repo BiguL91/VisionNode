@@ -7,7 +7,7 @@ import threading
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox, QSpinBox,
+    QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox,
     QSlider, QFrame, QWidget, QScrollArea, QSizePolicy, QColorDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
@@ -61,6 +61,7 @@ class OCRKonfigDialog(QDialog):
         self._live_offset = (0, 0)
         self._live_tm_size = (1, 1)
         self._target_color = [255, 255, 255]
+        self._korrekturen_aktuell: list = []
         self._is_loading = False
         self._ocr_request_id = 0
         self._ocr_running = False # Flag gegen Thread-Stau
@@ -163,6 +164,52 @@ class OCRKonfigDialog(QDialog):
         pl.addLayout(r)
         r, self._sl_upscale, self._f_u = slider_block("Upscale", 1.0, 8.0, 0.5, 5.0, 2.0)
         pl.addLayout(r)
+
+        # Decoder
+        decoder_row = QHBoxLayout()
+        lbl_dec = QLabel("Decoder:")
+        lbl_dec.setFixedWidth(70)
+        decoder_row.addWidget(lbl_dec)
+        self._decoder_grp = QButtonGroup(self)
+        self._rb_greedy     = QRadioButton("Greedy")
+        self._rb_beamsearch = QRadioButton("Beamsearch")
+        self._rb_greedy.setChecked(True)
+        self._decoder_grp.addButton(self._rb_greedy)
+        self._decoder_grp.addButton(self._rb_beamsearch)
+        decoder_row.addWidget(self._rb_greedy)
+        decoder_row.addWidget(self._rb_beamsearch)
+        self._lbl_bw = QLabel("Breite:")
+        self._lbl_bw.setContentsMargins(8, 0, 0, 0)
+        self._lbl_bw.setVisible(False)
+        decoder_row.addWidget(self._lbl_bw)
+        self._sl_beamwidth = ClickStepSlider(Qt.Orientation.Horizontal)
+        self._sl_beamwidth.setRange(2, 20)
+        self._sl_beamwidth.setValue(5)
+        self._sl_beamwidth.setVisible(False)
+        self._lbl_beamwidth = QLabel("5")
+        self._lbl_beamwidth.setFixedWidth(25)
+        self._lbl_beamwidth.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._lbl_beamwidth.setObjectName("slider_value_label")
+        self._lbl_beamwidth.setVisible(False)
+        self._sl_beamwidth.valueChanged.connect(lambda v: self._lbl_beamwidth.setText(str(v)))
+        self._rb_beamsearch.toggled.connect(self._lbl_bw.setVisible)
+        self._rb_beamsearch.toggled.connect(self._sl_beamwidth.setVisible)
+        self._rb_beamsearch.toggled.connect(self._lbl_beamwidth.setVisible)
+        decoder_row.addWidget(self._sl_beamwidth)
+        decoder_row.addWidget(self._lbl_beamwidth)
+        decoder_row.addStretch()
+        pl.addLayout(decoder_row)
+
+        # Blocklist
+        blocklist_row = QHBoxLayout()
+        lbl_bl = QLabel("Blocklist:")
+        lbl_bl.setFixedWidth(70)
+        blocklist_row.addWidget(lbl_bl)
+        self._blocklist_edit = QLineEdit()
+        self._blocklist_edit.setPlaceholderText("Zeichen sperren, z.B.  ]|[  (wirkt nur im Text-Modus)")
+        blocklist_row.addWidget(self._blocklist_edit)
+        pl.addLayout(blocklist_row)
+
         root.addWidget(param_frame)
 
         # Farbfilter
@@ -195,6 +242,52 @@ class OCRKonfigDialog(QDialog):
 
         cl.addStretch()
         root.addWidget(color_frame)
+
+        # Korrekturen
+        korr_frame = QFrame()
+        korr_frame.setObjectName("group_box")
+        kl = QVBoxLayout(korr_frame)
+        kl.setSpacing(4)
+        kl.setContentsMargins(8, 6, 8, 6)
+
+        korr_header = QHBoxLayout()
+        korr_title = QLabel("Zeichenkorrekturen (aktive Zone):")
+        korr_title.setObjectName("slider_value_label")
+        korr_header.addWidget(korr_title)
+        korr_header.addStretch()
+        kl.addLayout(korr_header)
+
+        self._korr_liste_widget = QWidget()
+        self._korr_liste_layout = QVBoxLayout(self._korr_liste_widget)
+        self._korr_liste_layout.setSpacing(2)
+        self._korr_liste_layout.setContentsMargins(0, 0, 0, 0)
+
+        korr_scroll = QScrollArea()
+        korr_scroll.setWidgetResizable(True)
+        korr_scroll.setFixedHeight(70)
+        korr_scroll.setWidget(self._korr_liste_widget)
+        korr_scroll.setObjectName("ocr_zones_scroll")
+        kl.addWidget(korr_scroll)
+
+        korr_add_row = QHBoxLayout()
+        korr_add_row.setSpacing(4)
+        self._korr_von = QLineEdit()
+        self._korr_von.setPlaceholderText("von")
+        self._korr_von.setFixedWidth(60)
+        korr_add_row.addWidget(self._korr_von)
+        korr_add_row.addWidget(QLabel("→"))
+        self._korr_zu = QLineEdit()
+        self._korr_zu.setPlaceholderText("zu")
+        self._korr_zu.setFixedWidth(60)
+        korr_add_row.addWidget(self._korr_zu)
+        btn_korr_add = QPushButton("+ Hinzufügen")
+        btn_korr_add.setObjectName("btn_new")
+        btn_korr_add.clicked.connect(self._korrektur_hinzufuegen)
+        korr_add_row.addWidget(btn_korr_add)
+        korr_add_row.addStretch()
+        kl.addLayout(korr_add_row)
+
+        root.addWidget(korr_frame)
 
         # Eingabe: Name + Modus + Hinzufügen
         eingabe = QHBoxLayout()
@@ -394,7 +487,11 @@ class OCRKonfigDialog(QDialog):
                 v.get("color_filter", False),
                 v.get("target_color", [255, 255, 255]),
                 v.get("color_tolerance", 30),
-                v.get("ausschnitt_form", "box")
+                v.get("ausschnitt_form", "box"),
+                v.get("korrekturen", []),        # index 14
+                v.get("decoder", "greedy"),      # index 15
+                v.get("beamWidth", 5),           # index 16
+                v.get("blocklist", ""),          # index 17
             ])
         self._tabelle_aktualisieren()
 
@@ -462,6 +559,15 @@ class OCRKonfigDialog(QDialog):
                 self._target_color = list(e[11])
                 self._farbe_indicator.setStyleSheet(f"background: {QColor(*self._target_color).name()}; border: 1px solid #555;")
             self._sl_toleranz.setValue(e[12] if len(e) > 12 else 30)
+            self._korrekturen_aktuell = list(e[14]) if len(e) > 14 else []
+            self._korrekturen_aktualisieren()
+            decoder = e[15] if len(e) > 15 else "greedy"
+            if decoder == "beamsearch":
+                self._rb_beamsearch.setChecked(True)  # toggled-Signal zeigt Slider automatisch
+            else:
+                self._rb_greedy.setChecked(True)      # toggled-Signal versteckt Slider automatisch
+            self._sl_beamwidth.setValue(e[16] if len(e) > 16 else 5)
+            self._blocklist_edit.setText(e[17] if len(e) > 17 else "")
         finally:
             self._is_loading = False
         
@@ -472,6 +578,50 @@ class OCRKonfigDialog(QDialog):
         self._eintraege.pop(idx)
         self._tabelle_aktualisieren()
         self._final_speichern() # Sofort persistent speichern
+
+    # ── Korrekturen ──────────────────────────────────────────────────────────
+
+    def _korrektur_hinzufuegen(self):
+        von = self._korr_von.text()
+        zu  = self._korr_zu.text()
+        if not von:
+            return
+        # Duplikat überschreiben
+        for k in self._korrekturen_aktuell:
+            if k["von"] == von:
+                k["zu"] = zu
+                self._korrekturen_aktualisieren()
+                return
+        self._korrekturen_aktuell.append({"von": von, "zu": zu})
+        self._korr_von.clear()
+        self._korr_zu.clear()
+        self._korrekturen_aktualisieren()
+
+    def _korrektur_loeschen(self, idx: int):
+        self._korrekturen_aktuell.pop(idx)
+        self._korrekturen_aktualisieren()
+
+    def _korrekturen_aktualisieren(self):
+        while self._korr_liste_layout.count():
+            item = self._korr_liste_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for i, k in enumerate(self._korrekturen_aktuell):
+            zeile = QWidget()
+            zl = QHBoxLayout(zeile)
+            zl.setContentsMargins(0, 0, 0, 0)
+            zl.setSpacing(4)
+            zl.addWidget(QLabel(f'"{k["von"]}"  →  "{k["zu"]}"'))
+            zl.addStretch()
+            btn = QPushButton("✕")
+            btn.setObjectName("btn_del_sm")
+            btn.setFixedSize(22, 18)
+            btn.clicked.connect(lambda _, idx=i: self._korrektur_loeschen(idx))
+            zl.addWidget(btn)
+            self._korr_liste_layout.addWidget(zeile)
+
+        self._korr_liste_layout.addStretch()
 
     # ── Interaktion ──────────────────────────────────────────────────────────
 
@@ -576,7 +726,11 @@ class OCRKonfigDialog(QDialog):
             self._cb_farbe.isChecked(),
             list(self._target_color),
             self._sl_toleranz.value(),
-            af
+            af,
+            list(self._korrekturen_aktuell),                                       # index 14
+            "beamsearch" if self._rb_beamsearch.isChecked() else "greedy",         # index 15
+            self._sl_beamwidth.value(),                                           # index 16
+            self._blocklist_edit.text().strip(),                                    # index 17
         ]
         for i, e in enumerate(self._eintraege):
             if e[0] == n:
@@ -840,11 +994,15 @@ class OCRKonfigDialog(QDialog):
             m = e[1]
             co, cu, cl, cr = e[2], e[3], e[4], e[5]
             con, br, sh, up = e[6], e[7], e[8], e[9]
-            cf = e[10] if len(e) > 10 else False
-            tc = e[11] if len(e) > 11 else [255, 255, 255]
-            ct = e[12] if len(e) > 12 else 30
-            af = e[13] if len(e) > 13 else "box"
-            
+            cf   = e[10] if len(e) > 10 else False
+            tc   = e[11] if len(e) > 11 else [255, 255, 255]
+            ct   = e[12] if len(e) > 12 else 30
+            af   = e[13] if len(e) > 13 else "box"
+            korr     = e[14] if len(e) > 14 else []
+            decoder  = e[15] if len(e) > 15 else "greedy"
+            beamw    = e[16] if len(e) > 16 else 5
+            blocklist= e[17] if len(e) > 17 else ""
+
             key = n if n.startswith(prefix) else f"{prefix}{n}"
             konfig[key] = {
                 "template":    self._name,
@@ -860,7 +1018,11 @@ class OCRKonfigDialog(QDialog):
                 "color_filter": cf,
                 "target_color": tc,
                 "color_tolerance": ct,
-                "ausschnitt_form": af
+                "ausschnitt_form": af,
+                "korrekturen": korr,
+                "decoder":     decoder,
+                "beamWidth":   beamw,
+                "blocklist":   blocklist,
             }
 
         # 4. Zurück an die Engine geben (die speichert es persistent)

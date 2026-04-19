@@ -10,8 +10,10 @@ from PIL import Image
 # Unterdrücke PyTorch RNN-Warnung (bekanntes EasyOCR/GPU Problem)
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
 
-OCR_REGIONEN_DATEI = os.path.join("templates", "settings", "ocr_regionen.json")
-TEMPLATE_OCR_DATEI = os.path.join("templates", "settings", "template_ocr.json")
+_BASE_DIR          = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OCR_REGIONEN_DATEI = os.path.join(_BASE_DIR, "templates", "settings", "ocr_regionen.json")
+TEMPLATE_OCR_DATEI = os.path.join(_BASE_DIR, "templates", "settings", "template_ocr.json")
+_DEBUG_DIR         = os.path.join(_BASE_DIR, "debug")
 
 
 class OCREngine:
@@ -27,8 +29,7 @@ class OCREngine:
         self._template_ocr_laden() # Sofort laden
 
         # Debug-Ordner sicherstellen
-        if not os.path.exists("debug"):
-            os.makedirs("debug")
+        os.makedirs(_DEBUG_DIR, exist_ok=True)
     def _regionen_laden(self):
         """Lädt gespeicherte OCR-Regionen aus der JSON-Datei."""
         if os.path.exists(OCR_REGIONEN_DATEI):
@@ -53,18 +54,18 @@ class OCREngine:
         self.regionen.pop(name, None)
         self._regionen_speichern()
 
-    def template_match_scannen(self, screenshot_pil, entry_name, match_coords):
+    def template_match_scannen(self, screenshot_pil, entry_name, match_coords, debug_name=None):
         """Scant eine Template-OCR-Region basierend auf Match-Koordinaten (mit Varianten-Fallback)."""
         ocr_konf = self.template_ocr_konfigurationen()
         konfig = ocr_konf.get(entry_name)
         if not konfig:
             return ""
-        
+
         # Format von match_coords: (display_name, x, y, w, h, score, phys_name)
         mx, my, mw, mh = match_coords[1], match_coords[2], match_coords[3], match_coords[4]
-        
+
         region = {
-            "name": entry_name,
+            "name": debug_name or entry_name,
             "x": mx, "y": my, "breite": mw, "hoehe": mh,
             "modus": konfig["modus"],
             "crop_oben":   konfig.get("crop_oben", 0),
@@ -77,7 +78,11 @@ class OCREngine:
             "upscale":     konfig.get("upscale", 5.0),
             "color_filter": konfig.get("color_filter", False),
             "target_color": konfig.get("target_color", [255, 255, 255]),
-            "color_tolerance": konfig.get("color_tolerance", 30)
+            "color_tolerance": konfig.get("color_tolerance", 30),
+            "korrekturen": konfig.get("korrekturen", []),
+            "decoder":    konfig.get("decoder", "greedy"),
+            "beamWidth":  konfig.get("beamWidth", 5),
+            "blocklist":  konfig.get("blocklist", ""),
         }
         return self.region_scannen(screenshot_pil, region)
 
@@ -172,7 +177,7 @@ class OCREngine:
             avg_bright = np.mean(grau)
             std_dev = np.std(grau)
             
-            if modus == "Timer":
+            if modus in ["Timer", "Zahl"]:
                 # Adaptives Thresholding ist viel robuster gegen transparente Hintergründe/Fortschrittsbalken.
                 # Es berechnet Schwellwerte lokal in kleinen Blöcken.
                 thresh = cv2.adaptiveThreshold(grau, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
@@ -184,10 +189,11 @@ class OCREngine:
                 
                 # Morphologie: Zeichen leicht fetter machen (schließt Lücken durch Transparenz).
                 # Erode auf Schwarz-auf-Weiß Bild macht die schwarzen Zeichen breiter.
-                kernel = np.ones((2,2), np.uint8)
-                thresh = cv2.erode(thresh, kernel, iterations=1)
+                if modus == "Timer":
+                    kernel = np.ones((2,2), np.uint8)
+                    thresh = cv2.erode(thresh, kernel, iterations=1)
             else:
-                # Standard OTSU für normalen Text/Zahlen
+                # Standard OTSU für normalen Text
                 if std_dev < 5:
                     thresh = np.full_like(grau, 255)
                 else:
@@ -195,8 +201,10 @@ class OCREngine:
                     if avg_bright < 127: # Hell auf Dunkel
                         thresh = cv2.bitwise_not(thresh)
             
-        # Noise reduction
-        thresh = cv2.medianBlur(thresh, 3)
+        # Noise reduction (Bei Zahlen/Timern vorsichtiger)
+        blur_k = 3 if modus == "Text" else 1
+        if blur_k > 1:
+            thresh = cv2.medianBlur(thresh, blur_k)
 
         # Padding (Weißer Rand)
         ocr_input = cv2.copyMakeBorder(thresh, 30, 30, 30, 30, cv2.BORDER_CONSTANT, value=255)
@@ -204,31 +212,66 @@ class OCREngine:
         # Debug-Bild speichern
         if self.debug_filter != "Aus":
             if self.debug_filter == "Alle" or name == self.debug_filter:
-                cv2.imwrite(f"debug/{name}.png", ocr_input)
+                safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
+                cv2.imwrite(os.path.join(_DEBUG_DIR, f"{safe_name}.png"), ocr_input)
 
         # 4. EasyOCR ausführen
         allowlist = None
         if modus == "Zahl":
             allowlist = "0123456789+"
         elif modus == "Timer":
-            # Erlaube Ziffern, Doppelpunkt, Tage-Kürzel, Punkt und Leerzeichen
             allowlist = "0123456789:TtdD. "
+
+        decoder   = region.get("decoder", "greedy")
+        beamWidth = region.get("beamWidth", 5)
+        # blocklist nur wenn kein allowlist aktiv (EasyOCR ignoriert blocklist sonst)
+        blocklist = None
+        if allowlist is None:
+            bl = region.get("blocklist", "")
+            if bl:
+                blocklist = bl
+
+        readtext_kwargs = {"allowlist": allowlist, "decoder": decoder}
+        if decoder == "beamsearch":
+            readtext_kwargs["beamWidth"] = beamWidth
+        if blocklist:
+            readtext_kwargs["blocklist"] = blocklist
 
         # Im Debug-Modus geben wir (Text, Koordinaten, Debug-Bild) zurück
         debug_info = (abs_x0, abs_y0, abs_x1, abs_y1, ocr_input.copy()) if debug else None
-        
+
         try:
-            ergebnisse = self.reader.readtext(ocr_input, allowlist=allowlist)
+            ergebnisse = self.reader.readtext(ocr_input, **readtext_kwargs)
             
             # Filtere nach Konfidenz (mind. 0.35)
             text_teile = []
             for res in ergebnisse:
                 if res[2] >= 0.35:
-                    text_teile.append(res[1])
+                    box, text, conf = res
+                    # Heuristik: '7' zu '1' korrigieren, wenn Box sehr schmal
+                    if modus == "Zahl" and "7" in text:
+                        # Berechne Breite/Höhe der Box
+                        w = box[1][0] - box[0][0]
+                        h = box[2][1] - box[0][1]
+                        if h > 0:
+                            ratio = w / h
+                            # Ein '1' ist meist < 0.35 breit, eine '7' meist > 0.5
+                            if text == "7" and ratio < 0.42:
+                                text = "1"
+                            elif text == "77" and ratio < 0.75:
+                                text = "11"
+                    
+                    text_teile.append(text)
             
             text = " ".join(text_teile)
             ergebnis = self._bereinigen(text, modus)
-            
+
+            for korr in region.get("korrekturen", []):
+                von = korr.get("von", "")
+                zu  = korr.get("zu", "")
+                if von:
+                    ergebnis = ergebnis.replace(von, zu)
+
             if debug:
                 return ergebnis, debug_info
             return ergebnis
