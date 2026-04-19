@@ -30,6 +30,8 @@ class ListenBlock(QFrame):
         self._tabelle_zeichnen()
 
     def _setup_ui(self):
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -62,6 +64,7 @@ class ListenBlock(QFrame):
         self.table.setFrameShape(QFrame.Shape.NoFrame)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.table.horizontalHeader().setFixedHeight(24)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(24)
         
@@ -119,8 +122,9 @@ class ListenBlock(QFrame):
                     self.table.setItem(r, ci + 1, item)
 
         self.werte_aktualisieren()
-        # Höhe an Inhalt anpassen (Kompakt-Modus)
-        h = self.table.horizontalHeader().height() + (self.table.rowCount() * self.table.verticalHeader().defaultSectionSize()) + 2
+        HEADER_H = 24
+        ROW_H = self.table.verticalHeader().defaultSectionSize()
+        h = HEADER_H + (self.table.rowCount() * ROW_H) + 2
         self.table.setMinimumHeight(min(h, 400))
         self.table.setMaximumHeight(h)
 
