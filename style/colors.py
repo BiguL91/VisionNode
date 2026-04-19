@@ -20,6 +20,9 @@ NODE_FARBEN = {
     "call_workflow":     "#673ab7",
     "priority_selector": "#fbc02d",
     "set_timer":         "#e91e63",
+    "set_value":         "#d81b60",
+    "loop":              "#00796b",
+    "suche_klick":       "#039be5",
 }
 
 # ── Port-Farben (Workflow-Editor & FUP) ───────────────────────────────────────
@@ -32,4 +35,5 @@ PORT_FARBEN = {
     "done":    "#9c27b0",
     "else":    "#ff5722",
     "in":      "#777777",
+    "body":    "#42a5f5",
 }

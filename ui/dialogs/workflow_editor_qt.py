@@ -106,7 +106,9 @@ class WorkflowEditorDialogQt(QDialog):
             typen = [
                 ("Workflow","call_workflow"),
                 ("Bedingung","bedingung"),
-                ("Set Timer", "set_timer"),
+                ("Timer setzen", "set_timer"),
+                ("Wert setzen", "set_value"),
+                ("Schleife", "loop"),
                 ("Warten","warten")
             ]
         else:
@@ -114,7 +116,10 @@ class WorkflowEditorDialogQt(QDialog):
                 ("Suche","suche"),
                 ("Optional","suche_optional"),
                 ("Klick","klick"),
-                ("Set Timer", "set_timer"),
+                ("Suche+Klick", "suche_klick"),
+                ("Timer setzen", "set_timer"),
+                ("Wert setzen", "set_value"),
+                ("Schleife", "loop"),
                 ("Warten","warten"),
                 ("Zurück","zurueck"),
                 ("Home","home"),
@@ -200,6 +205,15 @@ class WorkflowEditorDialogQt(QDialog):
         elif typ == "set_timer":
             node["timer_var"] = ""
             node["dauer"] = 60.0
+        elif typ == "set_value":
+            node["variable"] = ""
+            node["wert"] = "0"
+        elif typ == "loop":
+            node["count"] = 5
+        elif typ == "suche_klick":
+            node["template"] = ""
+            node["timeout"] = 10
+            node["index"] = "1"
         elif typ == "bedingung":
 
             node["variable"] = ""
@@ -276,16 +290,16 @@ class WorkflowEditorDialogQt(QDialog):
         def add_row(label, key, widget):
             form.addRow(QLabel(label), widget)
             felder[key] = widget
-        if typ in ("suche", "suche_optional", "klick"):
+        if typ in ("suche", "suche_optional", "klick", "suche_klick"):
             tpl_btn = self._template_picker_btn(node.get("template", ""), dlg)
             add_row("Template:", "template", tpl_btn)
-            if typ in ("suche", "suche_optional"):
+            if typ in ("suche", "suche_optional", "suche_klick"):
                 sp = QSpinBox()
                 sp.setRange(1, 300)
                 sp.setValue(int(node.get("timeout", 10)))
                 sp.setProperty("class", "input_dark")
                 add_row("Timeout (s):", "timeout", sp)
-            elif typ == "klick":
+            if typ in ("klick", "suche_klick"):
                 idx_btn = self._variablen_picker_btn(str(node.get("index", "1")), dlg)
                 add_row("Match-Index:", "index", idx_btn)
         elif typ == "warten":
@@ -306,6 +320,18 @@ class WorkflowEditorDialogQt(QDialog):
             sp.setValue(float(node.get("dauer", 10)))
             sp.setProperty("class", "input_dark")
             add_row("Dauer (s):", "dauer", sp)
+        elif typ == "set_value":
+            var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg)
+            add_row("Variable:", "variable", var_btn)
+            wert_edit = QLineEdit(str(node.get("wert", "0")))
+            wert_edit.setProperty("class", "input_dark")
+            add_row("Wert:", "wert", wert_edit)
+        elif typ == "loop":
+            sp = QSpinBox()
+            sp.setRange(1, 1000)
+            sp.setValue(int(node.get("count", 5)))
+            sp.setProperty("class", "input_dark")
+            add_row("Wiederholungen:", "count", sp)
         elif typ == "bedingung":
 
             var_btn = self._variablen_picker_btn(node.get("variable", ""), dlg)
@@ -741,7 +767,7 @@ class WorkflowEditorDialogQt(QDialog):
                         fi.remove(val)
 
             # force_include für search_only Templates setzen (wie in workflow_ausfuehren)
-            sim_t_name = node.get("template") if typ in ("suche", "suche_optional", "klick") else None
+            sim_t_name = node.get("template") if typ in ("suche", "suche_optional", "klick", "suche_klick") else None
             if sim_t_name:
                 sim_state_func("add_force_include", sim_t_name)
 
@@ -892,7 +918,8 @@ class WorkflowEditorDialogQt(QDialog):
         def auf_template_warten(self, t, mf, timeout=10, intervall=0.3, log_func=None, laeuft_func=None):
             return self.real.auf_template_warten(t, mf, timeout, intervall, log_func=log_func, laeuft_func=laeuft_func)
         
-        def template_tippen(self, t, m, log_func=None):
+        def template_tippen(self, t, m, log_func=None, match_index=1):
+            # Wir simulieren den Klick basierend auf dem Index (wird hier nur für das Log genutzt)
             for i in m:
                 if i[0] == t:
                     _, mx, my, mw, mh = i[:5]

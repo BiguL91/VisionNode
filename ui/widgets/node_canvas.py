@@ -33,6 +33,9 @@ NODE_PORTS = {
     "call_workflow":     (True,  ["done", "failure"]),
     "priority_selector": (True,  []),
     "set_timer":         (True,  ["out"]),
+    "set_value":         (True,  ["out"]),
+    "loop":              (True,  ["body", "done"]),
+    "suche_klick":       (True,  ["success", "failure"]),
 }
 
 
@@ -255,16 +258,25 @@ class NodeCanvas(QWidget):
         nid = node.get("id")
         if self._sim_progress.get(nid):
             return self._sim_progress[nid]
-        if typ in ("suche", "suche_optional", "klick"):
+            
+        if typ in ("suche", "suche_optional", "klick", "suche_klick"):
             tpl = node.get("template", "–")
-            if typ == "klick":
+            suffix = []
+            
+            # Timeout anzeigen bei Suche
+            if typ in ("suche", "suche_optional", "suche_klick"):
+                to = node.get("timeout")
+                if to: suffix.append(f"{to}s")
+                
+            # Index anzeigen bei Klick
+            if typ in ("klick", "suche_klick"):
                 idx = str(node.get("index", "1"))
-                if idx != "1":
-                    tpl += f" [#{idx}]"
-            else:
-                to  = node.get("timeout")
-                if to: tpl += f" [{to}s]"
+                if idx != "1": suffix.append(f"#{idx}")
+                
+            if suffix:
+                tpl += f" [{', '.join(suffix)}]"
             return tpl
+            
         elif typ == "warten":
             return f"{node.get('sekunden', 1.0)} s"
         elif typ == "bedingung":
@@ -274,6 +286,10 @@ class NodeCanvas(QWidget):
         elif typ == "set_timer":
             t_var = node.get("timer_var", "–")
             return f"{t_var} [{node.get('dauer', 60)}s]"
+        elif typ == "set_value":
+            return f"{node.get('variable','?')} = {node.get('wert','0')}"
+        elif typ == "loop":
+            return f"n = {node.get('count', 5)}"
         return ""
 
     def _get_port_at(self, pos: QPointF) -> tuple[dict, str, bool] | tuple[None, None, None]:

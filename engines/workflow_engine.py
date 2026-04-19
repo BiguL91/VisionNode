@@ -352,6 +352,81 @@ class WorkflowEngine:
                         if log_func: log_func(f"!! Fehler beim Timer setzen: {e}")
             return "out"
 
+        elif typ == "set_value":
+            var_name = node.get("variable", "")
+            wert = node.get("wert", "")
+            if var_name.startswith("db::"):
+                parts = var_name.split("::")
+                if len(parts) >= 3:
+                    listen_name = parts[1]
+                    key_name = parts[2]
+                    try:
+                        from core import daten_manager as dm
+                        listen = dm.alle_listen()
+                        l_id = next((l["id"] for l in listen if l["name"] == listen_name), None)
+                        if l_id is not None:
+                            dm.cache_schreiben(l_id, key_name, str(wert))
+                            if log_func:
+                                log_func(f"📝 Wert gesetzt: {key_name} = {wert}")
+                    except Exception as e:
+                        if log_func: log_func(f"!! Fehler beim Wert setzen: {e}")
+            return "out"
+
+        elif typ == "loop":
+            count = int(node.get("count", 1))
+            node_id = node.get("id")
+            key = f"{node_id}_loop"
+            
+            # Zustand laden
+            data = self.session_data.get(key, {"current": 0})
+            
+            if data["current"] < count:
+                data["current"] += 1
+                self.session_data[key] = data
+                if log_func:
+                    log_func(f"🔁 Schleife: {data['current']} / {count}")
+                return "body"
+            else:
+                # Loop beendet, Zähler zurücksetzen für nächsten Durchlauf des Workflows
+                data["current"] = 0
+                self.session_data[key] = data
+                if log_func:
+                    log_func(f"🔁 Schleife beendet.")
+                return "done"
+
+        elif typ == "suche_klick":
+            t_name = node.get("template", "")
+            timeout = float(node.get("timeout", 10.0))
+            idx_raw = node.get("index", "1")
+            
+            # 1. Suche
+            ok_suche = action_engine.auf_template_warten(
+                t_name, matches_func,
+                timeout=timeout,
+                intervall=0.3,
+                log_func=log_func,
+                laeuft_func=laeuft_func
+            )
+            
+            if not ok_suche:
+                return "failure"
+            
+            # 2. Index auflösen
+            try:
+                if isinstance(idx_raw, str) and (idx_raw.startswith("ocr::") or idx_raw.startswith("db::")):
+                    idx_val = self._variable_auflösen(idx_raw, ocr_func)
+                    match_index = int(float(idx_val)) if idx_val else 1
+                else:
+                    match_index = int(idx_raw)
+            except (ValueError, TypeError):
+                match_index = 1
+                
+            # 3. Klick
+            matches = matches_func()
+            ok_klick = action_engine.template_tippen(t_name, matches, log_func=log_func, match_index=match_index)
+            
+            return "success" if ok_klick else "failure"
+
         return None  # Unbekannter Node-Typ
 
     def _logik_auswerten(self, graph, ocr_func, matches_func, return_memo=False):
@@ -627,7 +702,7 @@ class WorkflowEngine:
                 node_id = aktueller_node.get("id", "?")
 
                 # force_include VOR dem Node setzen (Template-Knoten)
-                t_name = aktueller_node.get("template") if typ in ("suche", "suche_optional", "klick") else None
+                t_name = aktueller_node.get("template") if typ in ("suche", "suche_optional", "klick", "suche_klick") else None
                 _force_setzen(t_name)
 
                 # Log-Ausgabe (Start-Node überspringen, ist uninteressant)
