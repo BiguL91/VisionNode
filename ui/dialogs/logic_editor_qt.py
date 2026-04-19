@@ -108,8 +108,10 @@ class NodeParamDialog(QDialog):
             lbl.setProperty("class", "lbl_dim")
             layout.addWidget(lbl)
 
-            t_var = self._node.data.get("variable", "")
-            self._timer_btn = QPushButton(t_var or "Timer wählen...")
+            from ui.variable_source import display_name as _dn
+            cur_var = self._node.data.get("variable", "")
+            self._timer_btn = QPushButton(_dn(cur_var) if cur_var else "Timer wählen...")
+            self._timer_btn.setProperty("_val", cur_var)
             self._timer_btn.setObjectName("btn_logic_net")
             self._timer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._timer_btn.clicked.connect(self._timer_menu_zeigen)
@@ -149,6 +151,10 @@ class NodeParamDialog(QDialog):
         
         menu = QMenu(self)
         data = get_picker_data(self._bot) if self._bot else {}
+
+        def on_select(full_val, disp):
+            self._timer_btn.setProperty("_val", full_val)
+            self._timer_btn.setText(disp)
         
         # ── 1. OCR-basierte Timer (aus Templates) ───────────────────────────
         ocr_timers = data.get("ocr_template", {})
@@ -167,7 +173,7 @@ class NodeParamDialog(QDialog):
                     for tmpl, entries in tmpl_dict.items():
                         t_sub = g_sub.addMenu(f"🖼 {tmpl}")
                         for disp, entry_key in entries:
-                            t_sub.addAction(disp, lambda *args, x=f"ocr::{entry_key}": self._timer_btn.setText(x))
+                            t_sub.addAction(disp, lambda *args, x=f"ocr::{entry_key}", d=disp: on_select(x, d))
 
         # ── 2. Datenbank-Timer (Global & Standard) ─────────────────────────
         db_menu = menu.addMenu("📊 Datenbank Timer")
@@ -180,15 +186,13 @@ class NodeParamDialog(QDialog):
                 l_sub = g_sub.addMenu(f"⏳ {liste}")
                 for disp, stored in entries:
                     var_path = f"db::{liste}::{stored}"
-                    l_sub.addAction(disp, lambda *args, x=var_path: self._timer_btn.setText(x))
+                    l_sub.addAction(disp, lambda *args, x=var_path, d=disp: on_select(x, d))
         
         # Standard Daten-Listen (gefiltert nach Timer-Spalten)
         db_std = data.get("db_standard", {})
         if db_std:
             s_sub = db_menu.addMenu("📋 Listen-Spalten")
             for liste, vars_ in db_std.items():
-                # Hier müssen wir filtern, welche Spalten wirklich Timer sind
-                # Da wir das in data["db_standard"] nicht wissen, müssen wir dm fragen
                 l_id = next((l["id"] for l in dm.alle_listen() if l["name"] == liste), None)
                 if l_id:
                     timer_vars = []
@@ -203,7 +207,7 @@ class NodeParamDialog(QDialog):
                         l_sub = s_sub.addMenu(liste)
                         for v in sorted(list(set(timer_vars)), key=str.casefold):
                             var_path = f"db::{liste}::{v}"
-                            l_sub.addAction(v, lambda *args, x=var_path: self._timer_btn.setText(x))
+                            l_sub.addAction(v, lambda *args, x=var_path, d=v: on_select(x, d))
 
         if menu.isEmpty():
             menu.addAction("(Keine Timer verfügbar)").setEnabled(False)

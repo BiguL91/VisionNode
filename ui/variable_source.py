@@ -99,12 +99,15 @@ def get_picker_data(bot) -> dict:
 
             if typ == "timer":
                 zeilen = dm.zeilen_der_liste(lid)
-                wert = [
-                    (z["name"][4:], z["name"])
-                    for z in zeilen if z["name"].startswith("[W] ")
-                ]
-                if wert:
-                    data["db_global"][name] = sorted(wert, key=lambda e: e[0].casefold())
+                eintraege = []
+                for z in zeilen:
+                    fn = z["name"]
+                    # Präfix entfernen für Anzeige
+                    dn = fn[4:] if fn.startswith("[W] ") or fn.startswith("[T] ") else fn
+                    eintraege.append((dn, fn))
+                
+                if eintraege:
+                    data["db_global"][name] = sorted(eintraege, key=lambda e: e[0].casefold())
 
             elif typ == "daten":
                 trans   = [t["name"] for t in dm.transformationen_der_liste(lid)]
@@ -150,7 +153,7 @@ def display_name(full_value: str, picker_data: dict | None = None) -> str:
         rest = full_value[4:]
         parts = rest.split("::", 1)
         var = parts[1] if len(parts) == 2 else rest
-        if var.startswith("[W] "):
+        if var.startswith("[W] ") or var.startswith("[T] "):
             var = var[4:]
         return var
 
