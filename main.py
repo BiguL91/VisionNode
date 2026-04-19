@@ -75,6 +75,14 @@ class TilesBotWindow(QMainWindow):
         self.setWindowTitle("Ai-Bot")
         self.setMinimumSize(1450, 700)
 
+        # Dock-Optionen für maximale Flexibilität (Widescreen-Support)
+        self.setDockNestingEnabled(True)
+        self.setDockOptions(
+            QMainWindow.DockOption.AllowNestedDocks |
+            QMainWindow.DockOption.AllowTabbedDocks |
+            QMainWindow.DockOption.AnimatedDocks
+        )
+
         # Core
         self.app = TilesBotApp(log_callback=self._log)
         self.template_engine  = self.app.template_engine
