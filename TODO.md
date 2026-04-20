@@ -23,14 +23,14 @@
   - Combi Node (suche+klick) in einem
 
 
-- [ ] ** Vergleich Node Erweitern **
+- [x] ** Vergleich Node Erweitern **
   - Möglichkeit um Text zu vergleichen, zb: ist "Wort" enthalten
 
-- [ ] ** Schleifen node Umdesignen**
+- [x] ** Schleifen node Umdesignen**
   - Da Die Schleifen Node einen rückweg am Canvas bereicht müssen Eingang und Außgang Punkte getauscht werden.
 
 
-- [ ] ** Möglichkeit neues UI zu Fixernen**
+- [x] ** Möglichkeit neues UI zu Fixernen**
   - Wenn man seine Lieblings einstellung gefunden hat, eine funktion um erneues Auserversehenes verschieben zu Blockieren
 ---
 

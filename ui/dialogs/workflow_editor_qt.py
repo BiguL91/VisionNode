@@ -360,7 +360,7 @@ class WorkflowEditorDialogQt(QDialog):
             op_lay.setContentsMargins(0,0,0,0)
             op_group = QButtonGroup(op_widget)
             op_selected = [node.get("operator", ">")]
-            for op in [">", "<", ">=", "<=", "=", "!="]:
+            for op in [">", "<", ">=", "<=", "=", "!=", "~", "!~"]:
                 rb = QRadioButton(op)
                 rb.setChecked(op == op_selected[0])
                 rb.setProperty("class", "lbl_dim")

@@ -562,6 +562,8 @@ class WorkflowEngine:
                 return False
             if   operator in ("=", "=="): return ist_str == soll_str
             elif operator == "!=":        return ist_str != soll_str
+            elif operator == "~":         return soll_str in ist_str
+            elif operator == "!~":        return soll_str not in ist_str
         return False
 
     def _wert_zu_bool(self, wert):

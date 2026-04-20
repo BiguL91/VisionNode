@@ -97,10 +97,23 @@ class NodeCanvas(QWidget):
         w   = NODE_BREITE * self._scale
         h   = self._node_h(node) * self._scale
         typ = node["typ"]
+
+        # Spezialfall Loop: Eingang rechts, Body links (für Rückweg-Visualisierung)
+        if typ == "loop":
+            if port_name == "in":
+                return QPointF(x + w, y + h / 2)
+            if port_name == "body":
+                return QPointF(x, y + h / 2)
+            if port_name == "done":
+                # Da body nun links ist, ist done der einzige Port rechts
+                return QPointF(x + w, y + h * 0.75) 
+            return QPointF(x + w / 2, y + h / 2)
+
         if typ == "priority_selector":
             aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
         else:
             _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
+        
         if port_name == "in":
             return QPointF(x, y + h / 2)
         if port_name in aus_ports:
@@ -110,11 +123,30 @@ class NodeCanvas(QWidget):
             return QPointF(x + w, y + h * frac)
         return QPointF(x + w / 2, y + h / 2)
 
-    def _bezier_path(self, x1, y1, x2, y2) -> QPainterPath:
-        offset = max(40 * self._scale, abs(x2 - x1) * 0.45)
+    def _bezier_path(self, x1, y1, x2, y2, nv=None, nz=None) -> QPainterPath:
+        # Standard-Offset
+        base_off = 40 * self._scale
+        off1 = max(base_off, abs(x2 - x1) * 0.45)
+        off2 = off1
+        
+        # nv: Quell-Node, nz: Ziel-Node
+        # Falls nv vorhanden, prüfen wir ob x1 links oder rechts am Knoten liegt
+        if nv:
+            nw = NODE_BREITE * self._scale
+            nx = self._cx(nv["x"])
+            if x1 < nx + nw / 2: # Port ist links
+                off1 = -off1
+        
+        # Falls nz vorhanden, prüfen wir ob x2 links oder rechts am Knoten liegt
+        if nz:
+            nw = NODE_BREITE * self._scale
+            nx = self._cx(nz["x"])
+            if x2 > nx + nw / 2: # Port ist rechts
+                off2 = -off2 # Wir kommen von rechts, also muss der Ankerpunkt rechts liegen (x2 + off)
+        
         path = QPainterPath()
         path.moveTo(x1, y1)
-        path.cubicTo(x1 + offset, y1, x2 - offset, y2, x2, y2)
+        path.cubicTo(x1 + off1, y1, x2 - off2, y2, x2, y2)
         return path
 
     def paintEvent(self, event):
@@ -158,7 +190,7 @@ class NodeCanvas(QWidget):
             farbe = QColor(PORT_FARBEN.get(conn["port_aus"], "#aaaaaa"))
             if is_hover:
                 farbe = QColor("#ffffff")
-            path = self._bezier_path(p1.x(), p1.y(), p2.x(), p2.y())
+            path = self._bezier_path(p1.x(), p1.y(), p2.x(), p2.y(), nv, nz)
             p.setPen(QPen(farbe, max(1, (3 if is_hover else 2) * self._scale)))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
@@ -251,7 +283,16 @@ class NodeCanvas(QWidget):
             if len(aus_ports) > 1 and s > 0.5:
                 p.setPen(QPen(pfarbe))
                 p.setFont(QFont("Segoe UI", max(5, int(7*s))))
-                p.drawText(QPointF(pp.x() + r + 2, pp.y() + 4), port)
+                
+                # Text-Positionierung je nach Seite (Links/Rechts)
+                text_x = pp.x() + r + 2
+                align  = Qt.AlignmentFlag.AlignLeft
+                if pp.x() < x + w/2: # Port ist auf der linken Seite
+                    text_x = pp.x() - r - 45 * s # Etwas Platz nach links
+                    align  = Qt.AlignmentFlag.AlignRight
+                
+                p.drawText(QRectF(text_x, pp.y() - 10*s, 40*s, 20*s), 
+                           align | Qt.AlignmentFlag.AlignVCenter, port)
 
     def _node_detail(self, node: dict) -> str:
         typ = node.get("typ")

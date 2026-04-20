@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor
+from PyQt6 import sip
 
 from ui.widgets.click_step_slider import ClickStepSlider
 from ui.widgets.ocr_widgets import (
@@ -901,11 +902,14 @@ class OCRKonfigDialog(QDialog):
         def run():
             try:
                 res, debug_info = self._bot.ocr_engine.region_scannen(pil_basis, region, debug=True)
+                if sip.isdeleted(self):
+                    return
                 # Signal senden
                 self.ocr_fertig.emit(res, debug_info, rid)
             except Exception as e:
                 print(f"[OCR-Vorschau] Fehler: {e}")
-                self.ocr_fertig.emit(f"Fehler: {e}", None, rid)
+                if not sip.isdeleted(self):
+                    self.ocr_fertig.emit(f"Fehler: {e}", None, rid)
 
         threading.Thread(target=run, daemon=True).start()
 

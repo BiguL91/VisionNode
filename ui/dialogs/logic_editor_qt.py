@@ -85,7 +85,7 @@ class NodeParamDialog(QDialog):
 
             row = QHBoxLayout()
             combo = QComboBox()
-            combo.addItems(["=", "!=", ">", "<", ">=", "<="])
+            combo.addItems(["=", "!=", ">", "<", ">=", "<=", "~", "!~"])
             combo.setCurrentText(self._node.data.get("operator", "="))
             combo.setFixedWidth(70)
             combo.setProperty("class", "input_dark")

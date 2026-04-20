@@ -98,6 +98,9 @@ class CustomDockTitleBar(QFrame):
             }
         """)
 
+    def set_locked(self, locked: bool):
+        self.btn_float.setVisible(not locked)
+
     def toggle_collapse(self):
         content = self.dock.widget()
         if not content: return
@@ -214,6 +217,7 @@ class TilesBotWindow(QMainWindow):
         self._nur_aktive_variablen   = False
         self._logic_clipboard = None
         self._active_dialogs = []
+        self._ui_locked = self.einstellungen.get("layout_locked", False)
 
         self._gui_aufbauen()
         self._connect_signals()
@@ -273,6 +277,15 @@ class TilesBotWindow(QMainWindow):
             view_menu.addAction(dock.toggleViewAction())
             
         view_menu.addSeparator()
+
+        # Layout fixieren
+        self._act_lock_layout = QAction("Layout fixieren", self)
+        self._act_lock_layout.setCheckable(True)
+        self._act_lock_layout.setChecked(self._ui_locked)
+        self._act_lock_layout.triggered.connect(self._layout_sperren_umschalten)
+        view_menu.addAction(self._act_lock_layout)
+
+        view_menu.addSeparator()
         act_reset = QAction("Layout zurücksetzen", self)
         act_reset.triggered.connect(self._reset_layout)
         view_menu.addAction(act_reset)
@@ -308,6 +321,28 @@ class TilesBotWindow(QMainWindow):
         self._fenster_geometrie_speichern()
         self._log("UI Layout zurückgesetzt.")
 
+    def _layout_sperren_umschalten(self):
+        """Sperrt oder entsperrt das Verschieben und Rauslösen von Docks."""
+        self._ui_locked = self._act_lock_layout.isChecked()
+        self.einstellungen["layout_locked"] = self._ui_locked
+        self.app.save_settings()
+
+        docks = self.findChildren(QDockWidget)
+        for dock in docks:
+            if self._ui_locked:
+                dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+            else:
+                dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
+                                 QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+                                 QDockWidget.DockWidgetFeature.DockWidgetClosable)
+            
+            # Titelzeile informieren
+            tb = dock.titleBarWidget()
+            if isinstance(tb, CustomDockTitleBar):
+                tb.set_locked(self._ui_locked)
+
+        self._log(f"UI Layout {'fixiert' if self._ui_locked else 'entsperrt'}.")
+
     def _create_dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, object_name: str) -> QDockWidget:
         """Erstellt ein QDockWidget mit einer eigenen einklappbaren Titelzeile."""
         dock = QDockWidget(title, self)
@@ -315,8 +350,17 @@ class TilesBotWindow(QMainWindow):
         dock.setWidget(widget)
         dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         
+        # Features je nach Sperrzustand
+        if self._ui_locked:
+            dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+        else:
+            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
+                             QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+                             QDockWidget.DockWidgetFeature.DockWidgetClosable)
+
         # Eigene Titelzeile setzen
         title_bar = CustomDockTitleBar(title, dock)
+        title_bar.set_locked(self._ui_locked)
         dock.setTitleBarWidget(title_bar)
         
         self.addDockWidget(area, dock)
