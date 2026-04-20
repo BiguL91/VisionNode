@@ -24,7 +24,8 @@ FONT_GROESSEN = [10, 9, 8]
 class VariableBlock(QFrame):
     """Ein aufklappbarer Block für eine Gruppe von OCR-Variablen (z.B. ein Template)."""
     
-    loeschen_requested = pyqtSignal(str)  # entry_name
+    loeschen_requested = pyqtSignal(str)           # entry_name
+    ocr_konfigurieren_requested = pyqtSignal(str)  # template_name
 
     def __init__(self, key: str, display_name: str, farbe: str, eintraege: list, parent=None):
         """
@@ -158,7 +159,16 @@ class VariableBlock(QFrame):
                 target_key = k
                 break
         if not target_key: return
+        
         menu = QMenu(self)
+        menu.setObjectName("context_menu")
+
+        if self.key != "_feste_":
+            act_edit = QAction("✎ OCR Konfigurieren", self)
+            act_edit.triggered.connect(lambda: self.ocr_konfigurieren_requested.emit(self.key))
+            menu.addAction(act_edit)
+            menu.addSeparator()
+
         act_del = QAction("✕ Löschen", self)
         act_del.triggered.connect(lambda: self.loeschen_requested.emit(target_key))
         menu.addAction(act_del)
@@ -205,6 +215,7 @@ class VariableBlock(QFrame):
 class VariablePanel(QWidget):
     feste_region_loeschen = pyqtSignal(str)
     template_ocr_loeschen  = pyqtSignal(str)
+    ocr_konfigurieren_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -327,6 +338,10 @@ class VariablePanel(QWidget):
         self.list_layout.insertWidget(self.list_layout.count() - 1, block)
         self._bloecke[key] = block
         self._reihenfolge.append(key)
+        
+        # Signal weiterleiten
+        block.ocr_konfigurieren_requested.connect(self.ocr_konfigurieren_requested.emit)
+        
         return block
 
     def _sichtbar(self, tn: str, aktuelle_matches: set, jetzt: float) -> bool:

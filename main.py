@@ -563,6 +563,7 @@ class TilesBotWindow(QMainWindow):
             lambda n: (self.ocr_engine.region_loeschen(n), self._panels_aktualisieren()))
         self.ocr_panel.template_ocr_loeschen.connect(
             lambda n: (self.ocr_engine.template_ocr_deaktivieren(n), self._panels_aktualisieren()))
+        self.ocr_panel.ocr_konfigurieren_requested.connect(self._ocr_konfigurieren)
 
         # State-Panel
         self.state_panel.add_requested.connect(self._state_hinzufuegen)
