@@ -332,7 +332,6 @@ class VariablePanel(QWidget):
     def _sichtbar(self, tn: str, aktuelle_matches: set, jetzt: float) -> bool:
         if tn == "_feste_": return True
         if not self._nur_aktive: return True
-        if tn in aktuelle_matches: return True
         block = self._bloecke.get(tn)
         if not block: return False
         return any(jetzt - self._ocr_letzter_wert_zeit.get(en, 0) < 2.5 for en in block.entry_names())

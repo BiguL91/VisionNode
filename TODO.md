@@ -5,7 +5,7 @@
 ## Priorität 1 (Next)
 
 
-- [ ] ** UI Bedinbarkeit. verbessern
+- [x] ** UI Bedinbarkeit. verbessern (wurde umgebaut auf dockbare pannels)
     - Speziell Verschiedene Panels neben dem Live Canvas individuell in der höhe skallieren.
     - Danten-Liste anzeige verfeinern
     
@@ -15,14 +15,23 @@
   - Automatischer Test neuer Templates gegen Snapshots; Schwellwert-Vorschläge & Live-Anpassung.
 
 - **Vision Engine Evolution**
-  - [ ] **Auto-Tuning**: Bot schlägt Schwellwerte basierend auf Snapshots automatisch vor.
+  - [ ] **Auto-Tuning**: Bot schlägt Schwellwerte basierend auf Snapshots und Live Bilder automatisch vor.
 
-- [ ] ** Neue Node´s für komplexere Abläufe**
+- [x] ** Neue Node´s für komplexere Abläufe**
   - Set Value
   - Schleifen wiederholung
   - Combi Node (suche+klick) in einem
 
 
+- [ ] ** Vergleich Node Erweitern **
+  - Möglichkeit um Text zu vergleichen, zb: ist "Wort" enthalten
+
+- [ ] ** Schleifen node Umdesignen**
+  - Da Die Schleifen Node einen rückweg am Canvas bereicht müssen Eingang und Außgang Punkte getauscht werden.
+
+
+- [ ] ** Möglichkeit neues UI zu Fixernen**
+  - Wenn man seine Lieblings einstellung gefunden hat, eine funktion um erneues Auserversehenes verschieben zu Blockieren
 ---
 
 ## Priorität 2 (Later)
