@@ -237,6 +237,9 @@ class TilesBotWindow(QMainWindow):
         """Registriert einen Dialog, um ihn vor dem Garbage Collector zu schützen und zeigt ihn an."""
         self._active_dialogs.append(dlg)
         
+        # Wieder aktivieren, da das "Blitzen" (Positionierung) gelöst ist
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose) 
+        
         def cleanup():
             if dlg in self._active_dialogs:
                 self._active_dialogs.remove(dlg)
