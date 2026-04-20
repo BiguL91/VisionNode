@@ -158,7 +158,7 @@ from core.daten_manager import alle_listen, cache_lesen, sekunden_formatieren
 # ── Qt Panels ─────────────────────────────────────────────────────────────────
 from ui.panels.log_panel_qt      import LogPanel      as LogPanelQt
 from ui.panels.state_panel_qt    import StatePanel    as StatePanelQt
-from ui.panels.workflow_panel_qt import WorkflowPanel as WorkflowPanelQt
+from ui.panels.workflow_panel_qt import MasterflowPanel, SubWorkflowPanel, LogicNetworkPanel
 from ui.panels.variable_panel_qt import VariablePanel as VariablePanelQt
 from ui.panels.template_panel_qt import TemplatePanel as TemplatePanelQt
 from ui.panels.daten_panel_qt    import DatenPanel    as DatenPanelQt
@@ -265,11 +265,14 @@ class TilesBotWindow(QMainWindow):
         
         # Dock-Toggles
         docks = [
-            ("Workflows", self._dock_workflows),
+            ("Master-Flows", self._dock_masterflow),
+            ("Sub-Workflows", self._dock_sub_workflow),
+            ("Logik-Netzwerke", self._dock_logic_network),
             ("Workflow Templates", self._dock_templates_wf),
             ("State Templates", self._dock_templates_st),
             ("OCR Variablen", self._dock_ocr),
             ("State Variablen", self._dock_states),
+            ("Globale Var.", self._dock_global_vars),
             ("Log", self._dock_log),
             ("Daten-Listen", self._dock_daten),
         ]
@@ -293,29 +296,40 @@ class TilesBotWindow(QMainWindow):
     def _reset_layout(self):
         """Setzt das Dock-Layout auf den IDE-Klassik Standard zurück."""
         # Alle Docks einblenden
-        self._dock_workflows.show()
+        self._dock_masterflow.show()
+        self._dock_sub_workflow.show()
+        self._dock_logic_network.show()
         self._dock_templates_wf.show()
         self._dock_templates_st.show()
         self._dock_ocr.show()
         self._dock_states.show()
         self._dock_log.show()
+        self._dock_global_vars.show()
         self._dock_daten.show()
         
-        # Positionen erzwingen
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_workflows)
+        # Positionen erzwingen (Links)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_masterflow)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_sub_workflow)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_logic_network)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_wf)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_st)
+        
+        # Rechts
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_ocr)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_states)
+        
+        # Unten
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_log)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_global_vars)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_daten)
         
         # Tabbing unten
-        self.tabifyDockWidget(self._dock_log, self._dock_daten)
+        self.tabifyDockWidget(self._dock_log, self._dock_global_vars)
+        self.tabifyDockWidget(self._dock_global_vars, self._dock_daten)
         self._dock_log.raise_()
         
-        # Größen (ungefähr)
-        self.resizeDocks([self._dock_workflows, self._dock_templates_wf, self._dock_templates_st], [300, 300, 200], Qt.Orientation.Vertical)
+        # Größen (Links stapeln)
+        self.resizeDocks([self._dock_masterflow, self._dock_sub_workflow, self._dock_logic_network], [200, 300, 200], Qt.Orientation.Vertical)
         self.resizeDocks([self._dock_ocr, self._dock_states], [400, 200], Qt.Orientation.Vertical)
         
         self._fenster_geometrie_speichern()
@@ -380,8 +394,14 @@ class TilesBotWindow(QMainWindow):
         # ── Docks Erstellen ───────────────────────────────────────────────────
         
         # 1. Links: Workflows & Templates
-        self.workflow_panel = WorkflowPanelQt()
-        self._dock_workflows = self._create_dock("Workflows", self.workflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_workflows")
+        self.masterflow_panel = MasterflowPanel()
+        self._dock_masterflow = self._create_dock("Master-Flows", self.masterflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_masterflow")
+
+        self.sub_workflow_panel = SubWorkflowPanel()
+        self._dock_sub_workflow = self._create_dock("Sub-Workflows", self.sub_workflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_sub_workflow")
+
+        self.logic_network_panel = LogicNetworkPanel()
+        self._dock_logic_network = self._create_dock("Logik-Netzwerke", self.logic_network_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_logic_network")
 
         self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True)
         self._dock_templates_wf = self._create_dock("Workflow Templates", self.template_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates_wf")
@@ -580,17 +600,21 @@ class TilesBotWindow(QMainWindow):
         # Vorschau-Selektion
         self._vorschau.region_ausgewaehlt.connect(self._region_ausgewaehlt)
 
-        # Workflow-Panel
-        self.workflow_panel.master_neu_requested.connect(self._master_neu)
-        self.workflow_panel.master_bearbeiten_requested.connect(self._master_bearbeiten)
-        self.workflow_panel.master_loeschen_requested.connect(self._master_loeschen)
-        self.workflow_panel.master_aktiv_requested.connect(self._master_aktiv_setzen)
-        self.workflow_panel.workflow_neu_requested.connect(self._workflow_neu)
-        self.workflow_panel.workflow_bearbeiten_requested.connect(self._workflow_bearbeiten)
-        self.workflow_panel.workflow_kopieren_requested.connect(self._workflow_kopieren)
-        self.workflow_panel.workflow_loeschen_requested.connect(self._workflow_loeschen)
-        self.workflow_panel.logic_network_edit_requested.connect(self._logic_netzwerk_bearbeiten)
-        self.workflow_panel.logic_network_copy_requested.connect(self._logic_kopieren)
+        # Master-Flow Panel
+        self.masterflow_panel.neu_requested.connect(self._master_neu)
+        self.masterflow_panel.bearbeiten_requested.connect(self._master_bearbeiten)
+        self.masterflow_panel.loeschen_requested.connect(self._master_loeschen)
+        self.masterflow_panel.aktiv_requested.connect(self._master_aktiv_setzen)
+
+        # Sub-Workflow Panel
+        self.sub_workflow_panel.neu_requested.connect(self._workflow_neu)
+        self.sub_workflow_panel.bearbeiten_requested.connect(self._workflow_bearbeiten)
+        self.sub_workflow_panel.kopieren_requested.connect(self._workflow_kopieren)
+        self.sub_workflow_panel.loeschen_requested.connect(self._workflow_loeschen)
+
+        # Logic-Network Panel
+        self.logic_network_panel.edit_requested.connect(self._logic_netzwerk_bearbeiten)
+        self.logic_network_panel.copy_requested.connect(self._logic_kopieren)
 
         # Template-Panels
         self.template_panel.neu_laden_requested.connect(self._template_neu_erstellen)
@@ -1476,10 +1500,16 @@ class TilesBotWindow(QMainWindow):
                 _template_farbe,
                 is_smart_func=self.template_engine._is_smart_recursive
             )
-        if hasattr(self, "workflow_panel"):
-            self.workflow_panel.aktualisieren(
+        if hasattr(self, "masterflow_panel"):
+            self.masterflow_panel.aktualisieren(
                 dict(self.workflow_engine.master_workflows),
                 getattr(self.workflow_engine, "aktiver_master", ""),
+            )
+        if hasattr(self, "sub_workflow_panel"):
+            self.sub_workflow_panel.aktualisieren(dict(self.workflow_engine.workflows))
+        if hasattr(self, "logic_network_panel"):
+            self.logic_network_panel.aktualisieren(
+                dict(self.workflow_engine.master_workflows),
                 dict(self.workflow_engine.workflows),
             )
         if hasattr(self, "state_panel"):
