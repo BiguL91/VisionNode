@@ -391,9 +391,21 @@ class DatenListeEditorQt(QDialog):
     def _ocr_vars_laden(self) -> dict:
         return self._ocr_vars   # wird von außen gesetzt
 
-    def set_ocr_vars(self, vars_struk: dict):
-        """Erwartet Struktur: { Kategorie: { Gruppe: { Template: [ (AnzeigeName, TechnischerName) ] } } }."""
+    def set_ocr_vars(self, vars_struk: dict, feste_regionen: list[str] = None):
+        """
+        vars_struk: { Kategorie: { Gruppe: { Template: [ (AnzeigeName, TechnischerName) ] } } }
+        feste_regionen: Liste von Namen fixer OCR-Regionen.
+        """
         self._ocr_vars = vars_struk
+        
+        # Fixe Regionen in die Struktur einsortieren unter einer eigenen Kategorie
+        if feste_regionen:
+            if "Fixe Regionen" not in self._ocr_vars:
+                self._ocr_vars["Fixe Regionen"] = {"": {"Regionen": []}}
+            
+            for r in sorted(feste_regionen):
+                self._ocr_vars["Fixe Regionen"][""]["Regionen"].append((r, r))
+                
         self._transform_neu_aufbauen()
 
     # ── Setup ──────────────────────────────────────────────────────────────────

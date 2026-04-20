@@ -253,11 +253,10 @@ class TemplatePanel(QWidget):
         if not item:
             return
         gruppe_key = item.data(Qt.ItemDataRole.UserRole)
-        if gruppe_key is not None:
-            self._last_gruppe = gruppe_key if gruppe_key else None
+        if gruppe_key:
+            self._last_gruppe = gruppe_key
         else:
-            name = self.get_auswahl_name()
-            self._last_gruppe = None  # wird vom Controller gesetzt falls nötig
+            self._last_gruppe = self.get_auswahl_name()
 
     def _on_doppelklick(self, item: QListWidgetItem):
         if "📦" in item.text():
@@ -286,8 +285,9 @@ class TemplatePanel(QWidget):
             self.klick_konfigurieren_requested.emit(name)
 
     def _gruppe(self):
-        if self._last_gruppe:
-            self.gruppe_konfigurieren_requested.emit(self._last_gruppe)
+        name = self._last_gruppe or self.get_auswahl_name()
+        if name:
+            self.gruppe_konfigurieren_requested.emit(name)
 
     def _on_kontext_menue(self, pos: QPoint):
         item = self.liste.itemAt(pos)

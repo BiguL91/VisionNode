@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import json
 import threading
+import time
+from collections import defaultdict
 
 from style import style
 
@@ -17,7 +19,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QPushButton, QLabel, QLineEdit, QComboBox, QInputDialog,
     QMessageBox, QScrollArea, QSizePolicy, QApplication, QFrame,
-    QMenu, QDockWidget,
+    QMenu, QDockWidget, QDialog,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QMetaObject, Q_ARG, QSize
 from PyQt6.QtGui import (
@@ -26,11 +28,12 @@ from PyQt6.QtGui import (
 )
 
 class CustomDockTitleBar(QFrame):
-    """Eigene Titelzeile für Docks mit Einklapp-Funktion."""
+    """Eigene Titelzeile für Docks mit Einklapp-Funktion und Fokus-Modus."""
     def __init__(self, title, dock, parent=None):
         super().__init__(parent)
         self.dock = dock
         self._collapsed = False
+        self._focused = False
         self.setFixedHeight(30)
         self.setObjectName("dock_title_bar")
 
@@ -66,6 +69,16 @@ class CustomDockTitleBar(QFrame):
             }
         """
 
+        # Fokus-Button (Vollformat) - Nur wenn gesperrt
+        self.btn_focus = QPushButton("⛶")
+        self.btn_focus.setFixedSize(18, 18)
+        self.btn_focus.setToolTip("Fokus-Modus (Vollformat)")
+        self.btn_focus.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_focus.setStyleSheet(btn_style)
+        self.btn_focus.clicked.connect(self.toggle_focus)
+        self.btn_focus.setVisible(False)
+        layout.addWidget(self.btn_focus)
+
         # Einklapp-Button
         self.btn_collapse = QPushButton("▲")
         self.btn_collapse.setFixedSize(18, 18)
@@ -100,6 +113,61 @@ class CustomDockTitleBar(QFrame):
 
     def set_locked(self, locked: bool):
         self.btn_float.setVisible(not locked)
+        self.btn_focus.setVisible(locked)
+
+    def toggle_focus(self):
+        """Öffnet den Inhalt des Docks in einem separaten nicht-modalen Fenster."""
+        content = self.dock.widget()
+        if not content or content.property("is_placeholder"): 
+            return
+
+        main_win = self.window()
+        
+        # Neues Fenster erstellen (QDialog, aber nicht-modal)
+        dlg = QDialog(main_win)
+        dlg.setWindowTitle(f"{self.dock.windowTitle()} - Vollformat")
+        dlg.setMinimumSize(400, 300) # Deutlich kleinere Mindestgröße für freie Skalierung
+        dlg.resize(1000, 700)
+        
+        # Fenster-Flags für Maximieren/Minimieren
+        dlg.setWindowFlags(
+            Qt.WindowType.Window | 
+            Qt.WindowType.WindowMaximizeButtonHint | 
+            Qt.WindowType.WindowMinimizeButtonHint |
+            Qt.WindowType.WindowCloseButtonHint
+        )
+        
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(2, 2, 2, 2)
+        
+        # Widget "umziehen"
+        lay.addWidget(content)
+        
+        # Platzhalter im Dock erstellen
+        placeholder = QWidget()
+        placeholder.setProperty("is_placeholder", True)
+        p_lay = QVBoxLayout(placeholder)
+        lbl_hint = QLabel(f"Im Fenster geöffnet...")
+        lbl_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_hint.setStyleSheet("color: #555555; font-style: italic; font-size: 10px;")
+        p_lay.addWidget(lbl_hint)
+        
+        self.dock.setWidget(placeholder)
+        
+        # Logik zum Zurückholen beim Schließen
+        def on_close(result):
+            self.dock.setWidget(content)
+            placeholder.deleteLater()
+            if hasattr(main_win, "_log"):
+                main_win._log(f"Panel '{self.dock.windowTitle()}' wieder angedockt.")
+
+        dlg.finished.connect(on_close)
+        
+        # Fenster anzeigen (über die Registrierung des Hauptfensters, damit es nicht vom GC gelöscht wird)
+        if hasattr(main_win, "_show_dialog"):
+            main_win._show_dialog(dlg)
+        else:
+            dlg.show()
 
     def toggle_collapse(self):
         content = self.dock.widget()
@@ -294,7 +362,11 @@ class TilesBotWindow(QMainWindow):
         view_menu.addAction(act_reset)
 
     def _reset_layout(self):
-        """Setzt das Dock-Layout auf den IDE-Klassik Standard zurück."""
+        """Setzt das Dock-Layout auf den aktuellen Standard zurück."""
+        # Hex-Daten des aktuellen Layouts
+        GEO   = "01d9d0cb0003000000000000fffffff800000d6f0000056f000000d70000001f000008540000056e00000000020000000d70000000000000001700000d6f0000056f"
+        STATE = "000000ff00000000fd000000030000000000000297000004c3fc0200000001fc00000021000004c30000012e00fffffffc0100000004fb0000001c0064006f0063006b005f0077006f0072006b0066006c006f007700730100000000000001500000000000000000fc0000000000000151000000a200fffffffc0200000002fc0000002100000276000000a50100001dfa000000010100000002fb000000220064006f0063006b005f007300750062005f0077006f0072006b0066006c006f00770100000000ffffffff0000009800fffffffb0000001e0064006f0063006b005f006d006100730074006500720066006c006f0077010000000000000155000000a000fffffffb000000240064006f0063006b005f006c006f006700690063005f006e006500740077006f0072006b01000002990000024b0000008700fffffffc0000015300000144000000b500fffffffa000000000200000002fb000000220064006f0063006b005f00740065006d0070006c0061007400650073005f007700660100000000ffffffff0000009200fffffffb000000220064006f0063006b005f00740065006d0070006c0061007400650073005f007300740100000021000002d10000009200fffffffb0000001c0064006f0063006b005f00740065006d0070006c006100740065007301000001430000014f0000000000000000000000010000038c000004c3fc0200000001fc00000021000004c3000000fd00fffffffc0100000002fc000009e4000001d20000009200fffffffa000000010100000002fb000000200064006f0063006b005f0067006c006f00620061006c005f00760061007200730100000000ffffffff0000009200fffffffb000000140064006f0063006b005f0064006100740065006e0100000a82000000970000008900fffffffc00000bb8000001b80000009500fffffffc0200000002fb000000160064006f0063006b005f0073007400610074006500730100000021000002540000008c00fffffffb000000100064006f0063006b005f006f0063007201000002770000026d0000006f00ffffff0000000300000d7000000073fc0100000001fb000000100064006f0063006b005f006c006f0067010000000000000d700000005500ffffff00000749000004c300000004000000040000000800000008fc00000000"
+
         # Alle Docks einblenden
         self._dock_masterflow.show()
         self._dock_sub_workflow.show()
@@ -307,33 +379,12 @@ class TilesBotWindow(QMainWindow):
         self._dock_global_vars.show()
         self._dock_daten.show()
         
-        # Positionen erzwingen (Links)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_masterflow)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_sub_workflow)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_logic_network)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_wf)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_st)
-        
-        # Rechts
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_ocr)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_states)
-        
-        # Unten
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_log)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_global_vars)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_daten)
-        
-        # Tabbing unten
-        self.tabifyDockWidget(self._dock_log, self._dock_global_vars)
-        self.tabifyDockWidget(self._dock_global_vars, self._dock_daten)
-        self._dock_log.raise_()
-        
-        # Größen (Links stapeln)
-        self.resizeDocks([self._dock_masterflow, self._dock_sub_workflow, self._dock_logic_network], [200, 300, 200], Qt.Orientation.Vertical)
-        self.resizeDocks([self._dock_ocr, self._dock_states], [400, 200], Qt.Orientation.Vertical)
+        # Layout wiederherstellen
+        self.restoreGeometry(bytes.fromhex(GEO))
+        self.restoreState(bytes.fromhex(STATE))
         
         self._fenster_geometrie_speichern()
-        self._log("UI Layout zurückgesetzt.")
+        self._log("UI Layout auf gespeicherten Standard zurückgesetzt.")
 
     def _layout_sperren_umschalten(self):
         """Sperrt oder entsperrt das Verschieben und Rauslösen von Docks."""
@@ -1417,16 +1468,33 @@ class TilesBotWindow(QMainWindow):
         ocr_func = lambda n: {**self.app.state.ocr_values, **self.app.state.template_ocr_values}.get(n)
         dlg = DatenListeEditorQt(listen_dict, ocr_state_func=ocr_func, parent=self)
         
-        # ... (OCR Variablen Sammel-Logik unverändert)
+        # OCR Variablen für Autovervollständigung sammeln
+        # Erwartet: { Kategorie: { Gruppe: { Template: [ (Anzeige, Tech) ] } } }
+        ocr_konf = self.ocr_engine.template_ocr_konfigurationen()
+        deep_struk = {}
+        
+        for var_name, v in ocr_konf.items():
+            tpl_name = v["template"]
+            setts = self.template_engine.settings.get(tpl_name, {})
+            kat = setts.get("kategorie", "workflow")
+            grp = setts.get("gruppe", "")
+            if grp == tpl_name: grp = ""
+            
+            if kat not in deep_struk: deep_struk[kat] = {}
+            if grp not in deep_struk[kat]: deep_struk[kat][grp] = {}
+            if tpl_name not in deep_struk[kat][grp]: deep_struk[kat][grp][tpl_name] = []
+            
+            deep_struk[kat][grp][tpl_name].append((var_name, var_name))
+        
+        dlg.set_ocr_vars(deep_struk, list(self.ocr_engine.regionen.keys()))
         
         def reload_all():
             self.global_vars_panel.listen_neu_laden()
             self.daten_panel.listen_neu_laden()
 
-        # Wir müssen den Teil mit sorted_struk und set_ocr_vars behalten, 
-        # aber hier im replace ist das schwierig ohne den ganzen Kontext.
-        # Ich versuche nur den Aufruf-Teil am Ende zu ändern.
-        pass
+        dlg.gespeichert.connect(reload_all)
+        dlg.finished.connect(reload_all)
+        self._show_dialog(dlg)
 
     def _timer_bearbeiten_dialog(self, listen_dict: dict):
         dlg = TimerEditorDialogQt(listen_dict, parent=self)

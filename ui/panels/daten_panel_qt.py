@@ -60,12 +60,17 @@ class BaseListenBlock(QFrame):
         h_layout.addStretch()
 
         header.mousePressEvent = lambda e: self._toggle()
+        
+        # Kontextmenü für den Header
+        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_context_menu)
+        
         root.addWidget(header)
 
         # Tabelle
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(True)
         self.table.setFrameShape(QFrame.Shape.NoFrame)
@@ -86,12 +91,41 @@ class BaseListenBlock(QFrame):
         self.table.setProperty("class", "daten_tabelle")
         root.addWidget(self.table)
 
-    def _show_context_menu(self, pos):
-        """Zeigt ein Rechtsklick-Menü für die Liste an."""
+    def _show_header_context_menu(self, pos):
+        """Rechtsklick-Menü für den Titel-Balken."""
         menu = QMenu(self)
-        act_edit = QAction("✎ Bearbeiten...", self)
+        menu.setObjectName("context_menu")
+        
+        act_edit = QAction("✎ Liste bearbeiten...", self)
         act_edit.triggered.connect(lambda: self.edit_requested.emit(self.l))
         menu.addAction(act_edit)
+        
+        menu.addSeparator()
+        
+        act_toggle = QAction("▲/▼ Auf/Zuklappen", self)
+        act_toggle.triggered.connect(self._toggle)
+        menu.addAction(act_toggle)
+        
+        menu.exec(self.sender().mapToGlobal(pos))
+
+    def _show_context_menu(self, pos):
+        """Zeigt ein Rechtsklick-Menü für die Tabelle an."""
+        menu = QMenu(self)
+        menu.setObjectName("context_menu")
+        
+        act_edit = QAction("✎ Liste bearbeiten...", self)
+        act_edit.triggered.connect(lambda: self.edit_requested.emit(self.l))
+        menu.addAction(act_edit)
+        
+        menu.addSeparator()
+        
+        act_reset_header = QAction("↺ Spaltenbreiten zurücksetzen", self)
+        def reset_header():
+            cache_schreiben(self.l["id"], "UI.header_state", "")
+            self._tabelle_zeichnen()
+        act_reset_header.triggered.connect(reset_header)
+        menu.addAction(act_reset_header)
+        
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _save_header_state(self):
