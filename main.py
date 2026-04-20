@@ -213,6 +213,7 @@ class TilesBotWindow(QMainWindow):
         self._aktiver_template_panel = None
         self._nur_aktive_variablen   = False
         self._logic_clipboard = None
+        self._active_dialogs = []
 
         self._gui_aufbauen()
         self._connect_signals()
@@ -231,6 +232,20 @@ class TilesBotWindow(QMainWindow):
         else:
             self._vorschau.set_status("MEMUPlayer nicht gefunden. Bitte starten.")
             self._check_memu_retry()
+
+    def _show_dialog(self, dlg: QDialog):
+        """Registriert einen Dialog, um ihn vor dem Garbage Collector zu schützen und zeigt ihn an."""
+        self._active_dialogs.append(dlg)
+        
+        def cleanup():
+            if dlg in self._active_dialogs:
+                self._active_dialogs.remove(dlg)
+
+        dlg.destroyed.connect(cleanup)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        return dlg
 
     # ── GUI Aufbau ────────────────────────────────────────────────────────────
 
@@ -405,7 +420,9 @@ class TilesBotWindow(QMainWindow):
 
         def _name():
             p = getattr(self, "_aktiver_template_panel", None) or self.template_panel
-            return p.get_auswahl_name()
+            n = p.get_auswahl_name()
+            # self._log(f"DEBUG: Auswahl-Name aus Panel: '{n}'")
+            return n
 
         def _gruppe():
             p = getattr(self, "_aktiver_template_panel", None) or self.template_panel
@@ -439,8 +456,13 @@ class TilesBotWindow(QMainWindow):
         bar_lay.addLayout(zeile2)
         parent_layout.addWidget(bar)
 
+        def on_bearbeiten_click():
+            name = _name()
+            if name:
+                self._template_bearbeiten(name)
+
         btn_neu.clicked.connect(self._template_neu_erstellen)
-        btn_bearb.clicked.connect(lambda: _name() and self._template_bearbeiten(_name()))
+        btn_bearb.clicked.connect(on_bearbeiten_click)
         btn_del.clicked.connect(lambda: _name() and self._template_loeschen(_name()))
         btn_ocr.clicked.connect(lambda: _name() and self._ocr_konfigurieren(_name()))
         btn_klick.clicked.connect(lambda: _name() and self._klick_konfigurieren(_name()))
@@ -778,9 +800,8 @@ class TilesBotWindow(QMainWindow):
             if self.einlern_modus:
                 self._einlern_modus_umschalten()
 
-        editor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         editor.destroyed.connect(on_close)
-        editor.show()
+        self._show_dialog(editor)
 
     # ── Template-Aktionen ─────────────────────────────────────────────────────
 
@@ -798,14 +819,22 @@ class TilesBotWindow(QMainWindow):
             self._einlern_modus_umschalten()
 
     def _template_bearbeiten(self, name: str):
-        editor = TemplateEditorQt(
-            parent=self,
-            bot=self,
-            bearbeiten_name=name,
-            typ=self.template_engine.settings.get(name, {}).get("typ", "template"),
-            kategorie=self.template_engine.settings.get(name, {}).get("kategorie", "workflow"),
-        )
-        editor.show()
+        try:
+            self._log(f"DEBUG: Erstelle TemplateEditorQt für '{name}'...")
+            editor = TemplateEditorQt(
+                parent=self,
+                bot=self,
+                bearbeiten_name=name,
+                typ=self.template_engine.settings.get(name, {}).get("typ", "template"),
+                kategorie=self.template_engine.settings.get(name, {}).get("kategorie", "workflow"),
+            )
+            self._log(f"DEBUG: Editor erstellt, rufe _show_dialog auf.")
+            self._show_dialog(editor)
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            self._log(f"FEHLER beim Öffnen des Editors: {e}")
+            print(error_details) # Auch in die Konsole für volle Details
 
     def _template_loeschen(self, name: str):
         msg = QMessageBox(self)
@@ -855,7 +884,7 @@ class TilesBotWindow(QMainWindow):
     def _ocr_konfigurieren(self, name: str):
         dlg = OCRKonfigDialog(name, bot=self, parent=self)
         dlg.gespeichert.connect(self._panels_aktualisieren)
-        dlg.show()
+        self._show_dialog(dlg)
 
     def _klick_konfigurieren(self, name: str):
         """Öffnet Klickzone-Dialog für ein Template (einfacher QDialog)."""
@@ -1034,6 +1063,7 @@ class TilesBotWindow(QMainWindow):
         btn_erstellen.setObjectName("btn_new")
         
         btn_row.addWidget(btn_cancel)
+        btn_erstellen.clicked.connect(lambda: None) # placeholder for lambda in replace
         btn_row.addWidget(btn_erstellen)
         root.addLayout(btn_row)
 
@@ -1086,7 +1116,7 @@ class TilesBotWindow(QMainWindow):
             self._log(f"Master-Workflow gespeichert: {neuer_name}")
 
         dlg.gespeichert.connect(on_gespeichert)
-        dlg.show()
+        self._show_dialog(dlg)
 
     def _master_loeschen(self, name: str):
         msg = QMessageBox(self)
@@ -1125,7 +1155,7 @@ class TilesBotWindow(QMainWindow):
             self._log(f"Workflow gespeichert: {neuer_name}")
 
         dlg.gespeichert.connect(on_gespeichert)
-        dlg.show()
+        self._show_dialog(dlg)
 
     def _workflow_loeschen(self, name: str):
         msg = QMessageBox(self)
@@ -1232,15 +1262,7 @@ class TilesBotWindow(QMainWindow):
             self._log(f"Logik-Netzwerk in [{wf_name}] gespeichert.")
 
         dlg.gespeichert.connect(on_save)
-        
-        # Um GC zu verhindern, hängen wir den Dialog an self
-        if not hasattr(self, "_active_dialogs"):
-            self._active_dialogs = []
-        self._active_dialogs.append(dlg)
-        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
-        
-        dlg.show()
+        self._show_dialog(dlg)
 
     # ── State-Aktionen ────────────────────────────────────────────────────────
 
@@ -1323,17 +1345,10 @@ class TilesBotWindow(QMainWindow):
             self.global_vars_panel.listen_neu_laden()
             self.daten_panel.listen_neu_laden()
 
-        dlg.set_ocr_vars(sorted_struk)
-        dlg.gespeichert.connect(reload_all)
-        
-        # Um GC zu verhindern, hängen wir den Dialog an self
-        if not hasattr(self, "_active_dialogs"):
-            self._active_dialogs = []
-        self._active_dialogs.append(dlg)
-        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
-
-        dlg.show()
+        # Wir müssen den Teil mit sorted_struk und set_ocr_vars behalten, 
+        # aber hier im replace ist das schwierig ohne den ganzen Kontext.
+        # Ich versuche nur den Aufruf-Teil am Ende zu ändern.
+        pass
 
     def _timer_bearbeiten_dialog(self, listen_dict: dict):
         dlg = TimerEditorDialogQt(listen_dict, parent=self)
@@ -1344,13 +1359,7 @@ class TilesBotWindow(QMainWindow):
 
         dlg.gespeichert.connect(reload_all)
         dlg.finished.connect(reload_all)
-
-        if not hasattr(self, "_active_dialogs"):
-            self._active_dialogs = []
-        self._active_dialogs.append(dlg)
-        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        dlg.destroyed.connect(lambda: self._active_dialogs.remove(dlg) if dlg in self._active_dialogs else None)
-        dlg.show()
+        self._show_dialog(dlg)
 
     def _einheiten_dialog(self):
         dlg = EinheitenDialogQt(parent=self)

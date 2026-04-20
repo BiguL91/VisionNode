@@ -106,9 +106,9 @@ class TemplateEditorQt(QDialog):
         self._setup_ui()
         self._load_existing_data()
 
-        if parent:
-            geo = parent.geometry()
-            self.move(geo.x() + geo.width() + 8, geo.y())
+        # if parent:
+        #    geo = parent.geometry()
+        #    self.move(geo.x() + geo.width() + 8, geo.y())
 
     # ─────────────────────────────────────────────────────────────────────────
     #  UI Aufbau
