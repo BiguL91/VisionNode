@@ -259,7 +259,8 @@ class TilesBotWindow(QMainWindow):
         # Dock-Toggles
         docks = [
             ("Workflows", self._dock_workflows),
-            ("Templates", self._dock_templates),
+            ("Workflow Templates", self._dock_templates_wf),
+            ("State Templates", self._dock_templates_st),
             ("OCR Variablen", self._dock_ocr),
             ("State Variablen", self._dock_states),
             ("Log", self._dock_log),
@@ -277,7 +278,8 @@ class TilesBotWindow(QMainWindow):
         """Setzt das Dock-Layout auf den IDE-Klassik Standard zurück."""
         # Alle Docks einblenden
         self._dock_workflows.show()
-        self._dock_templates.show()
+        self._dock_templates_wf.show()
+        self._dock_templates_st.show()
         self._dock_ocr.show()
         self._dock_states.show()
         self._dock_log.show()
@@ -285,7 +287,8 @@ class TilesBotWindow(QMainWindow):
         
         # Positionen erzwingen
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_workflows)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_wf)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._dock_templates_st)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_ocr)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self._dock_states)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self._dock_log)
@@ -296,7 +299,7 @@ class TilesBotWindow(QMainWindow):
         self._dock_log.raise_()
         
         # Größen (ungefähr)
-        self.resizeDocks([self._dock_workflows, self._dock_templates], [300, 400], Qt.Orientation.Vertical)
+        self.resizeDocks([self._dock_workflows, self._dock_templates_wf, self._dock_templates_st], [300, 300, 200], Qt.Orientation.Vertical)
         self.resizeDocks([self._dock_ocr, self._dock_states], [400, 200], Qt.Orientation.Vertical)
         
         self._fenster_geometrie_speichern()
@@ -333,8 +336,11 @@ class TilesBotWindow(QMainWindow):
         self.workflow_panel = WorkflowPanelQt()
         self._dock_workflows = self._create_dock("Workflows", self.workflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_workflows")
 
-        self._widget_templates = self._setup_templates_widget()
-        self._dock_templates = self._create_dock("Templates", self._widget_templates, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates")
+        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True)
+        self._dock_templates_wf = self._create_dock("Workflow Templates", self.template_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates_wf")
+        
+        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=True)
+        self._dock_templates_st = self._create_dock("State Templates", self.state_template_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates_st")
         
         # 2. Rechts: OCR & States
         self.ocr_panel = VariablePanelQt()
