@@ -3,10 +3,10 @@ from lang import lang
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QListWidget, QListWidgetItem, QMessageBox
+    QLabel, QListWidget, QListWidgetItem, QMessageBox, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtGui import QColor, QFont, QAction
 
 
 class TemplatePanel(QWidget):
@@ -33,6 +33,8 @@ class TemplatePanel(QWidget):
 
         self.liste = QListWidget()
         self.liste.setObjectName("template_liste")
+        self.liste.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.liste.customContextMenuRequested.connect(self._on_kontext_menue)
         self.liste.currentRowChanged.connect(self._on_select)
         self.liste.itemDoubleClicked.connect(self._on_doppelklick)
         layout.addWidget(self.liste)
@@ -286,3 +288,42 @@ class TemplatePanel(QWidget):
     def _gruppe(self):
         if self._last_gruppe:
             self.gruppe_konfigurieren_requested.emit(self._last_gruppe)
+
+    def _on_kontext_menue(self, pos: QPoint):
+        item = self.liste.itemAt(pos)
+        if not item:
+            return
+
+        name = self.get_auswahl_name()
+        if not name:
+            return
+
+        menu = QMenu(self)
+        menu.setObjectName("context_menu")
+
+        # Aktionen definieren
+        act_bearb = QAction("✎ Bearbeiten", self)
+        act_bearb.triggered.connect(self._bearbeiten)
+        
+        act_ocr = QAction(f"🔤 {lang.t('btn_ocr')}", self)
+        act_ocr.triggered.connect(self._ocr)
+        
+        act_klick = QAction(f"🖱 {lang.t('btn_click')}", self)
+        act_klick.triggered.connect(self._klick)
+        
+        act_states = QAction(f"🚩 {lang.t('tab_states')}", self)
+        act_states.triggered.connect(self._gruppe)
+
+        # Alle Aktionen für alle Elemente verfügbar machen
+        menu.addAction(act_bearb)
+        menu.addAction(act_ocr)
+        menu.addAction(act_klick)
+        menu.addSeparator()
+        menu.addAction(act_states)
+
+        menu.addSeparator()
+        act_del = QAction("✕ Löschen", self)
+        act_del.triggered.connect(self._loeschen)
+        menu.addAction(act_del)
+
+        menu.exec(self.liste.mapToGlobal(pos))
