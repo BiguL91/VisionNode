@@ -257,13 +257,15 @@ class LogicEditorDialogQt(QDialog):
     gespeichert = pyqtSignal(dict)
 
     def __init__(self, name: str, graph: dict,
-                 templates: list | None = None,
-                 parent=None,
-                 bot=None,
-                 # Legacy-Parameter – werden ignoriert, bleiben für Rückwärtskompatibilität
-                 game_states=None, ocr_vars=None):
+                  templates: list | None = None,
+                  parent=None,
+                  bot=None,
+                  # Legacy-Parameter – werden ignoriert, bleiben für Rückwärtskompatibilität
+                  game_states=None, ocr_vars=None):
         super().__init__(parent)
+        self.setObjectName("LogicEditorDialogQt")
         self.setWindowTitle(f"Logik-Netzwerk: {name}")
+
         self.setModal(False)
         self.resize(1100, 700)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)

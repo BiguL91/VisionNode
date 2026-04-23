@@ -125,6 +125,7 @@ class CustomDockTitleBar(QFrame):
         
         # Neues Fenster erstellen (QDialog, aber nicht-modal)
         dlg = QDialog(main_win)
+        dlg.setObjectName(f"dialog_focus_{self.dock.objectName()}")
         dlg.setWindowTitle(f"{self.dock.windowTitle()} - Vollformat")
         dlg.setMinimumSize(400, 300) # Deutlich kleinere Mindestgröße für freie Skalierung
         dlg.resize(1000, 700)
@@ -250,12 +251,15 @@ APP_CONFIG_DATEI = os.path.join("templates", "settings", "app_config.json")
 DISPLAY_FPS_DEFAULT = 30
 
 
+from ui.ui_utils import GeometryManager
+
 # ── Hauptfenster ──────────────────────────────────────────────────────────────
 
 class TilesBotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Ai-Bot")
+        self.setObjectName("main_window")
         self.setMinimumSize(1450, 700)
 
         # Dock-Optionen für maximale Flexibilität (Widescreen-Support)
@@ -308,6 +312,12 @@ class TilesBotWindow(QMainWindow):
     def _show_dialog(self, dlg: QDialog):
         """Registriert einen Dialog, um ihn vor dem Garbage Collector zu schützen und zeigt ihn an."""
         self._active_dialogs.append(dlg)
+        
+        # Geometrie wiederherstellen
+        GeometryManager.restore_geometry(dlg)
+        
+        # Event-Filter zum automatischen Speichern beim Schließen (Hide)
+        dlg.installEventFilter(GeometryManager.get_filter())
         
         # Wieder aktivieren, da das "Blitzen" (Positionierung) gelöst ist
         dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose) 
@@ -1044,6 +1054,7 @@ class TilesBotWindow(QMainWindow):
         from PyQt6.QtGui import QPixmap, QImage
 
         dlg = QDialog(self)
+        dlg.setObjectName("dialog_Klickzone")
         dlg.setWindowTitle(f"Klickzone — {name}")
         dlg.setModal(True)
 
@@ -1141,6 +1152,7 @@ class TilesBotWindow(QMainWindow):
     def _passiv_gruppe_erstellen_dialog(self, kategorie: str = "workflow", ist_master: bool = True):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QLabel, QPushButton
         dlg = QDialog(self)
+        dlg.setObjectName("dialog_PassivGruppeErstellen")
         dlg.setWindowTitle("Neue Gruppe erstellen")
         dlg.setModal(True)
         dlg.setFixedWidth(350)
@@ -1586,42 +1598,19 @@ class TilesBotWindow(QMainWindow):
     # ── Fenstergröße & Layout Persistenz ──────────────────────────────────────
 
     def _fenster_groesse_initialisieren(self):
-        try:
-            if os.path.exists(APP_CONFIG_DATEI):
-                with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
-                    config = json.load(f)
-                
-                geo = config.get("fenster_geometrie")
-                if geo:
-                    self.restoreGeometry(bytes.fromhex(geo))
-                
-                state = config.get("fenster_status")
-                if state:
-                    self.restoreState(bytes.fromhex(state))
-                
-                if geo: return
-        except Exception:
-            pass
-
-        # Fallback Default
-        screen = QApplication.primaryScreen().availableGeometry()
-        target_w = min(1600, int(screen.width() * 0.90))
-        self.resize(target_w, screen.height() - 100)
+        # Geometrie und Dock-Status laden
+        GeometryManager.restore_geometry(self, "main_window")
+        GeometryManager.restore_window_state(self, "main_window")
+        
+        # Fallback falls nichts geladen wurde oder Fenster zu klein
+        if self.width() < 100:
+            screen = QApplication.primaryScreen().availableGeometry()
+            target_w = min(1600, int(screen.width() * 0.90))
+            self.resize(target_w, screen.height() - 100)
 
     def _fenster_geometrie_speichern(self):
-        try:
-            config = {}
-            if os.path.exists(APP_CONFIG_DATEI):
-                with open(APP_CONFIG_DATEI, encoding="utf-8") as f:
-                    config = json.load(f)
-            
-            config["fenster_geometrie"] = self.saveGeometry().toHex().data().decode()
-            config["fenster_status"]    = self.saveState().toHex().data().decode()
-            
-            with open(APP_CONFIG_DATEI, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-        except Exception:
-            pass
+        GeometryManager.save_geometry(self, "main_window")
+        GeometryManager.save_window_state(self, "main_window")
 
     def closeEvent(self, event: QCloseEvent):
         self._fenster_geometrie_speichern()
