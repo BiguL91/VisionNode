@@ -2,9 +2,9 @@
 
 | Library              | Zweck                                        |
 |----------------------|----------------------------------------------|
-| **`PyQt6`**          | **Grafische Oberfläche (GUI)** — Qt 6.11.0 Standard |
+| **`PyQt6`**          | **Grafische Oberfläche (GUI)** — Hochflexibles Dock-System |
 | **`windows-capture`**| Screen Capture via Windows Graphics Capture API (WGC) |
-| **`torch` (PyTorch)** | **Core Engine**: GPU-beschleunigtes Template Matching (NCC) |
+| **`torch` (PyTorch)** | **Core Engine**: GPU-beschleunigtes Template Matching (MNCC) |
 | **`easyocr`**        | OCR-Engine mit GPU-Support (CUDA)            |
 | **`opencv-python`**  | Bildverarbeitung, Filter, I/O                |
 | **`pywin32`**        | Fenster-Handling                             |
@@ -13,10 +13,13 @@
 
 ---
 
-## Capture Engine
+## UI Architecture (PyQt6)
 
-- **WGC** (`windows-capture`): Primärer Capture-Stream (60fps), HDR-ready.
-- **MSS**: Fallback für Initialisierungsphase.
+- **Dock-System**: Modulares Layout via `QMainWindow` mit verschiebbaren, tabbaren und einklappbaren Panels.
+- **Geometry Management**: Persistente Speicherung von Fensterpositionen und Layout-Zuständen in `app_config.json`.
+- **Custom Widgets**: Hardwarebeschleunigte Vorschau-Label mit Echtzeit-Overlays für Matches und OCR.
+
+---
 
 ## Vision Engine (GPU Powered)
 
@@ -24,14 +27,9 @@
   - **Zero-Mean Normalisierung**: Gleicht Helligkeitsschwankungen dynamisch aus.
   - **Masken-Support**: Nutzt Alpha-Kanäle der Templates für präzise Formerkennung ohne Hintergrund-Noise.
   - **Box-Filter Optimierung**: Nutzt `avg_pool2d` für extrem schnelle Varianzberechnung bei unmaskierten Templates.
-  - **Bbox-Autokorrektur**: Erkennt den relevanten Objektinhalt innerhalb von Templates mit viel Transparenz.
 - **OCR**: EasyOCR auf GPU-Basis für Echtzeit-Texterkennung.
-- **Skalierung**: Variables Matching auf 25% bis 100% der nativen Auflösung.
 
-## Action Engine
-
-- **ADB**: Hintergrund-Interaktion via Android Debug Bridge.
-- **Koordinaten-Matrix**: Automatische Umrechnung zwischen Canvas, Window und Android-Screen (inkl. Skalierung).
+---
 
 ## Threading- & Prozess-Modell (CPU-Optimierung)
 
@@ -39,11 +37,11 @@ Um die CPU-Last minimal zu halten (~5-10% bei 60fps) und den Python-GIL zu umgeh
 
 | Komponente            | Typ               | Aufgabe                                      | Intervall |
 |-----------------------|-------------------|----------------------------------------------|-----------|
-| **UI-Thread**         | Haupt-Thread      | Event-Loop, Rendering, Display-Update        | ~16ms     |
+| **UI-Thread**         | Haupt-Thread      | Event-Loop, Rendering, Geometry Persistency  | ~16ms     |
 | **Capture-Thread**    | Thread            | Empfängt WGC-Frames, Resize, Vorverarbeitung | ~16ms     |
 | **Matching-Prozess**  | **OS-Prozess**    | PyTorch-Berechnungen (GPU) & NMS-Logik       | ~33-66ms  |
-| **OCR-Thread**        | Thread (Worker)   | EasyOCR-Queue (GPU-gebunden)                 | nach Bedarf |
-| **Scheduler-Thread**  | Thread (Worker)   | Workflow-Logik & ADB-Befehle                 | variabel  |
+| **OCR-Thread**        | Thread (Worker)   | EasyOCR-Queue (GPU-gebunden)                 | nach Bedarf|
+| **Scheduler-Thread**  | Thread (Worker)   | Workflow-Logik (Graph) & ADB-Befehle         | variabel  |
 
 **Vorteile:**
 - **Zero UI-Lag**: Die Oberfläche bleibt auch bei hoher Matching-Last 100% reaktiv.

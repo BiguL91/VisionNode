@@ -7,9 +7,10 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Kern-Features
 
-- **Modernes UI (PyQt6)**
-  - Hardwarebeschleunigtes Rendering via Qt 6.11.0.
-  - Flackerfreie surgical Updates für Echtzeitdaten.
+- **Flexibles Dock-System (PyQt6)**
+  - Modernes, modulares UI mit verschiebbaren und einklappbaren Panels.
+  - **Auto-Save & Persistenz**: Automatische Speicherung aller Fensterpositionen und Layouts.
+  - **Fokus-Modus**: Ausgliederung von Panels in separate Vollformat-Fenster.
 - **Vision Engine (GPU Powered)**
   - **Hierarchisches Matching**: Revolutionäres Zwei-Phasen-System.
   - **PyTorch Template Matching**: Blitzschnelle MNCC-Erkennung direkt auf der GPU.
@@ -18,7 +19,8 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
   - Minimale CPU-Last (~5-10%) dank Windows Graphics Capture API.
   - HDR-ready und stabil bei 60fps.
 - **Workflow & Automation**
-  - **Blueprint Editor**: Visueller Graphen-Editor für komplexe Logik.
+  - **Blueprint Editor**: Visueller Graphen-Editor für komplexe Logik (FUP).
+  - **Erweiterte Nodes**: Unterstützung für Schleifen, Variablen-Manipulation und dynamische Logik.
   - **Live-Simulation**: Teste Workflows sicher ohne ADB-Eingriff.
 
 ---
@@ -48,6 +50,7 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v1.4.0 – **Performance, Logic & Advanced OCR**.
+v1.5.1 – **Persistenz & Fokus-Modus**.
+
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

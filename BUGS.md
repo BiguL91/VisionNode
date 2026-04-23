@@ -24,7 +24,15 @@
 
 ## ✅ Behoben
 
-- ✅ **PyQt6 Revolution & UI Polish (Aktuell)**
+- ✅ **v1.5.0 / v1.5.1: Dock-System & Persistenz (Aktuell)**
+  - **Fenster-Management:** Automatische Positions-Speicherung via `GeometryManager` implementiert.
+  - **RuntimeErrors:** Behebung von C++-Löschungsfehlern beim Schließen von Dialogen durch Event-Filter.
+  - **Layout-Sperre:** Fixierung des Dock-Layouts zur Vermeidung versehentlichen Verschiebens.
+  - **FUP-Editor:** Rendering-Offsets und Verbindungs-Linien präzisiert.
+  - **Simulation:** Automatische `force_include` Freischaltung für `search_only` Templates.
+  - **Logic-Nodes:** Unverbundene Eingänge bei AND/OR Nodes werden nun korrekt ignoriert.
+
+- ✅ **PyQt6 Revolution & UI Polish**
   - **Crashes:** Veraltete Methodenaufrufe (`_templates_liste_aktualisieren`) und Parameter-Fehler (`TypeError` in `aktualisieren()`) behoben.
   - **Layout:** Globale Mindestgröße (1000x600) und feste Panel-Mindestbreiten via `QSplitter` eingeführt.
   - **Collapsible Panels:** "Springen" beim Ein-/Ausklappen behoben, automatisches Nachskalieren implementiert.
