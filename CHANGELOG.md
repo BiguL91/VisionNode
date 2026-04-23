@@ -2,6 +2,29 @@
 
 ---
 
+## v1.5.2 (Interaktion & Snapshot-Revolution)
+
+### ✨ Features
+- **Direktsteuerung (🎮)**: Klicks und Wischgesten (Swipes) können jetzt direkt über das Live-Vorschaubild an den Emulator gesendet werden.
+- **Interaktions-Modus**: Automatische Umrechnung von Canvas-Koordinaten auf Emulator-Auflösung unter Berücksichtigung von Window-Chrome und Skalierung.
+- **Modernisiertes Snapshot-System**:
+  - **Sofort-Aufnahme**: Snapshot wird beim Klick ohne Verzögerung erstellt.
+  - **Neuer Snapshot-Dialog**: Mit Live-Vorschau und direkter Benennung beim Speichern.
+  - **Snapshot-Manager**: Erreichbar über Rechtsklick auf den Snapshot-Button zum Verwalten, Umbenennen und Löschen von Bildern.
+- **ROI Editor Upgrade**:
+  - Neue Buttons für **Live-Vorschau** und **Snapshot laden** direkt im Scan-Regionen Editor.
+  - **Visueller Snapshot-Picker**: Integration des Snapshot-Managers zur bildbasierten Auswahl (statt Datei-Explorer).
+- **Proportionale Bildskalierung**: Einführung der `ScalablePreviewLabel`-Klasse für flüssige und korrekte Bilddarstellung in allen Dialogen.
+
+### ⚙️ Optimierungen
+- **Multithreaded ADB-Aktionen**: Klicks via Direktsteuerung werden in separaten Threads ausgeführt, um die UI-Reaktivität nicht zu beeinträchtigen.
+- **Layout-Tuning**: Header-Höhen in Dialogen optimiert; verbesserte Bildskalierung bei Fenster-Resizing durch Dämpfungs-Timer.
+
+### 🛠️ Fixes
+- **Stabilität**: Behebung von Indentation-Fehlern und fehlenden Importen (`QSizePolicy`, `QFrame`, `QTimer`) in neu erstellten Dialogen.
+
+---
+
 ## v1.5.1 (Persistenz & Fokus-Modus)
 
 ### ✨ Features

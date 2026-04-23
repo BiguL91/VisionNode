@@ -7,6 +7,12 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Kern-Features
 
+- **Interaktion & Steuerung**
+  - **Direktsteuerung (🎮)**: Steuere den Emulator direkt über das Live-Vorschaubild im Bot – kein Task-Switching mehr nötig!
+  - **Snapshot-Revolution**: Blitzschnelle Bildaufnahmen mit eigenem Manager zum Suchen, Umbenennen und Verwalten.
+- **ROI-Optimierung**
+  - **Scan-Regionen Live-Editor**: Definiere ROIs direkt am Live-Bild oder lade gespeicherte Snapshots in den visuellen Picker.
+  - **Flüssiges Scaling**: Proportionale Bilddarstellung in allen Dialogen für maximale Präzision.
 - **Flexibles Dock-System (PyQt6)**
   - Modernes, modulares UI mit verschiebbaren und einklappbaren Panels.
   - **Auto-Save & Persistenz**: Automatische Speicherung aller Fensterpositionen und Layouts.
@@ -20,7 +26,6 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
   - HDR-ready und stabil bei 60fps.
 - **Workflow & Automation**
   - **Blueprint Editor**: Visueller Graphen-Editor für komplexe Logik (FUP).
-  - **Erweiterte Nodes**: Unterstützung für Schleifen, Variablen-Manipulation und dynamische Logik.
   - **Live-Simulation**: Teste Workflows sicher ohne ADB-Eingriff.
 
 ---
@@ -44,13 +49,12 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
    - **NVIDIA GPU**: `pip install -r requirements-cuda.txt`
    - **Standard (CPU)**: `pip install -r requirements.txt`
 3. **Start**: `python main.py`
-4. **Hinweis**: Für die ADB-Interaktion wird das Android SDK (Platform Tools) benötigt.
 
 ---
 
 ## Status
 
-v1.5.1 – **Persistenz & Fokus-Modus**.
+v1.5.2 – **Interaktion & Snapshot-Revolution**.
 
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)
