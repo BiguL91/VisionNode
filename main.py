@@ -628,6 +628,14 @@ class TilesBotWindow(QMainWindow):
         self.status_label.setObjectName("status_label")
         l.addWidget(self.status_label)
 
+        # Direktsteuerung (🎮)
+        self.direkt_btn = QPushButton("🎮 Steuerung Aus")
+        self.direkt_btn.setObjectName("btn_direkt_toggle")
+        self.direkt_btn.setCheckable(True)
+        self.direkt_btn.clicked.connect(self._direktsteuerung_umschalten)
+        self.direkt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        l.addWidget(self.direkt_btn)
+
         l.addStretch()
 
         # Rechts: Debug / Snapshot / Einstellungen / ?
@@ -660,6 +668,8 @@ class TilesBotWindow(QMainWindow):
     def _connect_signals(self):
         # Vorschau-Selektion
         self._vorschau.region_ausgewaehlt.connect(self._region_ausgewaehlt)
+        self._vorschau.direkt_klick.connect(self._on_direkt_klick)
+        self._vorschau.direkt_wischen.connect(self._on_direkt_wischen)
 
         # Master-Flow Panel
         self.masterflow_panel.neu_requested.connect(self._master_neu)
@@ -800,6 +810,48 @@ class TilesBotWindow(QMainWindow):
         self.stop_btn.setEnabled(False)
         self._status_setzen("● Gestoppt", "#888888")
         self._log("Bot gestoppt.")
+
+    # ── Direktsteuerung ───────────────────────────────────────────────────────
+
+    def _direktsteuerung_umschalten(self, aktiv: bool):
+        if aktiv:
+            self.direkt_btn.setText("🎮 Steuerung Ein")
+            self.direkt_btn.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold;")
+            self._vorschau.set_direktsteuerung(True)
+            self._log("Direktsteuerung aktiviert (Klicks auf das Vorschaubild werden an ADB gesendet).")
+        else:
+            self.direkt_btn.setText("🎮 Steuerung Aus")
+            self.direkt_btn.setStyleSheet("")
+            self._vorschau.set_direktsteuerung(False)
+            self._log("Direktsteuerung deaktiviert.")
+
+    def _on_direkt_klick(self, x, y):
+        if not self.action_engine:
+            return
+        # Umrechnen: Vorschau-Pixel (Client Area) -> Window-Pixel
+        ax = x + self.action_engine.chrome_left
+        ay = y + self.action_engine.chrome_top
+        
+        # ADB-Befehl im Hintergrund-Thread (UI nicht blockieren)
+        threading.Thread(
+            target=self.action_engine.tippen,
+            args=(ax, ay, True),
+            daemon=True
+        ).start()
+
+    def _on_direkt_wischen(self, x0, y0, x1, y1):
+        if not self.action_engine:
+            return
+        ax0 = x0 + self.action_engine.chrome_left
+        ay0 = y0 + self.action_engine.chrome_top
+        ax1 = x1 + self.action_engine.chrome_left
+        ay1 = y1 + self.action_engine.chrome_top
+        
+        threading.Thread(
+            target=self.action_engine.wischen,
+            args=(ax0, ay0, ax1, ay1, 300, True),
+            daemon=True
+        ).start()
 
     def _snapshot_erstellen(self):
         snap_np = self.app.current_screenshot_np

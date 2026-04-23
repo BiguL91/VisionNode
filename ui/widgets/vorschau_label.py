@@ -46,8 +46,11 @@ class VorschauLabel(QLabel):
     """Live-Preview Widget.
     - Zeichnet Frame + Overlays (Match-Boxen, OCR-Regionen) via paintEvent
     - Maus-Drag für Einlern-/OCR-Modus: emittiert region_ausgewaehlt
+    - Direktsteuerung: emittiert direkt_klick / direkt_wischen für Interaktion
     """
     region_ausgewaehlt = pyqtSignal(int, int, int, int, str)  # orig x0,y0,x1,y1, form
+    direkt_klick       = pyqtSignal(int, int)                # orig x, y
+    direkt_wischen     = pyqtSignal(int, int, int, int)      # orig x0, y0, x1, y1
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,10 +70,11 @@ class VorschauLabel(QLabel):
         self._ocr_werte:     dict  = {}
         self._ocr_konf:      dict  = {}
 
-        self._aktiv:    bool          = False
-        self._form:     str           = "box"
-        self._start:    QPoint | None = None
-        self._current:  QPoint | None = None
+        self._aktiv:         bool          = False
+        self._direkt_aktiv:  bool          = False
+        self._form:          str           = "box"
+        self._start:         QPoint | None = None
+        self._current:       QPoint | None = None
 
     def contextMenuEvent(self, event):
         if not self._aktiv:
@@ -115,7 +119,14 @@ class VorschauLabel(QLabel):
         self._aktiv   = aktiv
         self._start   = None
         self._current = None
-        self.setCursor(Qt.CursorShape.CrossCursor if aktiv else Qt.CursorShape.ArrowCursor)
+        self.setCursor(Qt.CursorShape.CrossCursor if (aktiv or self._direkt_aktiv) else Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def set_direktsteuerung(self, aktiv: bool):
+        self._direkt_aktiv = aktiv
+        self._start        = None
+        self._current      = None
+        self.setCursor(Qt.CursorShape.CrossCursor if (aktiv or self._aktiv) else Qt.CursorShape.ArrowCursor)
         self.update()
 
     def _screen_to_orig(self, pos: QPoint) -> tuple[int, int]:
@@ -125,20 +136,20 @@ class VorschauLabel(QLabel):
         )
 
     def mousePressEvent(self, e):
-        if not self._aktiv:
+        if not self._aktiv and not self._direkt_aktiv:
             return
         self._start   = e.pos()
         self._current = e.pos()
         self.update()
 
     def mouseMoveEvent(self, e):
-        if not self._aktiv or not self._start:
+        if (not self._aktiv and not self._direkt_aktiv) or not self._start:
             return
         self._current = e.pos()
         self.update()
 
     def mouseReleaseEvent(self, e):
-        if not self._aktiv or not self._start:
+        if (not self._aktiv and not self._direkt_aktiv) or not self._start:
             return
         x0, y0 = self._screen_to_orig(self._start)
         x1, y1 = self._screen_to_orig(e.pos())
@@ -146,12 +157,22 @@ class VorschauLabel(QLabel):
         self._start   = None
         self._current = None
         self.update()
-        if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
-            self.region_ausgewaehlt.emit(
-                min(x0, x1), min(y0, y1),
-                max(x0, x1), max(y0, y1),
-                form,
-            )
+        
+        if self._aktiv:
+            # Einlern-Modus: Region emittieren
+            if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
+                self.region_ausgewaehlt.emit(
+                    min(x0, x1), min(y0, y1),
+                    max(x0, x1), max(y0, y1),
+                    form,
+                )
+        elif self._direkt_aktiv:
+            # Direktsteuerung: Klick oder Wischen
+            dist = ((x1-x0)**2 + (y1-y0)**2)**0.5
+            if dist > 10:
+                self.direkt_wischen.emit(x0, y0, x1, y1)
+            else:
+                self.direkt_klick.emit(x1, y1)
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
