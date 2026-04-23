@@ -246,6 +246,8 @@ from ui.dialogs.state_dialogs_qt   import StateHinzufuegenDialog, StateEditorDia
 from ui.dialogs.settings_dialog_qt import SettingsDialog
 from ui.dialogs.gruppe_editor_qt   import GruppeEditorQt
 from ui.dialogs.ocr_dialog_qt      import OCRKonfigDialog
+from ui.dialogs.snapshot_dialog_qt import SnapshotDialog
+from ui.dialogs.snapshot_manager_qt import SnapshotManagerDialog
 
 APP_CONFIG_DATEI = os.path.join("templates", "settings", "app_config.json")
 DISPLAY_FPS_DEFAULT = 30
@@ -647,6 +649,8 @@ class TilesBotWindow(QMainWindow):
 
         snapshot_btn = QPushButton("📸 Snapshot")
         snapshot_btn.setObjectName("btn_sm")
+        snapshot_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        snapshot_btn.customContextMenuRequested.connect(self._snapshot_context_menue)
         snapshot_btn.clicked.connect(self._snapshot_erstellen)
         l.addWidget(snapshot_btn)
 
@@ -854,16 +858,26 @@ class TilesBotWindow(QMainWindow):
         ).start()
 
     def _snapshot_erstellen(self):
+        # Sofort Screenshot machen
         snap_np = self.app.current_screenshot_np
         if snap_np is None:
+            self._log("Kein Screenshot für Snapshot verfügbar.")
             return
-        name, ok = QInputDialog.getText(self, "Snapshot", "Name für Snapshot:")
-        if ok and name:
-            os.makedirs("snapshots", exist_ok=True)
-            pfad = os.path.join("snapshots", f"{name}.png")
-            if cv2:
-                cv2.imwrite(pfad, snap_np)
-                self._log(f"Snapshot gespeichert: {pfad}")
+
+        # Dialog mit Vorschau öffnen
+        dlg = SnapshotDialog(snap_np, parent=self)
+        dlg.gespeichert.connect(lambda pfad: self._log(f"Snapshot gespeichert: {pfad}"))
+        self._show_dialog(dlg)
+
+    def _snapshot_context_menue(self, pos: QPoint):
+        menu = QMenu(self)
+        act_manage = menu.addAction("📸 Snapshots verwalten...")
+        act_manage.triggered.connect(self._snapshot_manager_oeffnen)
+        menu.exec(self.sender().mapToGlobal(pos))
+
+    def _snapshot_manager_oeffnen(self):
+        dlg = SnapshotManagerDialog(parent=self)
+        self._show_dialog(dlg)
 
     def _debug_umschalten(self):
         if self.ocr_engine.debug_filter == "Aus":
