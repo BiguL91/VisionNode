@@ -2,6 +2,24 @@
 
 ---
 
+## v1.5.3 (Präzisions-Update)
+
+### ✨ Features
+- **Globales Lupe & Fadenkreuz System**: Refactoring der Lupe in `ui/widgets/magnifier.py` für projektweite Wiederverwendbarkeit.
+- **Template-Editor**: Integration der Lupe und eines gestrichelten Cyan-Fadenkreuzes zur präzisen Auswahl von Regionen.
+- **Haupt-UI**: Integration der Lupe und des Fadenkreuzes in die Live-Vorschau (nur im Einlern-Modus aktiv).
+
+### ⚙️ Optimierungen
+- **Lupen-Rendering**: Umstellung auf `grab()`, um Overlays und Schachbrettmuster korrekt in der Lupe darzustellen.
+- **Benutzerführung**: Fadenkreuz-Farbe auf Cyan (`#00ffff`) geändert für bessere Sichtbarkeit auf dunklen/komplexen Hintergründen.
+
+### 🛠️ Fixes
+- **Lupen-Verzerrung**: Fix der Bildverzerrung an den Rändern durch Verwendung eines festen Quell-Pixmaps.
+- **Ressourcen-Management**: Sichergestellt, dass das Lupen-Fenster beim Schließen der Editoren korrekt versteckt und zerstört wird.
+- **Import-Fix**: Korrektur von `QRegion` (jetzt korrekt aus `PyQt6.QtGui`).
+
+---
+
 ## v1.5.2 (Interaktion & Snapshot-Revolution)
 
 ### ✨ Features
@@ -52,6 +70,11 @@
 ### ⚙️ Optimierungen
 - **UI-Performance**: Reduzierung von Qt-Repaints durch intelligente Wertänderungs-Prüfung (`setText` Optimierung).
 - **Architektur**: Strategische Code-Extraktion (`TemplateStore`, `Matcher`, `Canvas-Klassen`) zur Verbesserung der Wartbarkeit und Testbarkeit.
+
+### 🛠️ Fixes
+- **OCR-Koordinaten-Fix**: Korrektur der Drift-Problematik durch Normalisierung der Zonen auf die effektive Match-Größe (Screen-Pixel).
+- **Deadlock-Prävention**: Behebung von Threading-Problemen beim on-demand Matching im Scheduler.
+- **UI-Stabilität**: Fix für flackernde Rahmen, klobige SpinBox-Pfeile und fehlerhafte RadioButton-Styles.
 
 ---
 
