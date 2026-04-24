@@ -1157,6 +1157,10 @@ class TemplateEditorQt(QDialog):
             self.einlern_modus_callback()
 
     def closeEvent(self, event):
+        if hasattr(self, "canvas") and hasattr(self.canvas, "_magnifier"):
+            self.canvas._magnifier.hide()
+            self.canvas._magnifier.close()
+
         self.template_engine.template_loeschen("_tmp_preview")
         self.template_engine.templates.pop("test_match_preview", None)
         self.template_engine.settings.pop("test_match_preview", None)

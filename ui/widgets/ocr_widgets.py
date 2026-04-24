@@ -31,43 +31,7 @@ def _pil_to_qpixmap(pil_img) -> QPixmap:
     return QPixmap.fromImage(qimg)
 
 
-# ── Lupe ──────────────────────────────────────────────────────────────────────
-class OCRMagnifier(QLabel):
-    """Eine Lupe als separates, rahmenloses Fenster."""
-    def __init__(self, size=160, zoom=4):
-        super().__init__(None)  # Top-Level
-        self.setWindowFlags(
-            Qt.WindowType.ToolTip
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._size = size
-        self._zoom = zoom
-        self.setFixedSize(size, size)
-        self.setObjectName("ocr_magnifier")
-        self.setMask(QRegion(0, 0, size, size, QRegion.RegionType.Ellipse))
-        self._pm = QPixmap()
-
-    def update_view(self, pixmap, global_pos):
-        self._pm = pixmap
-        self.update()
-        self.move(global_pos.x() + 25, global_pos.y() + 25)
-        if not self.isVisible():
-            self.show()
-
-    def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        if not self._pm.isNull():
-            p.drawPixmap(self.rect(), self._pm)
-        m = self._size // 2
-        p.setPen(QPen(QColor(255, 255, 255, 120), 1))
-        p.drawLine(0, m, self._size, m)
-        p.drawLine(m, 0, m, self._size)
-        p.end()
-
+from ui.widgets.magnifier import OCRMagnifier
 
 # ── Canvas ────────────────────────────────────────────────────────────────────
 class OCRCanvas(QLabel):
@@ -200,6 +164,13 @@ class OCRCanvas(QLabel):
                 p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
             else:
                 p.drawRect(x0, y0, x1 - x0, y1 - y0)
+
+        # Fadenkreuz an Mausposition zeichnen
+        if self.underMouse() and self._mouse_pos.x() >= 0:
+            p.setPen(QPen(QColor(0, 255, 255, 120), 1, Qt.PenStyle.DashLine))
+            p.drawLine(0, self._mouse_pos.y(), self.width(), self._mouse_pos.y())
+            p.drawLine(self._mouse_pos.x(), 0, self._mouse_pos.x(), self.height())
+
         p.end()
 
     def mousePressEvent(self, e):
@@ -218,8 +189,17 @@ class OCRCanvas(QLabel):
             src_size = m_size // m_zoom
             sx   = e.pos().x() - src_size // 2
             sy   = e.pos().y() - src_size // 2
-            crop = self._pixmap.copy(sx, sy, src_size, src_size)
-            self._magnifier.update_view(crop, self.mapToGlobal(e.pos()))
+
+            # Fix: Immer ein Pixmap mit fester Größe erstellen, um Verzerrungen am Rand zu vermeiden
+            full_crop = QPixmap(src_size, src_size)
+            p_crop = QPainter(full_crop)
+            # Schachbrett-Hintergrund in der Lupe (passend zum Canvas)
+            self._draw_checkerboard(p_crop, src_size, src_size)
+            # Template an der berechneten Position zeichnen (Offset)
+            p_crop.drawPixmap(-sx, -sy, self._pixmap)
+            p_crop.end()
+
+            self._magnifier.update_view(full_crop, self.mapToGlobal(e.pos()))
         self.update()
 
     def leaveEvent(self, event):

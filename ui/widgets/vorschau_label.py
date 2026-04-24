@@ -6,7 +6,7 @@ Emittiert region_ausgewaehlt (x0, y0, x1, y1, form) bei Maus-Drag.
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QLabel, QSizePolicy, QMenu
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 try:
@@ -15,6 +15,7 @@ except ImportError:
     cv2 = None
 
 from core.helpers import _template_farbe
+from ui.widgets.magnifier import OCRMagnifier
 
 
 def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float, float, float]:
@@ -75,6 +76,8 @@ class VorschauLabel(QLabel):
         self._form:          str           = "box"
         self._start:         QPoint | None = None
         self._current:       QPoint | None = None
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier = OCRMagnifier(size=160, zoom=4)
 
     def contextMenuEvent(self, event):
         if not self._aktiv:
@@ -119,7 +122,10 @@ class VorschauLabel(QLabel):
         self._aktiv   = aktiv
         self._start   = None
         self._current = None
+        self.setMouseTracking(aktiv)
         self.setCursor(Qt.CursorShape.CrossCursor if (aktiv or self._direkt_aktiv) else Qt.CursorShape.ArrowCursor)
+        if not aktiv:
+            self._magnifier.hide()
         self.update()
 
     def set_direktsteuerung(self, aktiv: bool):
@@ -138,15 +144,41 @@ class VorschauLabel(QLabel):
     def mousePressEvent(self, e):
         if not self._aktiv and not self._direkt_aktiv:
             return
+        self._mouse_pos = e.pos()
         self._start   = e.pos()
         self._current = e.pos()
         self.update()
 
     def mouseMoveEvent(self, e):
-        if (not self._aktiv and not self._direkt_aktiv) or not self._start:
-            return
-        self._current = e.pos()
+        self._mouse_pos = e.pos()
+        if self._aktiv and self._start:
+            self._current = e.pos()
+
+        # Lupe nur im Einlern-Modus anzeigen
+        if self._aktiv:
+            m_zoom   = self._magnifier._zoom
+            m_size   = self._magnifier._size
+            src_size = m_size // m_zoom
+            sx = e.pos().x() - src_size // 2
+            sy = e.pos().y() - src_size // 2
+            
+            source_rect = QRect(sx, sy, src_size, src_size)
+            full_crop = QPixmap(src_size, src_size)
+            full_crop.fill(QColor("#1a1a1a"))
+            
+            p_crop = QPainter(full_crop)
+            pix = self.grab(source_rect)
+            p_crop.drawPixmap(0, 0, pix)
+            p_crop.end()
+
+            self._magnifier.update_view(full_crop, self.mapToGlobal(e.pos()))
+
         self.update()
+
+    def leaveEvent(self, event):
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier.hide()
+        super().leaveEvent(event)
 
     def mouseReleaseEvent(self, e):
         if (not self._aktiv and not self._direkt_aktiv) or not self._start:
@@ -199,6 +231,13 @@ class VorschauLabel(QLabel):
                 p.drawEllipse(x0, y0, x1 - x0, y1 - y0)
             else:
                 p.drawRect(x0, y0, x1 - x0, y1 - y0)
+
+        # Fadenkreuz an Mausposition zeichnen (nur im Einlern-Modus)
+        if self._aktiv and self.underMouse() and self._mouse_pos.x() >= 0:
+            p.setPen(QPen(QColor(0, 255, 255, 120), 1, Qt.PenStyle.DashLine))
+            p.drawLine(0, self._mouse_pos.y(), self.width(), self._mouse_pos.y())
+            p.drawLine(self._mouse_pos.x(), 0, self._mouse_pos.x(), self.height())
+
         p.end()
 
     def _zeichne_overlays(self, p: QPainter):

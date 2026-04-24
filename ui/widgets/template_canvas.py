@@ -5,7 +5,7 @@ Unterstützt Drag-to-draw für Ignorier-Regionen und Einzel-Klick für Klick-Zon
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QLabel, QMenu
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 try:
@@ -21,6 +21,9 @@ def _pil_to_qpixmap(pil_img) -> QPixmap:
     return QPixmap.fromImage(qi)
 
 
+from ui.widgets.magnifier import OCRMagnifier
+
+
 class TemplateCanvas(QLabel):
     """
     Zeichenfläche für Bild + Overlays (Ignore-Regionen + Klick-Zone).
@@ -34,6 +37,7 @@ class TemplateCanvas(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setObjectName("template_canvas")
+        self.setMouseTracking(True)
         self.setFixedSize(400, 200)
 
         self._placeholder_text = placeholder_text
@@ -48,6 +52,8 @@ class TemplateCanvas(QLabel):
         self._drag_end:   QPoint | None = None
         self._modus: str = "ignore"   # "ignore" | "klick"
         self._form:  str = "box"      # "box" | "kreis"
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier = OCRMagnifier(size=160, zoom=4)
 
     def contextMenuEvent(self, event):
         if self._modus != "ignore":
@@ -173,10 +179,17 @@ class TemplateCanvas(QLabel):
             painter.drawLine(px - 10, py, px + 10, py)
             painter.drawLine(px, py - 10, px, py + 10)
 
+        # Fadenkreuz an Mausposition zeichnen
+        if self.underMouse() and self._mouse_pos.x() >= 0:
+            painter.setPen(QPen(QColor(0, 255, 255, 120), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(0, self._mouse_pos.y(), w, self._mouse_pos.y())
+            painter.drawLine(self._mouse_pos.x(), 0, self._mouse_pos.x(), h)
+
         painter.end()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self._mouse_pos = event.pos()
             if self._modus == "klick":
                 w, h = self.width(), self.height()
                 self.klick_gesetzt.emit(
@@ -188,9 +201,41 @@ class TemplateCanvas(QLabel):
                 self._drag_end = None
 
     def mouseMoveEvent(self, event):
+        self._mouse_pos = event.pos()
         if self._modus == "ignore" and self._drag_start:
             self._drag_end = event.pos()
-            self.update()
+
+        # Lupe aktualisieren
+        m_zoom   = self._magnifier._zoom
+        m_size   = self._magnifier._size
+        src_size = m_size // m_zoom
+        
+        # Bereich berechnen
+        sx = event.pos().x() - src_size // 2
+        sy = event.pos().y() - src_size // 2
+        
+        # Screenshot vom Widget-Ausschnitt machen (inkl. Overlays und Schachbrett)
+        # Wir begrenzen den Bereich auf das Widget-Rechteck
+        source_rect = QRect(sx, sy, src_size, src_size)
+        
+        # Da wir am Rand Verzerrungen vermeiden wollen, nutzen wir wieder ein festes Pixmap
+        full_crop = QPixmap(src_size, src_size)
+        full_crop.fill(QColor("#1a1a1a")) # Hintergrund-Fill falls außerhalb
+        
+        p_crop = QPainter(full_crop)
+        # Wir grabben das Widget. grab() ist in PyQt6 effizient für kleine Bereiche.
+        # Da grab() das ganze Widget nimmt, müssen wir den Offset beachten.
+        pix = self.grab(source_rect)
+        p_crop.drawPixmap(0, 0, pix)
+        p_crop.end()
+
+        self._magnifier.update_view(full_crop, self.mapToGlobal(event.pos()))
+        self.update()
+
+    def leaveEvent(self, event):
+        self._mouse_pos = QPoint(-100, -100)
+        self._magnifier.hide()
+        super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._modus == "ignore" and self._drag_start and event.button() == Qt.MouseButton.LeftButton:
