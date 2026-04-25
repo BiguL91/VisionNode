@@ -24,6 +24,7 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 from ui.widgets.click_step_slider import ClickStepSlider
 from ui.widgets.template_canvas   import TemplateCanvas, _pil_to_qpixmap
+from ui.dialogs.auto_tune_dialog_qt import AutoTuneDialog
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -398,6 +399,13 @@ class TemplateEditorQt(QDialog):
         btn_test.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_test.clicked.connect(self._erkennung_test)
         btn_leiste.addWidget(btn_test)
+
+        btn_autotune = QPushButton("🎯 Auto-Tune")
+        btn_autotune.setToolTip("Interaktiver Assistent zur Schwellwert-Ermittlung")
+        btn_autotune.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_autotune.clicked.connect(self._auto_tune_starten)
+        btn_leiste.addWidget(btn_autotune)
+
         btn_leiste.addStretch()
 
         btn_schliessen = QPushButton("Schließen")
@@ -1138,6 +1146,52 @@ class TemplateEditorQt(QDialog):
             import traceback
             traceback.print_exc()
             self.bot._log(f"Speicher-Fehler: {e}")
+
+    def _auto_tune_starten(self):
+        """Öffnet den interaktiven Auto-Tune Assistenten."""
+        name = self.bearbeiten_name or self.name_entry.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Auto-Tune", "Bitte gib dem Template zuerst einen Namen.")
+            return
+
+        # Alle Varianten des Templates sammeln (PIL Images)
+        basis = name.split("__")[0]
+        varianten_namen = [n for n in self.template_engine.templates.keys() 
+                          if n == basis or n.startswith(f"{basis}__")]
+        
+        current_variants = []
+        # Zuerst das aktuelle Bild aus dem Editor nehmen (ungespeichert)
+        if self.orig_bild_ref:
+            current_variants.append(self.orig_bild_ref)
+            
+        # Dann die bereits gespeicherten Varianten laden (falls vorhanden)
+        for vn in varianten_namen:
+            if vn == self.bearbeiten_name: continue
+            pfad = self.template_engine.templates[vn].get("pfad")
+            if pfad and os.path.exists(pfad):
+                try:
+                    img = Image.open(pfad).convert("RGB")
+                    current_variants.append(img)
+                except: pass
+
+        if not current_variants:
+            QMessageBox.warning(self, "Auto-Tune", "Keine Bilder für dieses Template gefunden.")
+            return
+
+        self._auto_tune_dlg = AutoTuneDialog(self, self.bot, name, current_variants, list(self.initial_scan_regions))
+        self._auto_tune_dlg.finished_tuning.connect(self._on_auto_tune_finished)
+        self._auto_tune_dlg.show() # Nicht-modal anzeigen
+
+    def _on_auto_tune_finished(self, neu_sw, neu_tol):
+        # Ergebnis übernehmen
+        self._schwellwert_slider.setValue(int(round(neu_sw * 100)))
+        self._schwellwert_wert_lbl.setText(f"{neu_sw:.2f}")
+        
+        self._hg_tol_slider.setValue(neu_tol)
+        self._hg_tol_wert_lbl.setText(str(neu_tol))
+        
+        self.bot._log(f"Auto-Tune: Schwellwert auf {neu_sw:.2f} und Toleranz auf {neu_tol} gesetzt.")
+        self._hg_vorschau_aktualisieren()
 
     def _schliessen(self):
         self.template_engine.template_loeschen("_tmp_preview")
