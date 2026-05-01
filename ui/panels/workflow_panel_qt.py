@@ -3,8 +3,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QListWidget, QListWidgetItem, QFrame
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QFont
+from core.event_bus import bus
 
 # ── Masterflow Panel ──────────────────────────────────────────────────────────
 
@@ -14,9 +15,17 @@ class MasterflowPanel(QWidget):
     loeschen_requested   = pyqtSignal(str)
     aktiv_requested      = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, engine=None, parent=None):
         super().__init__(parent)
+        self.engine = engine
         self._setup_ui()
+        
+        bus.subscribe("workflow.config.changed", self._on_changed)
+        bus.subscribe("workflow.active.changed", self._on_changed)
+
+    def _on_changed(self, event):
+        if self.engine:
+            QTimer.singleShot(0, lambda: self.aktualisieren(self.engine.master_workflows, self.engine.aktiver_master))
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -101,9 +110,15 @@ class SubWorkflowPanel(QWidget):
     kopieren_requested   = pyqtSignal(str)
     loeschen_requested   = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, engine=None, parent=None):
         super().__init__(parent)
+        self.engine = engine
         self._setup_ui()
+        bus.subscribe("workflow.config.changed", self._on_changed)
+
+    def _on_changed(self, event):
+        if self.engine:
+            QTimer.singleShot(0, lambda: self.aktualisieren(self.engine.workflows))
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -184,10 +199,16 @@ class LogicNetworkPanel(QWidget):
     edit_requested = pyqtSignal(str, str, str, str, dict) # wf_type, wf_name, node_id, port_name, graph
     copy_requested = pyqtSignal(str, str, str, str, dict)
 
-    def __init__(self, parent=None):
+    def __init__(self, engine=None, parent=None):
         super().__init__(parent)
+        self.engine = engine
         self._logic_data = []
         self._setup_ui()
+        bus.subscribe("workflow.config.changed", self._on_changed)
+
+    def _on_changed(self, event):
+        if self.engine:
+            QTimer.singleShot(0, lambda: self.aktualisieren(self.engine.master_workflows, self.engine.workflows))
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -268,15 +289,16 @@ class WorkflowPanel(QWidget):
     logic_network_edit_requested  = pyqtSignal(str, str, str, str, dict)
     logic_network_copy_requested  = pyqtSignal(str, str, str, str, dict)
 
-    def __init__(self, parent=None):
+    def __init__(self, engine=None, parent=None):
         super().__init__(parent)
+        self.engine = engine
         l = QVBoxLayout(self)
         l.setContentsMargins(0, 0, 0, 0)
         l.setSpacing(0)
 
-        self.master_panel = MasterflowPanel()
-        self.sub_panel = SubWorkflowPanel()
-        self.logic_panel = LogicNetworkPanel()
+        self.master_panel = MasterflowPanel(engine=self.engine)
+        self.sub_panel = SubWorkflowPanel(engine=self.engine)
+        self.logic_panel = LogicNetworkPanel(engine=self.engine)
 
         l.addWidget(self.master_panel)
         

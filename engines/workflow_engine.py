@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from core.event_bus import bus
 
 WORKFLOWS_DATEI = os.path.join("templates", "settings", "workflows.json")
 MASTER_DATEI     = os.path.join("templates", "settings", "master_workflows.json")
@@ -55,6 +56,7 @@ class WorkflowEngine:
     def _workflows_speichern(self):
         with open(WORKFLOWS_DATEI, "w", encoding="utf-8") as f:
             json.dump(self.workflows, f, ensure_ascii=False, indent=2)
+        bus.publish("workflow.config.changed", sender="WorkflowEngine")
 
     def _master_speichern(self):
         with open(MASTER_DATEI, "w", encoding="utf-8") as f:
@@ -62,6 +64,8 @@ class WorkflowEngine:
                 "aktiv": self.aktiver_master,
                 "workflows": self.master_workflows
             }, f, ensure_ascii=False, indent=2)
+        bus.publish("workflow.config.changed", sender="WorkflowEngine")
+        bus.publish("workflow.active.changed", self.aktiver_master, sender="WorkflowEngine")
 
     def _schedule_speichern(self):
         with open(SCHEDULE_DATEI, "w", encoding="utf-8") as f:

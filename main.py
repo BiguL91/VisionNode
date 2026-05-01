@@ -297,8 +297,8 @@ class TilesBotWindow(QMainWindow):
         self._connect_signals()
         self._fenster_groesse_initialisieren()
 
-        # Panels initial befüllen
-        self._panels_aktualisieren()
+        # Panels initial befüllen (leicht verzögert, damit Event-Bus stabil ist)
+        QTimer.singleShot(500, self._panels_aktualisieren)
 
         # Menü & Toolbar
         self._setup_menus()
@@ -457,26 +457,26 @@ class TilesBotWindow(QMainWindow):
         # ── Docks Erstellen ───────────────────────────────────────────────────
         
         # 1. Links: Workflows & Templates
-        self.masterflow_panel = MasterflowPanel()
+        self.masterflow_panel = MasterflowPanel(engine=self.workflow_engine)
         self._dock_masterflow = self._create_dock("Master-Flows", self.masterflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_masterflow")
 
-        self.sub_workflow_panel = SubWorkflowPanel()
+        self.sub_workflow_panel = SubWorkflowPanel(engine=self.workflow_engine)
         self._dock_sub_workflow = self._create_dock("Sub-Workflows", self.sub_workflow_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_sub_workflow")
 
-        self.logic_network_panel = LogicNetworkPanel()
+        self.logic_network_panel = LogicNetworkPanel(engine=self.workflow_engine)
         self._dock_logic_network = self._create_dock("Logik-Netzwerke", self.logic_network_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_logic_network")
 
-        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True)
+        self.template_panel = TemplatePanelQt(filter_modus="workflow", show_buttons=True, bot_win=self)
         self._dock_templates_wf = self._create_dock("Workflow Templates", self.template_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates_wf")
         
-        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=True)
+        self.state_template_panel = TemplatePanelQt(filter_modus="state", show_buttons=True, bot_win=self)
         self._dock_templates_st = self._create_dock("State Templates", self.state_template_panel, Qt.DockWidgetArea.LeftDockWidgetArea, "dock_templates_st")
         
         # 2. Rechts: OCR & States
-        self.ocr_panel = VariablePanelQt()
+        self.ocr_panel = VariablePanelQt(bot_win=self)
         self._dock_ocr = self._create_dock("OCR Variablen", self.ocr_panel, Qt.DockWidgetArea.RightDockWidgetArea, "dock_ocr")
 
-        self.state_panel = StatePanelQt()
+        self.state_panel = StatePanelQt(bot_win=self)
         self._dock_states = self._create_dock("State Variablen", self.state_panel, Qt.DockWidgetArea.RightDockWidgetArea, "dock_states")
 
         # 3. Unten: Log & Daten
@@ -712,6 +712,7 @@ class TilesBotWindow(QMainWindow):
         self.state_panel.add_requested.connect(self._state_hinzufuegen)
         self.state_panel.rename_requested.connect(self._state_umbenennen)
         self.state_panel.delete_requested.connect(self._state_loeschen)
+        self.state_panel.toggle_requested.connect(self._state_toggle)
 
         # Daten-Panels (Global & Listen)
         for p in [self.global_vars_panel, self.daten_panel]:
@@ -751,53 +752,7 @@ class TilesBotWindow(QMainWindow):
             dict(self.app.state.ocr_values),
             ocr_konf,
         )
-
-        # Panel-Updates
-        matches = list(self.app.state.active_matches)
-        match_namen = {m[0] for m in matches}
-        match_namen |= {m[6] for m in matches if len(m) > 6}
-
-        if not hasattr(self, "_letzte_match_namen") or self._letzte_match_namen != match_namen:
-            self._letzte_match_namen = match_namen
-            self.ocr_panel.aktualisieren(
-                dict(self.ocr_engine.regionen),
-                ocr_konf,
-                _template_farbe,
-                is_smart_func=self.template_engine._is_smart_recursive
-            )
-
-        alle_ocr_werte = {**self.app.state.ocr_values, **self.app.state.template_ocr_values}
-        
-        # Globale Variablen (DB) hinzufügen
-        try:
-            jetzt = time.time()
-            for l in alle_listen():
-                if l.get("typ") == "timer":
-                    cache = cache_lesen(l["id"])
-                    for var_name, (val, ts) in cache.items():
-                        if var_name.endswith("._deadline"): continue
-                        
-                        full_key = f"db::{l['name']}::{var_name}"
-                        is_timer = not var_name.startswith("[W] ")
-                        
-                        if is_timer:
-                            de = cache.get(f"Timer.{var_name}._deadline")
-                            if de:
-                                rest = max(0, int(float(de[0]) - jetzt))
-                                alle_ocr_werte[full_key] = sekunden_formatieren(rest)
-                            else:
-                                alle_ocr_werte[full_key] = "–"
-                        else:
-                            alle_ocr_werte[full_key] = str(val)
-        except Exception:
-            pass
-
-        self.ocr_panel.werte_aktualisieren(
-            alle_ocr_werte,
-            match_namen,
-            ocr_konf
-        )
-        self.state_panel.werte_aktualisieren(dict(self.app.state.game_states))
+        # Die Panels (OCR, State, etc.) aktualisieren sich nun selbst via EventBus.
 
     # ── Bot-Steuerung ─────────────────────────────────────────────────────────
 
@@ -1478,8 +1433,16 @@ class TilesBotWindow(QMainWindow):
         if result:
             name, wert = result
             self.app.state.set_game_state(name, wert)
-            self._panels_aktualisieren()
+            from core.event_bus import bus
+            bus.publish("state.changed", dict(self.app.state.game_states), sender="UI")
             self._log(f"State-Variable hinzugefügt: {name} = {wert}")
+
+    def _state_toggle(self, name: str, value: bool):
+        """Wird vom StatePanel gerufen, wenn eine Zeile umgeschaltet wird."""
+        self.app.state.set_game_state(name, value)
+        from core.event_bus import bus
+        bus.publish("state.changed", dict(self.app.state.game_states), sender="UI")
+        # self._log(f"State manuell geändert: {name} = {value}")
 
     def _state_umbenennen(self, alter_name: str):
         aktueller_wert = self.app.state.game_states.get(alter_name, False)
@@ -1499,14 +1462,16 @@ class TilesBotWindow(QMainWindow):
             else:
                 self._log(f"State-Wert geändert: {neuer_name} = {neuer_wert}")
             
-            self.state_panel.aktualisieren(dict(self.app.state.game_states))
+            from core.event_bus import bus
+            bus.publish("state.changed", dict(self.app.state.game_states), sender="UI")
 
     def _state_loeschen(self, name: str):
         self.app.state.game_states.pop(name, None)
         # Template-Settings aktualisieren
         self.template_engine.state_loeschen_in_settings(name)
         
-        self.state_panel.aktualisieren(dict(self.app.state.game_states))
+        from core.event_bus import bus
+        bus.publish("state.changed", dict(self.app.state.game_states), sender="UI")
         self._log(f"State-Variable gelöscht: {name}")
 
     # ── Variablen / OCR Aktionen ──────────────────────────────────────────────
@@ -1633,33 +1598,13 @@ class TilesBotWindow(QMainWindow):
         pass
 
     def _panels_aktualisieren(self):
-        """Aktualisiert alle Panels nach Template/OCR/Workflow-Änderungen."""
-        daten = self._template_panel_daten()
-        if hasattr(self, "template_panel"):
-            self.template_panel.aktualisieren(*daten)
-        if hasattr(self, "state_template_panel"):
-            self.state_template_panel.aktualisieren(*daten)
-        if hasattr(self, "ocr_panel"):
-            self.ocr_panel.aktualisieren(
-                dict(self.ocr_engine.regionen),
-                dict(self.ocr_engine.template_ocr_konfigurationen()),
-                _template_farbe,
-                is_smart_func=self.template_engine._is_smart_recursive
-            )
-        if hasattr(self, "masterflow_panel"):
-            self.masterflow_panel.aktualisieren(
-                dict(self.workflow_engine.master_workflows),
-                getattr(self.workflow_engine, "aktiver_master", ""),
-            )
-        if hasattr(self, "sub_workflow_panel"):
-            self.sub_workflow_panel.aktualisieren(dict(self.workflow_engine.workflows))
-        if hasattr(self, "logic_network_panel"):
-            self.logic_network_panel.aktualisieren(
-                dict(self.workflow_engine.master_workflows),
-                dict(self.workflow_engine.workflows),
-            )
-        if hasattr(self, "state_panel"):
-            self.state_panel.aktualisieren(dict(self.app.state.game_states))
+        """Triggert eine systemweite Aktualisierung aller Panels via EventBus."""
+        from core.event_bus import bus
+        bus.publish("templates.changed", sender="UI")
+        bus.publish("workflow.config.changed", sender="UI")
+        bus.publish("state.changed", self.app.state.get_all_game_states(), sender="UI")
+        # DatenWorker wird durch OCR-Events getriggert, aber wir können ein UI-Update forcieren
+        bus.publish("data.updated", sender="UI")
 
     # ── Fenstergröße & Layout Persistenz ──────────────────────────────────────
 

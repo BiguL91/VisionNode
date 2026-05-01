@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor, QAction
+from core.event_bus import bus
+from core.helpers import _template_farbe
 
 
 # Farben pro Modus
@@ -217,14 +219,43 @@ class VariablePanel(QWidget):
     template_ocr_loeschen  = pyqtSignal(str)
     ocr_konfigurieren_requested = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, bot_win=None, parent=None):
         super().__init__(parent)
+        self.bot_win = bot_win
         self._bloecke: dict[str, VariableBlock] = {}
         self._reihenfolge: list[str] = []
         self._nur_aktive = False
         self._letzte_ocr_konfig_keys: set | None = None
         self._ocr_letzter_wert_zeit: dict[str, float] = {}
+        self._aktuelle_matches: set = set()
+        
         self._setup_ui()
+        
+        bus.subscribe("ocr.results", self._on_ocr_results)
+        bus.subscribe("matches.found", self._on_matches_found)
+        bus.subscribe("templates.changed", self._on_templates_changed)
+
+    def _on_ocr_results(self, event):
+        if not self.bot_win: return
+        ocr_werte = event.data
+        ocr_konfig = dict(self.bot_win.ocr_engine.template_ocr_konfigurationen())
+        QTimer.singleShot(0, lambda: self.werte_aktualisieren(ocr_werte, self._aktuelle_matches, ocr_konfig))
+
+    def _on_matches_found(self, event):
+        matches = event.data
+        match_namen = {m[0] for m in matches}
+        match_namen |= {m[6] for m in matches if len(m) > 6}
+        self._aktuelle_matches = match_namen
+
+    def _on_templates_changed(self, event):
+        if not self.bot_win: return
+        # Struktur-Update (Blöcke neu aufbauen)
+        QTimer.singleShot(0, lambda: self.aktualisieren(
+            dict(self.bot_win.ocr_engine.regionen),
+            dict(self.bot_win.ocr_engine.template_ocr_konfigurationen()),
+            _template_farbe,
+            is_smart_func=self.bot_win.template_engine._is_smart_recursive
+        ))
 
     def _setup_ui(self):
         root = QVBoxLayout(self)

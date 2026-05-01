@@ -8,6 +8,7 @@ import numpy as np
 import os
 import torch
 from PIL import Image
+from core.event_bus import bus
 
 from engines.template_store   import TemplateStore,   TEMPLATES_ORDNER, SETTINGS_ORDNER, DELETED_ORDNER
 from engines.template_matcher import TemplateMatcher
@@ -109,6 +110,7 @@ class TemplateEngine:
                         "bbox":              bbox,
                     }
         self._log(f"TemplateEngine: {len(self.templates)} Templates geladen.")
+        bus.publish("templates.changed", sender="TemplateEngine")
 
     # ── Bild-Helfer ───────────────────────────────────────────────────────────
 

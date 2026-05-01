@@ -2,6 +2,7 @@ import subprocess
 import time
 import json
 import os
+from core.event_bus import bus
 
 # ADB-Pfad und MEMUPlayer-Standardport
 ADB_PFAD = r"C:\platform-tools\adb.exe"
@@ -83,20 +84,25 @@ class ActionEngine:
         """Tippt an Position (x, y). Koordinaten in Fenster-px oder Android-px."""
         orig_x, orig_y = x, y
         if umrechnen:
-            x, y = self._umrechnen(x, y)
+            ax, ay = self._umrechnen(x, y)
+        else:
+            ax, ay = x, y
             
         if self.log_enabled and self.log_func:
-            self.log_func(f"[Klick-Log] input tap {x} {y} (Fenster: {orig_x},{orig_y})")
+            self.log_func(f"[Klick-Log] input tap {ax} {ay} (Fenster: {orig_x},{orig_y})")
             
-        self._adb("shell", "input", "tap", str(x), str(y))
+        self._adb("shell", "input", "tap", str(ax), str(ay))
+        bus.publish("action.performed", {"type": "tap", "x": ax, "y": ay, "orig_x": orig_x, "orig_y": orig_y}, sender="ActionEngine")
 
     def wischen(self, x1, y1, x2, y2, dauer_ms=300, umrechnen=True):
         """Wischt von (x1,y1) nach (x2,y2)."""
+        ox1, oy1, ox2, oy2 = x1, y1, x2, y2
         if umrechnen:
             x1, y1 = self._umrechnen(x1, y1)
             x2, y2 = self._umrechnen(x2, y2)
         self._adb("shell", "input", "swipe",
                   str(x1), str(y1), str(x2), str(y2), str(dauer_ms))
+        bus.publish("action.performed", {"type": "swipe", "x1": x1, "y1": y1, "x2": x2, "y2": y2, "duration": dauer_ms}, sender="ActionEngine")
 
     def zurueck(self):
         """Drückt den Zurück-Button."""

@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
@@ -5,6 +6,9 @@ from typing import Dict, List, Any, Optional
 class BotState:
     """Zentraler Status des Bots (Entkoppelt von der UI)."""
     
+    def __post_init__(self):
+        self._lock = threading.Lock()
+
     # Laufzeit-Status
     running: bool = False
     is_paused: bool = False
@@ -39,13 +43,21 @@ class BotState:
 
 
     def set_game_state(self, name: str, value: bool):
-        """Setzt eine Status-Variable."""
-        self.game_states[name] = value
+        """Setzt eine Status-Variable thread-sicher."""
+        with self._lock:
+            self.game_states[name] = value
 
     def get_game_state(self, name: str, default: bool = False) -> bool:
-        """Gibt den Wert einer Status-Variable zurück."""
-        return self.game_states.get(name, default)
+        """Gibt den Wert einer Status-Variable thread-sicher zurück."""
+        with self._lock:
+            return self.game_states.get(name, default)
+            
+    def get_all_game_states(self) -> Dict[str, bool]:
+        """Gibt eine Kopie aller Status-Variablen thread-sicher zurück."""
+        with self._lock:
+            return dict(self.game_states)
 
     def get_all_ocr(self) -> Dict[str, str]:
         """Kombiniert feste Regionen und Template-OCR."""
-        return {**self.ocr_values, **self.template_ocr_values}
+        with self._lock:
+            return {**self.ocr_values, **self.template_ocr_values}

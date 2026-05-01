@@ -5,8 +5,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QListWidget, QListWidgetItem, QMessageBox, QMenu
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt6.QtGui import QColor, QFont, QAction
+from core.event_bus import bus
 
 
 class TemplatePanel(QWidget):
@@ -18,13 +19,19 @@ class TemplatePanel(QWidget):
     klick_konfigurieren_requested = pyqtSignal(str)      # template_name
     gruppe_konfigurieren_requested = pyqtSignal(str)     # gruppen_name
 
-    def __init__(self, filter_modus: str = "all", show_buttons: bool = True, parent=None):
+    def __init__(self, filter_modus: str = "all", show_buttons: bool = True, bot_win=None, parent=None):
         super().__init__(parent)
         self.filter_modus = filter_modus
         self.show_buttons = show_buttons
+        self.bot_win = bot_win
         self._last_gruppe: str | None = None
 
         self._setup_ui()
+        bus.subscribe("templates.changed", self._on_templates_changed)
+
+    def _on_templates_changed(self, event):
+        if self.bot_win:
+            QTimer.singleShot(0, lambda: self.aktualisieren(*self.bot_win._template_panel_daten()))
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)

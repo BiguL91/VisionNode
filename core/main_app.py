@@ -15,6 +15,8 @@ from engines.ocr_engine import OCREngine
 from engines.action_engine import ActionEngine
 from engines.workflow_engine import WorkflowEngine
 from core.bot_state import BotState
+from core.event_bus import bus
+from core.data_worker import DataWorker
 from core.helpers import (
     memu_fenster_finden, fenster_screenshot_mss,
     fenster_screenshot_wgc, wgc_starten, wgc_stoppen,
@@ -78,6 +80,7 @@ class TilesBotApp:
         self.action_engine = ActionEngine(log_func=self._log)
         self.workflow_engine = WorkflowEngine()
         self.workflow_engine.node_delay = self.settings.get("workflow_node_delay", 0.5)
+        self.data_worker = DataWorker()
         
         # Logging-Status für Klicks setzen
         self.action_engine.log_enabled = self.settings.get("log_klick_koordinaten", False)
@@ -105,12 +108,16 @@ class TilesBotApp:
 
     def _states_initialisieren(self):
         """Setzt alle bekannten State-Variablen aus Template-Settings auf False."""
+        count = 0
         for t_settings in self.template_engine.settings.values():
             if not isinstance(t_settings, dict):
                 continue
             for name in t_settings.get("set_states", {}).keys():
                 if name and name not in self.state.game_states:
                     self.state.game_states[name] = False
+                    count += 1
+        if count > 0:
+            self._log(f"[App] {count} State-Variablen aus Templates initialisiert.")
 
     def _log(self, msg):
         if self.log_callback: self.log_callback(msg)
@@ -162,6 +169,13 @@ class TilesBotApp:
         threading.Thread(target=self._ocr_loop, daemon=True).start()
         threading.Thread(target=self._scheduler_loop, daemon=True).start()
 
+        # Initiale Events senden, damit UI-Panels sich füllen
+        self._log(f"[App] Sende initiale Events ({len(self.state.game_states)} States)...")
+        bus.publish("state.changed", self.state.game_states, sender="App")
+        bus.publish("templates.changed", sender="App")
+        bus.publish("workflow.config.changed", sender="App")
+        bus.publish("workflow.active.changed", self.workflow_engine.aktiver_master, sender="App")
+
     def stop_bot(self): self.state.running = False
     def start_bot(self): self.state.running = True
 
@@ -210,6 +224,7 @@ class TilesBotApp:
                 if frame is not None:
                     self.current_screenshot_np = frame
                     self.action_engine.fenstergroesse_setzen(frame.shape[1], frame.shape[0])
+                    bus.publish("frame.captured", frame, sender="Capture")
                 
                 time.sleep(intervall)
         wgc_stoppen()
@@ -230,14 +245,14 @@ class TilesBotApp:
                         self.current_screenshot_np,
                         self.template_engine.referenz_groesse,
                         self.template_engine.matching_skalierung,
-                        self.state.game_states.copy(),
+                        self.state.get_all_game_states(),
                         self.state.force_include
                     ))
                     t_start = time.time()
                 except Exception: t_start = None
             else:
                 t_start = None
-            
+
             try:
                 res_item = self.result_q.get(timeout=0.1)
                 if isinstance(res_item, tuple) and len(res_item) == 2:
@@ -253,10 +268,11 @@ class TilesBotApp:
 
                 # --- State Automatisierung ---
                 gefundene_p_namen = {m[6] for m in matches}
-                neue_states = self.state.game_states.copy()
+                neue_states = self.state.get_all_game_states()
                 changed = False
 
                 for p_name, t_settings in self.template_engine.settings.items():
+
                     if not isinstance(t_settings, dict): continue
                     set_states = t_settings.get("set_states", {})
                     if not set_states: continue
@@ -297,6 +313,7 @@ class TilesBotApp:
                     )
                     if not frame_zu_hell:
                         self.state.game_states = neue_states
+                        bus.publish("state.changed", neue_states, sender="Matching")
 
                 # Nach dem State-Update: Matches gegen die NEUEN States filtern.
                 # Verhindert, dass Treffer aus dem gleichen Frame aktiv bleiben,
@@ -315,6 +332,7 @@ class TilesBotApp:
                         aktive_matches.append(m)
                 
                 self.state.active_matches = aktive_matches
+                bus.publish("matches.found", aktive_matches, sender="Matching")
 
                 if t_start and self.settings.get("log_matching", False):
                     ms = (time.time() - t_start) * 1000
@@ -400,6 +418,7 @@ class TilesBotApp:
                                 processed_entries.add(entry_name)
                     
                     self.state.template_ocr_values = neue_t_ocr
+                    bus.publish("ocr.results", self.state.get_all_ocr(), sender="OCR")
 
                     # Logging bei Wertänderungen
                     if self.settings.get("log_variablen", True):

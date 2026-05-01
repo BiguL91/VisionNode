@@ -1,9 +1,10 @@
+from core.event_bus import bus
 from lang import lang
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QScrollArea, QFrame, QInputDialog, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 
 class StateRow(QFrame):
@@ -68,14 +69,39 @@ class StatePanel(QWidget):
     delete_requested = pyqtSignal(str)       # Name
     toggle_requested = pyqtSignal(str, bool) # Name, neuer Wert
 
-    def __init__(self, parent=None):
+    def __init__(self, bot_win=None, parent=None):
         super().__init__(parent)
+        self.bot_win = bot_win
         self.ausgewaehlt: str | None = None
         self.rows: dict[str, StateRow] = {}
         self.nur_aktive = False
         self._last_keys: set[str] = set()
+        self._last_states: dict | None = None
 
         self._setup_ui()
+        bus.subscribe("state.changed", self._on_state_changed)
+        
+        # Heartbeat-Timer als Fallback
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self._heartbeat)
+        self._refresh_timer.start(1000)
+
+    def _on_state_changed(self, event):
+        """Wird gerufen, wenn sich Spielzustände ändern."""
+        states = event.data
+        if states is not None:
+            self._last_states = states
+        
+        if self._last_states is not None:
+            # Wir nutzen werte_aktualisieren, da es selbst entscheidet, ob ein Rebuild nötig ist
+            QTimer.singleShot(0, lambda: self.werte_aktualisieren(self._last_states))
+
+    def _heartbeat(self):
+        """Periodischer Check, falls Events verloren gingen."""
+        if self.bot_win and hasattr(self.bot_win, "app"):
+            states = self.bot_win.app.state.get_all_game_states()
+            self._last_states = states
+            self.werte_aktualisieren(states)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -110,7 +136,7 @@ class StatePanel(QWidget):
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setContentsMargins(4, 4, 4, 4)
         self.list_layout.setSpacing(2)
-        self.list_layout.addStretch()
+        # Wir fügen den Stretch erst in aktualisieren() hinzu
         self.scroll.setWidget(self.list_container)
         root.addWidget(self.scroll, stretch=1)
 
@@ -148,8 +174,8 @@ class StatePanel(QWidget):
                       if not self.nur_aktive or v)
         self._last_keys = set(keys)
 
-        # Alle Widgets (Zeilen + leere Labels) entfernen
-        while self.list_layout.count() > 1:  # Stretch bleibt
+        # Sauber alles entfernen (inkl. Stretch)
+        while self.list_layout.count() > 0:
             item = self.list_layout.takeAt(0)
             if item and item.widget():
                 item.widget().deleteLater()
@@ -159,29 +185,33 @@ class StatePanel(QWidget):
             key = "state_only_active_empty" if self.nur_aktive else "state_no_states"
             lbl = QLabel(lang.t(key))
             lbl.setProperty("class", "lbl_empty_hint")
-            self.list_layout.insertWidget(0, lbl)
+            self.list_layout.addWidget(lbl)
+            self.list_layout.addStretch()
             return
 
-        for i, name in enumerate(keys):
-            row = StateRow(name=name, value=game_states[name])
+        for name in keys:
+            row = StateRow(name=name, value=game_states.get(name, False))
             row.selected.connect(self._auswahl_setzen)
             row.toggled.connect(self.toggle_requested)
-            row.double_clicked.connect(lambda: self.rename_requested.emit(self.ausgewaehlt))
+            row.double_clicked.connect(lambda n=name: self.rename_requested.emit(n))
             if name == self.ausgewaehlt:
                 row.set_selected(True)
-            self.list_layout.insertWidget(i, row)
+            self.list_layout.addWidget(row)
             self.rows[name] = row
+            
+        self.list_layout.addStretch()
 
     def werte_aktualisieren(self, game_states: dict):
-        """Surgical Update: nur Werte ändern, kein Rebuild."""
+        """Surgical Update: nur Werte ändern, falls Struktur passt."""
         current_keys = set(k for k, v in game_states.items()
                            if not self.nur_aktive or v)
 
-        # Struktur hat sich geändert → Rebuild
-        if current_keys != self._last_keys:
+        # Falls sich die Menge der anzuzeigenden Keys geändert hat -> Rebuild nötig
+        if current_keys != self._last_keys or not self.rows:
             self.aktualisieren(game_states)
             return
 
+        # Ansonsten nur Werte in bestehenden Zeilen updaten
         for name, row in self.rows.items():
             if name in game_states:
                 row.update_value(game_states[name])
@@ -189,6 +219,8 @@ class StatePanel(QWidget):
     def set_nur_aktive(self, val: bool):
         if self.nur_aktive != val:
             self.nur_aktive = val
+            # UI sofort aktualisieren
+            bus.publish("state.changed", sender="StatePanel")
 
     def set_auswahl(self, name: str | None):
         """Setzt Auswahl von außen (z.B. nach Umbenennen)."""

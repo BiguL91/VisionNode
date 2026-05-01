@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QByteArray
 from PyQt6.QtGui import QFont, QColor, QAction
 
+from core.bot_state import BotState
+from core.event_bus import bus
 from core.daten_manager import (
     datenbank_initialisieren, alle_listen, spalten_der_liste,
     zeilen_der_liste, transformationen_der_liste, transformation_anwenden,
@@ -154,85 +156,18 @@ class BaseListenBlock(QFrame):
     def werte_aktualisieren(self):
         pass
 
-    def _werte_berechnen(self):
+    def _werte_abrufen(self):
+        """Holt die bereits verarbeiteten Werte aus dem Cache (DataWorker hat gerechnet)."""
         spalten       = spalten_der_liste(self.l["id"])
         zeilen_namen  = zeilen_der_liste(self.l["id"])
-        transformationen = transformationen_der_liste(self.l["id"])
         berechnungen  = berechnungen_der_liste(self.l["id"])
         db_cache      = cache_lesen(self.l["id"])
+        
+        # Wir nutzen einfach den Cache als Basis für die Anzeige
         ocr_werte     = dict(db_cache)
-
-        ocr_roh_live = {}
-        if self.bot_ref and hasattr(self.bot_ref, "app"):
-            ocr_roh_live.update(self.bot_ref.app.state.ocr_values)
-            ocr_roh_live.update(self.bot_ref.app.state.template_ocr_values)
-
-        ausgabe_namen = {t["name"] for t in transformationen} | {b["name"] for b in berechnungen}
-        jetzt = time.time()
-        neue_cache_werte = {}
-
-        # 1. Timer-Logik für Timer-Listen
-        if self.l.get("typ") == "timer":
-            for z in zeilen_namen:
-                t_name = z["name"]
-                de_key = f"Timer.{t_name}._deadline"
-                de_entry = db_cache.get(de_key)
-                if de_entry and de_entry[0] not in (None, "", "—", "?"):
-                    try:
-                        rest = max(0, int(float(de_entry[0]) - jetzt))
-                        ocr_werte[t_name] = (str(rest), jetzt)
-                        neue_cache_werte[t_name] = str(rest)
-                    except (ValueError, TypeError):
-                        pass
-
-        # 2. Live-OCR zu Cache
-        for name, val in ocr_roh_live.items():
-            if name in ausgabe_namen:
-                continue
-            if val not in (None, "", "—"):
-                ocr_werte[name] = (val, jetzt)
-                neue_cache_werte[name] = val
-
-        # 3. Transformationen
-        for t in transformationen:
-            rohwert = ocr_roh_live.get(t["ocr_var"])
-            if rohwert not in (None, "", "—"):
-                wert = transformation_anwenden(rohwert, t["typ"])
-                if wert not in ("", "—", "?"):
-                    ocr_werte[t["name"]] = (wert, jetzt)
-                    neue_cache_werte[t["name"]] = wert
-                    if t["typ"] == "timer":
-                        try:
-                            neue_cache_werte[f"Timer.{t['name']}._deadline"] = str(jetzt + float(wert))
-                        except (ValueError, TypeError):
-                            pass
-            elif t["typ"] == "timer":
-                de = db_cache.get(f"Timer.{t['name']}._deadline")
-                if de and de[0] not in (None, "", "—", "?"):
-                    try:
-                        rest = max(0, int(float(de[0]) - jetzt))
-                        ocr_werte[t["name"]] = (str(rest), jetzt)
-                        neue_cache_werte[t["name"]] = str(rest)
-                    except (ValueError, TypeError):
-                        pass
-
-        # 4. Berechnungen
-        berech_sortiert = (
-            [b for b in berechnungen if b.get("typ") == "zwischen"] +
-            [b for b in berechnungen if b.get("typ") != "zwischen"]
-        )
-        for b in berech_sortiert:
-            ergebnis = berechnung_auswerten(b["formel_json"], ocr_werte, self.l["update_intervall"])
-            if ergebnis not in ("?", "—") and b["formel_json"]:
-                ocr_werte[b["name"]] = (ergebnis, jetzt)
-                neue_cache_werte[b["name"]] = ergebnis
-
-        # 5. Cache wegschreiben
-        for var_name, wert in neue_cache_werte.items():
-            cache_schreiben(self.l["id"], var_name, wert)
-
         berech_namen  = {b["name"] for b in berechnungen}
         zuordnungen   = zuordnungen_der_liste(self.l["id"])
+        
         return ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen
 
     def _format_wert(self, wert, format_typ):
@@ -258,7 +193,7 @@ class NormalListenBlock(BaseListenBlock):
 
     def _tabelle_zeichnen(self):
         self._is_loading = True
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_abrufen()
 
         if not spalten:
             self.table.setColumnCount(1)
@@ -292,7 +227,7 @@ class NormalListenBlock(BaseListenBlock):
         if not self._aufgeklappt or self.table.rowCount() == 0:
             return
 
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_abrufen()
         for r, z in enumerate(zeilen_namen):
             for ci, sp in enumerate(spalten):
                 ocr_var = zuordnungen.get((z["name"], sp["id"]))
@@ -321,7 +256,7 @@ class GlobalListenBlock(BaseListenBlock):
 
     def _tabelle_zeichnen(self):
         self._is_loading = True
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_abrufen()
 
         self.table.setColumnCount(2)
         self.table.setRowCount(len(zeilen_namen))
@@ -352,7 +287,7 @@ class GlobalListenBlock(BaseListenBlock):
         if not self._aufgeklappt or self.table.rowCount() == 0:
             return
 
-        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_berechnen()
+        ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen = self._werte_abrufen()
         for r, z in enumerate(zeilen_namen):
             full_name = z["name"]
             is_timer = not full_name.startswith("[W] ")
@@ -390,11 +325,15 @@ class DatenPanel(QWidget):
 
         self._update_timer = QTimer(self)
         self._update_timer.timeout.connect(self._auto_update)
-        self._update_timer.start(1000)
+        self._update_timer.start(2000) # Reiner Polling-Fallback für Timer-Animationen
 
-        self._transform_timer = QTimer(self)
-        self._transform_timer.timeout.connect(self._transform_tick)
-        self._transform_timer.start(800)
+        # Event Bus Integration
+        bus.subscribe("data.updated", self._on_data_updated)
+
+    def _on_data_updated(self, event):
+        """Wird vom DataWorker gerufen, wenn neue Berechnungen vorliegen."""
+        # Wir nutzen ein QTimer.singleShot, um den UI-Thread nicht direkt zu blockieren
+        QTimer.singleShot(0, self._auto_update)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -614,20 +553,3 @@ class DatenPanel(QWidget):
         for lid in self._sichtbare_listen:
             if lid in self._bloecke:
                 self._bloecke[lid].werte_aktualisieren()
-
-    def _transform_tick(self):
-        if not self.bot_ref or not hasattr(self.bot_ref, "app"): return
-        ocr_roh = {**self.bot_ref.app.state.ocr_values, **self.bot_ref.app.state.template_ocr_values}
-        if not ocr_roh: return
-        jetzt = time.time()
-        for l in self._listen_cache:
-            for t in transformationen_der_liste(l["id"]):
-                rohwert = ocr_roh.get(t["ocr_var"])
-                if rohwert not in (None, "", "—"):
-                    wert = transformation_anwenden(rohwert, t["typ"])
-                    if wert not in ("", "—", "?"):
-                        cache_schreiben(l["id"], t["name"], wert)
-                        if t["typ"] == "timer":
-                            try:
-                                cache_schreiben(l["id"], f"Timer.{t['name']}._deadline", str(jetzt + float(wert)))
-                            except (ValueError, TypeError): pass
