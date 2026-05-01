@@ -439,8 +439,9 @@ class TemplateMatcher:
         pts = torch.nonzero(mask)
         if pts.numel() == 0: return []
         
-        # UNIFIED TRANSFER: Wir holen pts [N, 4] und scores [N] zur CPU
-        # pts enthält: (batch_idx, tpl_idx, y, x)
+        # GPU-Synchronisation vor CPU-Transfer (verhindert Heap-Corruption durch async GPU-Kernel)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         res_pts = pts.cpu().numpy()
         res_scores = scores[mask].cpu().numpy()
         

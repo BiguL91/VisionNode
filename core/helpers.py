@@ -57,9 +57,14 @@ class _WGCKamera:
 
         @capture.event
         def on_frame_arrived(frame, capture_control):
-            buf = frame.frame_buffer          # numpy BGRA uint8
-            if buf.ndim == 3 and buf.shape[2] >= 3:
-                kamera._letzter_frame = buf[:, :, :3].copy()  # BGRA → BGR
+            try:
+                buf = frame.frame_buffer
+                if buf.ndim == 3 and buf.shape[2] >= 3:
+                    h, w = buf.shape[:2]
+                    # bytes() kopiert Rust-Speicher sofort in Python-managed Objekt
+                    kamera._letzter_frame = np.frombuffer(bytes(buf), dtype=np.uint8).reshape(h, w, 4)[:, :, :3].copy()
+            except Exception:
+                pass
 
         @capture.event
         def on_closed():
@@ -142,20 +147,20 @@ def fenster_screenshot(hwnd, sct):
         return None
 
 class SharedFrameBuffer:
-    """Verwaltet einen Shared Memory Block für Screenshots (Zero-Copy)."""
+    """Verwaltet einen Shared Memory Block für Screenshots."""
     def __init__(self, name: str, size_mb: int = 40, create: bool = False):
         from multiprocessing import shared_memory
+        import threading
         self.name = name
         self.size = size_mb * 1024 * 1024
         self.shm = None
-        
+        self._lock = threading.Lock()
+
         try:
             if create:
-                # Versuch der Neuerstellung
                 try:
                     self.shm = shared_memory.SharedMemory(name=name, create=True, size=self.size)
                 except FileExistsError:
-                    # Unter Windows: Puffer existiert noch. Einfach öffnen.
                     self.shm = shared_memory.SharedMemory(name=name)
             else:
                 self.shm = shared_memory.SharedMemory(name=name)
@@ -166,15 +171,23 @@ class SharedFrameBuffer:
         """Kopiert den Frame in den Shared Memory Bereich."""
         if self.shm is None or frame_np is None:
             return
-        # Wir nutzen einen View auf den SHM-Puffer
-        target = np.ndarray(frame_np.shape, dtype=frame_np.dtype, buffer=self.shm.buf)
-        target[:] = frame_np[:]
+        if frame_np.nbytes > self.size:
+            print(f"[SharedMemory] Frame zu groß: {frame_np.nbytes} > {self.size}")
+            return
+        with self._lock:
+            target = np.ndarray(frame_np.shape, dtype=frame_np.dtype, buffer=self.shm.buf)
+            target[:] = frame_np[:]
 
     def get_frame(self, shape, dtype) -> np.ndarray:
-        """Gibt einen Numpy-View auf den Shared Memory Bereich zurück (Zero-Copy)."""
+        """Gibt eine Kopie des aktuellen Frames zurück."""
         if self.shm is None:
             return None
-        return np.ndarray(shape, dtype=dtype, buffer=self.shm.buf)
+        nbytes = int(np.dtype(dtype).itemsize * np.prod(shape))
+        if nbytes > self.size:
+            return None
+        with self._lock:
+            view = np.ndarray(shape, dtype=dtype, buffer=self.shm.buf)
+            return view.copy()
 
     def close(self):
         if self.shm:

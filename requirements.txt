@@ -5,7 +5,7 @@ torch
 torchvision
 Pillow
 mss
-windows-capture
+windows-capture>=2.0.0
 PyYAML
 numpy
 PyQt6
