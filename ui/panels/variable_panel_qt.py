@@ -228,6 +228,7 @@ class VariablePanel(QWidget):
         self._letzte_ocr_konfig_keys: set | None = None
         self._ocr_letzter_wert_zeit: dict[str, float] = {}
         self._aktuelle_matches: set = set()
+        self._letzte_ocr_werte: dict = {}
         
         self._setup_ui()
         
@@ -235,11 +236,37 @@ class VariablePanel(QWidget):
         bus.subscribe("matches.found", self._on_matches_found)
         bus.subscribe("templates.changed", self._on_templates_changed)
 
+        # Heartbeat-Timer als Fallback (Sicherheitsnetz)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self._heartbeat)
+        self._refresh_timer.start(1500)
+
     def _on_ocr_results(self, event):
         if not self.bot_win: return
         ocr_werte = event.data
+        if ocr_werte is not None:
+            self._letzte_ocr_werte = ocr_werte
+        
         ocr_konfig = dict(self.bot_win.ocr_engine.template_ocr_konfigurationen())
-        QTimer.singleShot(0, lambda: self.werte_aktualisieren(ocr_werte, self._aktuelle_matches, ocr_konfig))
+        QTimer.singleShot(0, lambda: self.werte_aktualisieren(self._letzte_ocr_werte, self._aktuelle_matches, ocr_konfig))
+
+    def _heartbeat(self):
+        """Periodischer Check, falls Events verloren gingen."""
+        if not self.bot_win or not hasattr(self.bot_win, "app"):
+            return
+        
+        # Falls noch nie eine Struktur geladen wurde -> forcieren
+        if not self._bloecke:
+            self._on_templates_changed(None)
+            return
+
+        ocr_werte = self.bot_win.app.state.get_all_ocr()
+        matches = set(m[6] for m in self.bot_win.app.state.active_matches if len(m) > 6)
+        ocr_konfig = dict(self.bot_win.ocr_engine.template_ocr_konfigurationen())
+        
+        self._letzte_ocr_werte = ocr_werte
+        self._aktuelle_matches = matches
+        self.werte_aktualisieren(ocr_werte, matches, ocr_konfig)
 
     def _on_matches_found(self, event):
         matches = event.data
@@ -362,7 +389,11 @@ class VariablePanel(QWidget):
                 block.setVisible(self._sichtbar(tn, aktuelle_matches, jetzt))
 
     def set_nur_aktive(self, val: bool):
-        self._nur_aktive = val
+        if self._nur_aktive != val:
+            self._nur_aktive = val
+            # UI sofort aktualisieren (Sichtbarkeit der Blöcke neu prüfen)
+            ocr_konfig = dict(self.bot_win.ocr_engine.template_ocr_konfigurationen()) if self.bot_win else {}
+            self.werte_aktualisieren(self._letzte_ocr_werte, self._aktuelle_matches, ocr_konfig)
 
     def _block_hinzufuegen(self, key: str, name: str, farbe: str, eintraege: list) -> VariableBlock:
         block = VariableBlock(key, name, farbe, eintraege)
