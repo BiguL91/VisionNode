@@ -106,9 +106,15 @@ class TemplateMatcher:
         return True
 
     def _get_effective_regions(self, name):
+        basis = name.split("__")[0]
         s = self.settings.get(name, {})
-        if isinstance(s, dict) and s.get("scan_regions"): return s["scan_regions"]
-        curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name}
+        if not s or not s.get("scan_regions"):
+            s = self.settings.get(basis, {})
+            
+        if isinstance(s, dict) and s.get("scan_regions"): 
+            return s["scan_regions"]
+            
+        curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name, basis}
         while curr:
             leaf = curr.split("/")[-1]
             if leaf in besucht: break
@@ -235,11 +241,12 @@ class TemplateMatcher:
 
         # 2. Scannen: Masters (Fullscreen + ROI)
         master_ergebnisse, m_fullscreen = [], defaultdict(list)
-        fullscreen_scanned = False
         for name in master_namen:
             regs = self._get_effective_regions(name)
             gd = self._get_gpu_template(name, s_eff)
-            if regs:
+            
+            # WICHTIG: Wenn Regionen da sind, scannen wir NUR dort.
+            if regs and len(regs) > 0:
                 gh, gw = gd["t_zm"].shape[2:]
                 for r in regs:
                     sx0, sy0, sx1, sy1 = int(r[0]*s_eff), int(r[1]*s_eff), int(r[2]*s_eff), int(r[3]*s_eff)
@@ -247,11 +254,16 @@ class TemplateMatcher:
                         scanned_regions.append([int(r[0]*nx), int(r[1]*ny), int(r[2]*nx), int(r[3]*ny)])
                         master_ergebnisse.extend(self._batch_match_fixed_size(img_m[:,:,sy0:sy1,sx0:sx1], img_sum[:,:,sy0:sy1,sx0:sx1], img_sq[:,:,sy0:sy1,sx0:sx1], [(name, gd)], s_eff, offset=(sx0, sy0)))
             else:
+                # NUR wenn keine Regionen definiert sind, Fullscreen scannen
                 m_fullscreen[gd["t_zm"].shape[2:]].append((name, gd))
-                fullscreen_scanned = True
 
-        if fullscreen_scanned:
+        # Fullscreen-Region nur hinzufügen, wenn wirklich Fullscreen gescannt wird
+        if m_fullscreen:
             scanned_regions.append([0, 0, iw, ih])
+            if self.log_enabled_func and self.log_enabled_func():
+                fs_names = [t[0] for lists in m_fullscreen.values() for t in lists]
+                if fs_names:
+                    self._log(f"[Matcher] FULLSCREEN-SCAN erzwungen durch: {', '.join(fs_names[:5])}{'...' if len(fs_names)>5 else ''}")
 
         for sz, tpls in m_fullscreen.items():
             master_ergebnisse.extend(self._batch_match_fixed_size(img_m, img_sum, img_sq, tpls, s_eff))
