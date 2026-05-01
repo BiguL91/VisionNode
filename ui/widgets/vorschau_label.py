@@ -30,7 +30,8 @@ def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float
         nw, nh = int(round(w * skala)), int(round(h * skala))
         if nw < 1 or nh < 1:
             return QPixmap(), 1.0, 0.0, 0.0
-        resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+        # Performance: INTER_LINEAR ist deutlich schneller als INTER_AREA für Live-Video
+        resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
         pm = QPixmap.fromImage(qimg)

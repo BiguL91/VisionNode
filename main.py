@@ -740,7 +740,12 @@ class TilesBotWindow(QMainWindow):
     def _display_tick(self):
         if not self.app.state.capture_active:
             return
+            
+        # Zurück zum Live-Modus für maximale Flüssigkeit (FPS).
+        # Das Bild kommt direkt vom Capture-Thread, die Markierungen hinken
+        # dadurch zwar minimal hinterher, aber das Video ist butterweich.
         frame = self.app.current_screenshot_np
+            
         if frame is None:
             return
 

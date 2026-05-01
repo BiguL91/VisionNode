@@ -237,17 +237,21 @@ class TilesBotApp:
         )
         self.matching_proc.start()
         
+        last_sent_frame = None
+        
         while self.state.capture_active:
             if self.current_screenshot_np is not None:
                 try:
+                    current_f = self.current_screenshot_np
                     # Wir schicken den aktuellen Spielzustand mit
                     self.frame_q.put_nowait((
-                        self.current_screenshot_np,
+                        current_f,
                         self.template_engine.referenz_groesse,
                         self.template_engine.matching_skalierung,
                         self.state.get_all_game_states(),
                         self.state.force_include
                     ))
+                    last_sent_frame = current_f
                     t_start = time.time()
                 except Exception: t_start = None
             else:
@@ -255,6 +259,11 @@ class TilesBotApp:
 
             try:
                 res_item = self.result_q.get(timeout=0.1)
+                
+                # Wenn wir ein Ergebnis haben, gehört es zum last_sent_frame
+                if last_sent_frame is not None:
+                    self.state.last_processed_frame = last_sent_frame
+
                 if isinstance(res_item, tuple) and len(res_item) == 2:
                     matches, master_namen = res_item
                     if self.settings.get("log_gpu_templates", False):
@@ -306,11 +315,11 @@ class TilesBotApp:
                 if changed:
                     # Helle Übergangsframes (z.B. weiße Ladescreen) ignorieren
                     schwellwert = self.settings.get("uebergang_schwellwert", 200)
-                    frame_zu_hell = (
-                        schwellwert > 0
-                        and self.current_screenshot_np is not None
-                        and self.current_screenshot_np.mean() > schwellwert
-                    )
+                    frame_zu_hell = False
+                    if schwellwert > 0 and self.current_screenshot_np is not None:
+                        # Performance: Downsampling für Helligkeitscheck (20x20 Gitter reicht völlig)
+                        frame_zu_hell = self.current_screenshot_np[::20, ::20].mean() > schwellwert
+                    
                     if not frame_zu_hell:
                         self.state.game_states = neue_states
                         bus.publish("state.changed", neue_states, sender="Matching")
@@ -318,7 +327,6 @@ class TilesBotApp:
                 # Nach dem State-Update: Matches gegen die NEUEN States filtern.
                 # Verhindert, dass Treffer aus dem gleichen Frame aktiv bleiben,
                 # obwohl ihre condition_states durch den State-Update nicht mehr erfüllt sind.
-                # Force-included Templates (Workflow-Zwang) überspringen den Filter komplett.
                 fi_bases = {n.split("__")[0] for n in self.state.force_include if n}
                 aktive_matches = []
                 for m in matches:
@@ -338,9 +346,13 @@ class TilesBotApp:
                     ms = (time.time() - t_start) * 1000
                     self._log(f"[Matching] {len(aktive_matches)} Treffer in {ms:.1f}ms")
             except Exception as e:
-                if self.settings.get("log_matching", False):
+                # Kurzer Sleep bei Fehlern/Timeout, um CPU zu schonen
+                time.sleep(0.01)
+                if self.settings.get("log_matching", False) and not isinstance(e, mp.queues.Empty):
                     self._log(f"Matching-Loop Fehler: {e}")
-            time.sleep(0.05)
+            
+            # Kein fixer Sleep mehr am Ende, um maximale FPS zu erreichen.
+            # Die Loop wird durch result_q.get(timeout=0.1) gebremst.
 
     def _ocr_loop(self):
         while self.state.capture_active:

@@ -38,6 +38,10 @@ class BotState:
     # Game State (z.B. Map=True, City=False)
     game_states: Dict[str, bool] = field(default_factory=dict)
     
+    # Der letzte Frame, der erfolgreich durch das Matching gelaufen ist
+    # Wird für synchrone UI-Darstellung genutzt
+    last_processed_frame: Optional[Any] = None
+    
     # Erzwungene Templates (werden immer gescannt, ignorieren States/search_only)
     force_include: List[str] = field(default_factory=list)
 
