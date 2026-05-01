@@ -20,15 +20,19 @@ from core.data_worker import DataWorker
 from core.helpers import (
     memu_fenster_finden, fenster_screenshot_mss,
     fenster_screenshot_wgc, wgc_starten, wgc_stoppen,
-    MEMU_FENSTERTITEL
+    MEMU_FENSTERTITEL, SharedFrameBuffer
 )
 
 def _matching_subprocess(frame_q, result_q, reload_event):
     """Läuft in einem eigenen OS-Prozess."""
     import torch
+    import time
     torch.set_num_threads(1)
     from engines.template_engine import TemplateEngine
+    from core.helpers import SharedFrameBuffer
+    
     engine = TemplateEngine()
+    shm_buffer = SharedFrameBuffer("bot_frame_buffer", create=False)
 
     while True:
         if reload_event.is_set():
@@ -39,21 +43,39 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         except Exception: continue
         if item is None: break
 
-        if len(item) == 5:
-            frame, ref_groesse, skala, states, force_include = item
+        # SHM-Modus: Item enthält (shape, dtype, ref_groesse, skala, states, force_include)
+        if isinstance(item, tuple) and len(item) >= 5:
+            shape, dtype, ref_groesse, skala, states = item[:5]
+            force_include = item[5] if len(item) > 5 else None
+            
+            # Zero-Copy View aus SHM holen
+            frame = shm_buffer.get_frame(shape, dtype)
         else:
-            frame, ref_groesse, skala, states = item
-            force_include = None
+            continue
 
+        if frame is None: continue
+
+        t_start = time.time()
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
         result_tupel = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
         
+        # Exakte Zeitmessung für GPU (da matches_suchen_np asynchron sein kann bis zum .cpu() Aufruf)
+        # torch.cuda.synchronize() stellt sicher, dass alle GPU-Befehle fertig sind.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        ms = (time.time() - t_start) * 1000
+
         while not result_q.empty():
             try: result_q.get_nowait()
             except Exception: break
-        try: result_q.put_nowait(result_tupel)
+        try:
+            # Wir packen die Dauer mit ins Paket
+            result_package = (result_tupel, ms)
+            result_q.put_nowait(result_package)
         except Exception: pass
+    
+    shm_buffer.close()
 
 class TilesBotApp:
     """Die Logik-Zentrale des Bots (Engine-Management & Loops)."""
@@ -62,6 +84,9 @@ class TilesBotApp:
         self.state = BotState()
         self.log_callback = log_callback
         self.ui_update_callback = ui_update_callback
+        
+        # Shared Memory für Screenshots (40MB für bis zu 4K BGR)
+        self.shm_buffer = SharedFrameBuffer("bot_frame_buffer", size_mb=40, create=True)
         
         # Einstellungen
         self.settings_path = os.path.join("templates", "settings", "settings.json")
@@ -193,6 +218,11 @@ class TilesBotApp:
             self.frame_q.put(None)
             self.matching_proc.join(timeout=1.0)
             self.matching_proc.terminate()
+        
+        # Shared Memory aufräumen
+        if hasattr(self, "shm_buffer"):
+            self.shm_buffer.close()
+            self.shm_buffer.unlink()
 
     def _capture_loop(self):
         import mss
@@ -222,6 +252,9 @@ class TilesBotApp:
                     frame, b, h = fenster_screenshot_mss(self.state.memu_hwnd, sct)
                 
                 if frame is not None:
+                    # Screenshot in den Shared Memory Puffer schreiben (Zero-Copy View)
+                    self.shm_buffer.write_frame(frame)
+                    
                     self.current_screenshot_np = frame
                     self.action_engine.fenstergroesse_setzen(frame.shape[1], frame.shape[0])
                     bus.publish("frame.captured", frame, sender="Capture")
@@ -243,9 +276,11 @@ class TilesBotApp:
             if self.current_screenshot_np is not None:
                 try:
                     current_f = self.current_screenshot_np
-                    # Wir schicken den aktuellen Spielzustand mit
+                    # Wir schicken nur noch Metadaten + Spielzustand.
+                    # Das Bild liegt bereits im Shared Memory.
                     self.frame_q.put_nowait((
-                        current_f,
+                        current_f.shape,
+                        current_f.dtype,
                         self.template_engine.referenz_groesse,
                         self.template_engine.matching_skalierung,
                         self.state.get_all_game_states(),
@@ -258,8 +293,14 @@ class TilesBotApp:
                 t_start = None
 
             try:
-                res_item = self.result_q.get(timeout=0.1)
+                res_package = self.result_q.get(timeout=0.1)
                 
+                # Neues Format: (result_tupel, ms)
+                if isinstance(res_package, tuple) and len(res_package) == 2:
+                    res_item, ms_sub = res_package
+                else:
+                    res_item, ms_sub = res_package, 0
+
                 # Wenn wir ein Ergebnis haben, gehört es zum last_sent_frame
                 if last_sent_frame is not None:
                     self.state.last_processed_frame = last_sent_frame
@@ -275,7 +316,7 @@ class TilesBotApp:
                 else:
                     matches = res_item
 
-                # --- State Automatisierung ---
+                # ... (State Automatisierung bleibt gleich)
                 gefundene_p_namen = {m[6] for m in matches}
                 neue_states = self.state.get_all_game_states()
                 changed = False
@@ -342,9 +383,8 @@ class TilesBotApp:
                 self.state.active_matches = aktive_matches
                 bus.publish("matches.found", aktive_matches, sender="Matching")
 
-                if t_start and self.settings.get("log_matching", False):
-                    ms = (time.time() - t_start) * 1000
-                    self._log(f"[Matching] {len(aktive_matches)} Treffer in {ms:.1f}ms")
+                if self.settings.get("log_matching", False):
+                    self._log(f"[Matching] {len(aktive_matches)} Treffer in {ms_sub:.1f}ms")
             except Exception as e:
                 # Kurzer Sleep bei Fehlern/Timeout, um CPU zu schonen
                 time.sleep(0.01)

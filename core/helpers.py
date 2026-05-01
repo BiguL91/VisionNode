@@ -140,3 +140,48 @@ def fenster_screenshot(hwnd, sct):
         return Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
     except Exception:
         return None
+
+class SharedFrameBuffer:
+    """Verwaltet einen Shared Memory Block für Screenshots (Zero-Copy)."""
+    def __init__(self, name: str, size_mb: int = 40, create: bool = False):
+        from multiprocessing import shared_memory
+        self.name = name
+        self.size = size_mb * 1024 * 1024
+        self.shm = None
+        
+        try:
+            if create:
+                # Alten Puffer gleichen Namens aufräumen falls nötig
+                try:
+                    temp_shm = shared_memory.SharedMemory(name=name)
+                    temp_shm.close()
+                    temp_shm.unlink()
+                except: pass
+                self.shm = shared_memory.SharedMemory(name=name, create=True, size=self.size)
+            else:
+                self.shm = shared_memory.SharedMemory(name=name)
+        except Exception as e:
+            print(f"[SharedMemory] Fehler: {e}")
+
+    def write_frame(self, frame_np: np.ndarray):
+        """Kopiert den Frame in den Shared Memory Bereich."""
+        if self.shm is None or frame_np is None:
+            return
+        # Wir nutzen einen View auf den SHM-Puffer
+        target = np.ndarray(frame_np.shape, dtype=frame_np.dtype, buffer=self.shm.buf)
+        target[:] = frame_np[:]
+
+    def get_frame(self, shape, dtype) -> np.ndarray:
+        """Gibt einen Numpy-View auf den Shared Memory Bereich zurück (Zero-Copy)."""
+        if self.shm is None:
+            return None
+        return np.ndarray(shape, dtype=dtype, buffer=self.shm.buf)
+
+    def close(self):
+        if self.shm:
+            self.shm.close()
+
+    def unlink(self):
+        if self.shm:
+            try: self.shm.unlink()
+            except: pass

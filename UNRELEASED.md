@@ -6,10 +6,13 @@
 *Aktueller Stand – In Arbeit*
 
 ### ✨ Features
-- 
+- **Shared Memory System**: Implementierung eines 40MB Shared Memory Puffers (`SharedFrameBuffer`) für Zero-Copy Screenshots zwischen Capture- und Matching-Prozessen. Eliminiert die teure Python-Serialisierung (Pickle) großer Arrays.
+- **Pinned Memory (DMA)**: Nutzung von Page-Locked Memory für beschleunigte Datentransfers über den PCIe-Bus direkt zum VRAM der GPU.
+- **GPU-Native Konvertierung**: Verlagerung der rechenintensiven Bildumwandlung (`uint8` -> `float32`, Skalierung, Kanal-Permutation) von der CPU direkt auf die Grafikkarte (4080 Super optimiert).
 
 ### ⚙️ Optimierungen
-- 
+- **Präzise Performance-Logs**: Verlagerung der Zeitmessung in den Matching-Subprozess inklusive `torch.cuda.synchronize()`. Garantiert exakte GPU-Timings unabhängig von asynchronen CPU-Threads.
+- **Subprozess-Effizienz**: Reduzierung der Datenmenge in der Matching-Queue auf reine Metadaten (Shape, Dtype), da das Bild bereits im Shared Memory liegt.
 
 ### 🛠️ Fixes
 - 

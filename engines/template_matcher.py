@@ -269,7 +269,15 @@ class TemplateMatcher:
     @torch.no_grad()
     def matches_suchen_np(self, screenshot_bgr, game_states=None, force_include=None):
         if not self.templates: return [], []
-        img_gpu = torch.from_numpy(screenshot_bgr.transpose(2, 0, 1)).float().div(255.0).to(self.device).unsqueeze(0)
+        
+        # 1. Rohes uint8-Array zur GPU schieben (kleinste Datenmenge)
+        # screenshot_bgr ist (H, W, 3)
+        t_uint8 = torch.from_numpy(screenshot_bgr).pin_memory().to(self.device, non_blocking=True)
+        
+        # 2. Konvertierung und Permutation ERST AUF DER GPU (blitzschnell)
+        # (H, W, 3) uint8 -> (1, 3, H, W) float32 [0..1]
+        img_gpu = t_uint8.permute(2, 0, 1).float().div(255.0).unsqueeze(0)
+        
         ih, iw  = screenshot_bgr.shape[:2]
         s_base  = self.matching_skalierung
         ref     = self.referenz_groesse
