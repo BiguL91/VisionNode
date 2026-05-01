@@ -151,13 +151,12 @@ class SharedFrameBuffer:
         
         try:
             if create:
-                # Alten Puffer gleichen Namens aufräumen falls nötig
+                # Versuch der Neuerstellung
                 try:
-                    temp_shm = shared_memory.SharedMemory(name=name)
-                    temp_shm.close()
-                    temp_shm.unlink()
-                except: pass
-                self.shm = shared_memory.SharedMemory(name=name, create=True, size=self.size)
+                    self.shm = shared_memory.SharedMemory(name=name, create=True, size=self.size)
+                except FileExistsError:
+                    # Unter Windows: Puffer existiert noch. Einfach öffnen.
+                    self.shm = shared_memory.SharedMemory(name=name)
             else:
                 self.shm = shared_memory.SharedMemory(name=name)
         except Exception as e:
