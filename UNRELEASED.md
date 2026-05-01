@@ -2,20 +2,35 @@
 
 ---
 
-## v1.5.5 (TBD)
+## v1.5.6 (TBD)
 *Aktueller Stand – In Arbeit*
 
 ### ✨ Features
-- **Shared Memory System**: Implementierung eines 40MB Shared Memory Puffers (`SharedFrameBuffer`) für Zero-Copy Screenshots zwischen Capture- und Matching-Prozessen. Eliminiert die teure Python-Serialisierung (Pickle) großer Arrays.
-- **Pinned Memory (DMA)**: Nutzung von Page-Locked Memory für beschleunigte Datentransfers über den PCIe-Bus direkt zum VRAM der GPU.
-- **GPU-Native Konvertierung**: Verlagerung der rechenintensiven Bildumwandlung (`uint8` -> `float32`, Skalierung, Kanal-Permutation) von der CPU direkt auf die Grafikkarte (4080 Super optimiert).
+- 
 
 ### ⚙️ Optimierungen
-- **Präzise Performance-Logs**: Verlagerung der Zeitmessung in den Matching-Subprozess inklusive `torch.cuda.synchronize()`. Garantiert exakte GPU-Timings unabhängig von asynchronen CPU-Threads.
-- **Subprozess-Effizienz**: Reduzierung der Datenmenge in der Matching-Queue auf reine Metadaten (Shape, Dtype), da das Bild bereits im Shared Memory liegt.
+- 
 
 ### 🛠️ Fixes
 - 
+
+---
+
+## v1.5.5 (Performance-Turbo) - 01.05.2026
+
+### ✨ Features
+- **Shared Memory System**: Implementierung eines 40MB Shared Memory Puffers (SharedFrameBuffer) für Zero-Copy Screenshots zwischen Capture- und Matching-Prozessen. Eliminiert die teure Python-Serialisierung (Pickle) großer Arrays.
+- **Pinned Memory (DMA)**: Nutzung von Page-Locked Memory für beschleunigte Datentransfers über den PCIe-Bus direkt zum VRAM der GPU.
+- **GPU-Native Konvertierung**: Verlagerung der rechenintensiven Bildumwandlung (uint8 -> loat32, Skalierung, Kanal-Permutation) von der CPU direkt auf die Grafikkarte (4080 Super optimiert).
+
+### ⚙️ Optimierungen
+- **Präzise Performance-Logs**: Verlagerung der Zeitmessung in den Matching-Subprozess inklusive 	orch.cuda.synchronize(). Garantiert exakte GPU-Timings unabhängig von asynchronen CPU-Threads.
+- **Subprozess-Effizienz**: Reduzierung der Datenmenge in der Matching-Queue auf reine Metadaten (Shape, Dtype), da das Bild bereits im Shared Memory liegt.
+- **Asynchroner Transfer**: Nutzung von 
+on_blocking=True für den GPU-Upload, was die Parallelität zwischen CPU und GPU weiter steigert.
+
+### 🛠️ Fixes
+- **Matching-Timing Fix**: Behebung von Messfehlern in den Performance-Logs, die durch asynchrone Prozess-Kommunikation und GPU-Latenzen entstanden sind.
 
 ---
 

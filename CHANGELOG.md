@@ -2,6 +2,23 @@
 
 ---
 
+## v1.5.5 (Performance-Turbo) - 01.05.2026
+
+### ✨ Features
+- **Shared Memory System**: Einführung eines 40MB Shared Memory Puffers (`SharedFrameBuffer`) für Zero-Copy Screenshots. Dies eliminiert die CPU-intensive Serialisierung (Pickle) beim Datentransfer zwischen Capture- und Matching-Prozessen.
+- **Pinned Memory (DMA)**: Nutzung von Page-Locked Memory für beschleunigte PCIe-Transfers direkt zum VRAM der GPU.
+- **GPU-Native Konvertierung**: Die rechenintensive Bildumwandlung (Typ-Konvertierung, Division, Kanal-Permutation) wurde von der CPU direkt auf die Grafikkarte (4080 Super optimiert) verlagert.
+
+### ⚙️ Optimierungen
+- **Präzise Performance-Logs**: Die Zeitmessung wurde in den Matching-Subprozess integriert und mit `torch.cuda.synchronize()` synchronisiert. Dies liefert exakte GPU-Latenzwerte unabhängig von asynchronen CPU-Aufrufen.
+- **Subprozess-Effizienz**: Die Kommunikationslast wurde minimiert, indem nur noch Metadaten über die Queues gesendet werden; das Bildmaterial verbleibt für alle beteiligten Prozesse im Shared Memory.
+- **Asynchroner Transfer**: Nutzung von `non_blocking=True` für den GPU-Upload, was die Parallelität zwischen CPU und GPU weiter steigert.
+
+### 🛠️ Fixes
+- **Matching-Timing Fix**: Behebung von Messfehlern in den Performance-Logs, die durch asynchrone Prozess-Kommunikation und GPU-Latenzen entstanden sind.
+
+---
+
 ## v1.5.4 (Event-Bus & UX-Update) - 01.05.2026
 
 ### ✨ Features
