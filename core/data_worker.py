@@ -1,5 +1,6 @@
 import time
 import logging
+import threading
 from collections import defaultdict
 from core.event_bus import bus
 from core.daten_manager import (
@@ -16,13 +17,32 @@ class DataWorker:
     """
     def __init__(self):
         bus.subscribe("ocr.results", self.on_ocr_results)
-        logger.info("DataWorker initialisiert und auf ocr.results abonniert.")
+        
+        # Heartbeat-Thread für kontinuierliche Berechnungen (z.B. Timer ohne OCR)
+        self._last_ocr = {}
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self._thread.start()
+        
+        logger.info("DataWorker initialisiert (Event-Sub + Heartbeat).")
+
+    def _heartbeat_loop(self):
+        """Sorgt dafür, dass Berechnungen auch ohne neue OCR-Events weiterlaufen."""
+        while not self._stop_event.is_set():
+            try:
+                # Wir nutzen die letzten bekannten OCR-Werte (oder ein leeres Dict)
+                self.process_all_listen(self._last_ocr)
+            except Exception as e:
+                logger.error(f"Fehler im DataWorker Heartbeat: {e}")
+            time.sleep(1.5)
 
     def on_ocr_results(self, event):
         """Wird aufgerufen, wenn neue OCR-Ergebnisse vorliegen."""
         ocr_roh = event.data
-        if not ocr_roh:
+        if ocr_roh is None:
             return
+        
+        self._last_ocr = ocr_roh
         self.process_all_listen(ocr_roh)
 
     def process_all_listen(self, ocr_roh):
@@ -31,7 +51,7 @@ class DataWorker:
         try:
             listen = alle_listen()
         except Exception as e:
-            logger.error(f"Fehler beim Laden der Listen: {e}")
+            # logger.error(f"Fehler beim Laden der Listen: {e}")
             return
 
         for l in listen:
@@ -72,7 +92,6 @@ class DataWorker:
             if name in ausgabe_namen:
                 continue
             if val not in (None, "", "—"):
-                # Nur bei Änderung loggen/speichern? Hier erstmal immer für timestamp-Aktualität
                 arbeits_werte[name] = (val, jetzt)
                 neue_cache_werte[name] = val
 
@@ -105,7 +124,6 @@ class DataWorker:
                         pass
 
         # 4. Berechnungen (Formeln) auswerten
-        # Wir sortieren "Zwischenberechnungen" nach vorne, damit sie in Endergebnissen genutzt werden können
         berech_sortiert = (
             [b for b in berechnungen if b.get("typ") == "zwischen"] +
             [b for b in berechnungen if b.get("typ") != "zwischen"]
@@ -120,6 +138,4 @@ class DataWorker:
 
         # 5. Alle Änderungen gesammelt in den Cache schreiben
         for var_name, wert in neue_cache_werte.items():
-            # Nur schreiben, wenn Wert sich geändert hat oder ein gewisses Intervall vergangen ist?
-            # Da cache_schreiben ein Upsert ist, ist es sicher.
             cache_schreiben(lid, var_name, wert)
