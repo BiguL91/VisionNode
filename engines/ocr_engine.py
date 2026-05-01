@@ -22,6 +22,15 @@ class OCREngine:
         self.regionen = {}
         # Initialisiere EasyOCR mit Englisch und Deutsch (für Umlaute und Tage 'T')
         self.reader = easyocr.Reader(["en", "de"], gpu=True)
+        # DataParallel korrumpiert den Heap durch GIL-Verletzungen in nativen Threads (crash_main.log: 0xc0000374)
+        # Unwrapping erzwingt Single-GPU-Inference ohne DataParallel
+        try:
+            import torch.nn as nn
+            for attr, val in vars(self.reader).items():
+                if isinstance(val, nn.DataParallel):
+                    setattr(self.reader, attr, val.module)
+        except Exception:
+            pass
         self.debug_filter = "Aus"  # "Aus", "Alle" oder Name der Region
         self._template_ocr_cache = None
 
