@@ -19,6 +19,7 @@ LOG_KEYS = [
     ("log_ocr_debug",            "OCR Debug-Bilder speichern"),
     ("log_matching",             "Matching-Timing"),
     ("log_gpu_templates",        "Gescanned Templates (GPU) loggen"),
+    ("debug_show_roi",           "Matching-Bereiche visualisieren"),
     ("log_capture",              "Capture-Timing"),
     ("log_klick_koordinaten",    "Klick-Koordinaten (ADB) loggen"),
     ("log_daten_berechnungen",   "Log Daten-Berechnungen (Transform/Formeln)"),

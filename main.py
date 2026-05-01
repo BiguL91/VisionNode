@@ -756,6 +756,8 @@ class TilesBotWindow(QMainWindow):
             dict(self.ocr_engine.regionen),
             dict(self.app.state.ocr_values),
             ocr_konf,
+            scanned_regions=list(self.app.state.scanned_regions),
+            show_roi=self.app.settings.get("debug_show_roi", False)
         )
         # Die Panels (OCR, State, etc.) aktualisieren sich nun selbst via EventBus.
 

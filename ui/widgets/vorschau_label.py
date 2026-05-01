@@ -97,7 +97,7 @@ class VorschauLabel(QLabel):
 
     # ── Daten-Update ──────────────────────────────────────────────────────────
 
-    def set_frame(self, frame_bgr, matches, ocr_regionen, ocr_werte, template_ocr_konf):
+    def set_frame(self, frame_bgr, matches, ocr_regionen, ocr_werte, template_ocr_konf, scanned_regions=None, show_roi=False):
         w, h = self.width(), self.height()
         if w < 10 or h < 10:
             return
@@ -110,6 +110,8 @@ class VorschauLabel(QLabel):
         self._ocr_regionen = ocr_regionen
         self._ocr_werte    = ocr_werte
         self._ocr_konf     = template_ocr_konf
+        self._scanned_regions = scanned_regions or []
+        self._show_roi     = show_roi
         self.update()
 
     def set_status(self, text: str):
@@ -244,6 +246,18 @@ class VorschauLabel(QLabel):
     def _zeichne_overlays(self, p: QPainter):
         ox, oy, s = self._offset_x, self._offset_y, self._skala
         p.setFont(QFont("Segoe UI", 7))
+
+        # 0. Gescannt Regionen (Visual Debug)
+        if hasattr(self, "_show_roi") and self._show_roi and hasattr(self, "_scanned_regions"):
+            p.setPen(QPen(QColor(255, 0, 255, 150), 1, Qt.PenStyle.SolidLine))
+            p.setBrush(QColor(255, 0, 255, 20)) # Sehr zartes Lila
+            for r in self._scanned_regions:
+                rx0 = int(round(ox + r[0] * s))
+                ry0 = int(round(oy + r[1] * s))
+                rx1 = int(round(ox + r[2] * s))
+                ry1 = int(round(oy + r[3] * s))
+                p.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
+            p.setBrush(Qt.BrushStyle.NoBrush)
 
         # 1. Globale OCR-Regionen
         p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))

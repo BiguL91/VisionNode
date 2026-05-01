@@ -19,6 +19,7 @@ class BotState:
     
     # Erkennungsergebnisse
     active_matches: List[Any] = field(default_factory=list)
+    scanned_regions: List[Any] = field(default_factory=list) # Visual Debug: [[x0,y0,x1,y1], ...]
     ocr_values: Dict[str, str] = field(default_factory=dict)
     template_ocr_values: Dict[str, str] = field(default_factory=dict)
     

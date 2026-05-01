@@ -9,11 +9,19 @@
 - 
 
 ### ⚙️ Optimierungen
-- 
+- **Intelligentes Pruning**: Vollständige Wiederherstellung der rekursiven Filterlogik. Templates werden nur gescannt, wenn ihre Eltern-Bedingungen (z.B. offene Menüs) erfüllt sind. Dies reduziert die Anzahl der Scans pro Frame massiv.
+- **Hierarchische Kaskade**: Wiederherstellung der Master-Kind-Abhängigkeit. Kinder werden nur in den Ausschnitten gescannt, in denen ihr Master tatsächlich gefunden wurde.
+- **GPU-Pipeline Fast-Path**: Optimierter Durchlauf für Einzel-Templates (ROIs) zur Minimierung von Synchronisations-Overhead.
+- **Batch-Caching**: Dauerhafte Speicherung von fertig gestapelten Template-Tensoren im GPU-Speicher zur Vermeidung teurer Speicher-Allokationen in jedem Frame.
+- **ROI-Pool-Turbo**: Nutzung von hochoptimiertem `avg_pool2d` für Einzel-Template-Scans in definierten Regionen zur Latenz-Minimierung.
+
+### ✨ Features
+- **Visual ROI Debug**: Neue Option in den Einstellungen zur Live-Visualisierung der aktuell gescannten Bildbereiche (lila Overlays).
 
 ### 🛠️ Fixes
-- 
-
+- **ROI-Sicherheitscheck**: Verhindert Abstürze (`RuntimeError: conv2d`), wenn Scan-Regionen durch Skalierung oder Fehlkonfiguration kleiner als das Template sind.
+- **SharedMemory Windows-Fix**: Behebung von `WinError 183` durch automatisches Übernehmen existierender Puffer nach unsauberem Programmende.
+- **Variablen-Panel**: Wiederherstellung der `_is_smart_recursive` Methode zur korrekten Filterung und Anzeige im UI.
 ---
 
 ## v1.5.5 (Performance-Turbo) - 01.05.2026

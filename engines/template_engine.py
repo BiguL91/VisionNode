@@ -223,6 +223,7 @@ class TemplateEngine:
         self._store._settings_speichern()
 
     def matches_suchen_np(self, screenshot_bgr, game_states=None, force_include=None):
+        """Proxy zum TemplateMatcher."""
         return self._matcher.matches_suchen_np(screenshot_bgr, game_states, force_include)
 
     def get_mathematik_vorschau(self, name):

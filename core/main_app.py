@@ -58,7 +58,7 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         t_start = time.time()
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
-        result_tupel = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
+        matches, master_namen, scanned_regions = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
         
         # Exakte Zeitmessung für GPU (da matches_suchen_np asynchron sein kann bis zum .cpu() Aufruf)
         # torch.cuda.synchronize() stellt sicher, dass alle GPU-Befehle fertig sind.
@@ -70,8 +70,8 @@ def _matching_subprocess(frame_q, result_q, reload_event):
             try: result_q.get_nowait()
             except Exception: break
         try:
-            # Wir packen die Dauer mit ins Paket
-            result_package = (result_tupel, ms)
+            # Wir packen alles in ein flaches Paket
+            result_package = (matches, ms, scanned_regions, master_namen)
             result_q.put_nowait(result_package)
         except Exception: pass
     
@@ -295,26 +295,27 @@ class TilesBotApp:
             try:
                 res_package = self.result_q.get(timeout=0.1)
                 
-                # Neues Format: (result_tupel, ms)
-                if isinstance(res_package, tuple) and len(res_package) == 2:
-                    res_item, ms_sub = res_package
+                # Neues flaches Format: (matches, ms, scanned_regions, master_namen)
+                if isinstance(res_package, tuple) and len(res_package) >= 3:
+                    matches, ms_sub, scanned_regions = res_package[:3]
+                    master_namen = res_package[3] if len(res_package) > 3 else []
                 else:
-                    res_item, ms_sub = res_package, 0
+                    # Fallback für alte/andere Formate
+                    matches, ms_sub, scanned_regions, master_namen = [], 0, [], []
 
                 # Wenn wir ein Ergebnis haben, gehört es zum last_sent_frame
                 if last_sent_frame is not None:
                     self.state.last_processed_frame = last_sent_frame
 
-                if isinstance(res_item, tuple) and len(res_item) == 2:
-                    matches, master_namen = res_item
-                    if self.settings.get("log_gpu_templates", False):
-                        m_set = sorted(set(master_namen))
-                        if m_set != self._last_gpu_masters:
-                            self._last_gpu_masters = m_set
-                            m_str = ", ".join(m_set)
-                            self._log(f"[GPU] Scanne {len(m_set)} Master: {m_str}")
-                else:
-                    matches = res_item
+                # Gescannt Regionen für UI-Debug
+                self.state.scanned_regions = scanned_regions
+
+                if master_namen and self.settings.get("log_gpu_templates", False):
+                    m_set = sorted(set(master_namen))
+                    if m_set != self._last_gpu_masters:
+                        self._last_gpu_masters = m_set
+                        m_str = ", ".join(m_set)
+                        self._log(f"[GPU] Scanne {len(m_set)} Master: {m_str}")
 
                 # ... (State Automatisierung bleibt gleich)
                 gefundene_p_namen = {m[6] for m in matches}
