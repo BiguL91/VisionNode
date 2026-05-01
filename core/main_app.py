@@ -27,10 +27,14 @@ def _matching_subprocess(frame_q, result_q, reload_event):
     """Läuft in einem eigenen OS-Prozess."""
     import torch
     import time
+    import faulthandler
+    _crash_log = open("crash_subprocess.log", "a")
+    faulthandler.enable(file=_crash_log)
+
     torch.set_num_threads(1)
     from engines.template_engine import TemplateEngine
     from core.helpers import SharedFrameBuffer
-    
+
     engine = TemplateEngine()
     shm_buffer = SharedFrameBuffer("bot_frame_buffer", create=False)
 
@@ -271,8 +275,18 @@ class TilesBotApp:
         self.matching_proc.start()
         
         last_sent_frame = None
-        
+
         while self.state.capture_active:
+            if self.matching_proc is not None and not self.matching_proc.is_alive():
+                exit_code = self.matching_proc.exitcode
+                self._log(f"[Matching] Subprozess abgestürzt (exit={exit_code}). Neustart...")
+                self.matching_proc = mp.Process(
+                    target=_matching_subprocess,
+                    args=(self.frame_q, self.result_q, self.matching_reload_event),
+                    daemon=True
+                )
+                self.matching_proc.start()
+
             if self.current_screenshot_np is not None:
                 try:
                     current_f = self.current_screenshot_np

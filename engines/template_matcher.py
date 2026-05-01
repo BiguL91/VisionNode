@@ -377,7 +377,11 @@ class TemplateMatcher:
         if not tpls or imgs.shape[0] == 0: return []
         num_tpl, (gh, gw) = len(tpls), tpls[0][1]["t_zm"].shape[2:]
         num_img = imgs.shape[0]
-        
+
+        # Verhindert unbegrenztes VRAM-Wachstum durch Cache-Einträge für verschiedene Template-Kombinationen
+        if len(self._batch_cache) > 64:
+            self._batch_cache.clear()
+
         if is_1to1:
             # ROI Turbo mit Batch-Caching
             b_key = ("roi", tuple([t[0] for t in tpls]))

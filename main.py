@@ -1647,6 +1647,10 @@ class TilesBotWindow(QMainWindow):
 
 if __name__ == "__main__":
     import sys
+    import faulthandler
+    _crash_log = open("crash_main.log", "a")
+    faulthandler.enable(file=_crash_log)
+
     from lang import lang
     lang.load("de")
     app = QApplication(sys.argv)

@@ -41,7 +41,7 @@ def memu_fenster_finden():
 class _WGCKamera:
     """Wraps Windows.Graphics.Capture für synchrones frame.grab()."""
 
-    def __init__(self, fenster_titel):
+    def __init__(self, fenster_titel, hwnd=None):
         from windows_capture import WindowsCapture
 
         self._letzter_frame = None  # BGR numpy array
@@ -50,7 +50,9 @@ class _WGCKamera:
         capture = WindowsCapture(
             cursor_capture=False,
             draw_border=False,
-            window_name=fenster_titel,
+            window_hwnd=hwnd if hwnd else None,
+            window_name=fenster_titel if not hwnd else None,
+            minimum_update_interval=33,  # max ~30fps, verhindert Race: Rust recycled Frame bevor bytes(buf) fertig
         )
 
         kamera = self
@@ -89,7 +91,8 @@ _wgc_kamera: _WGCKamera | None = None
 def wgc_starten(fenster_titel):
     """Erstellt und startet eine WGC-Kamera-Instanz. Wirft Exception bei Fehler."""
     global _wgc_kamera
-    _wgc_kamera = _WGCKamera(fenster_titel)
+    hwnd = memu_fenster_finden()
+    _wgc_kamera = _WGCKamera(fenster_titel, hwnd=hwnd)
 
 
 def fenster_screenshot_wgc():
