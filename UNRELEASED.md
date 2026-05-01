@@ -6,25 +6,28 @@
 *Aktueller Stand – In Arbeit*
 
 ### ✨ Features
-- 
+- **Live-Matching-Monitor**: Neues permanentes UI-Panel zur Echtzeit-Visualisierung der Matching-Statistiken (ROI-Anzahl pro Template, Latenz, GPU-Last).
+- **Matching.Stats Event**: Erweiterung des EventBus um detaillierte Metriken pro Matching-Zyklus.
 
 ### ⚙️ Optimierungen
+- **ROI-Padding-Batching**: Radikale Reduktion der GPU-Kernel-Launches durch Gruppierung von ROIs gleicher Template-Größe. Bildausschnitte werden gepolstert (Padding) und in einem einzigen Batch-Scan verarbeitet.
+- **No-Sync-GPU-Pipeline**: Verschiebung aller Template-Konstanten (Normen, Pixelanzahl) als fertige Tensoren in den GPU-Cache. Eliminiert teure Synchronisationspunkte (`torch.tensor()`) während des Scans.
+- **Zero-Sync-Broadcasting**: Optimierte Tensor-Dimensionen im Cache ermöglichen direktes GPU-Broadcasting ohne Re-Shaping im Loop.
+- **PCIe-Transfer-Optimierung**: Entfernung von `pin_memory()` zur Steigerung des Durchsatzes bei Shared-Memory-Zugriffen unter Windows.
 - **Intelligentes Pruning**: Vollständige Wiederherstellung der rekursiven Filterlogik. Templates werden nur gescannt, wenn ihre Eltern-Bedingungen (z.B. offene Menüs) erfüllt sind. Dies reduziert die Anzahl der Scans pro Frame massiv.
 - **Hierarchische Kaskade**: Wiederherstellung der Master-Kind-Abhängigkeit. Kinder werden nur in den Ausschnitten gescannt, in denen ihr Master tatsächlich gefunden wurde.
-- **ROI-Exklusivität**: Erzwungene Priorisierung von Scan-Regionen. Sobald eine ROI definiert ist, wird der Fullscreen-Scan für dieses Template unterdrückt, was die GPU-Last halbiert.
+- **ROI-Exklusivität**: Erzwungene Priorisierung von Scan-Regionen. Sobald eine ROI definiert ist, wird der Fullscreen-Scan für dieses Template unterdrückt, was die GPU-Last halbiert.     
 - **GPU-Pipeline Fast-Path**: Optimierter Durchlauf für Einzel-Templates (ROIs) zur Minimierung von Synchronisations-Overhead.
 - **Batch-Caching**: Dauerhafte Speicherung von fertig gestapelten Template-Tensoren im GPU-Speicher zur Vermeidung teurer Speicher-Allokationen in jedem Frame.
-- **ROI-Pool-Turbo**: Nutzung von hochoptimiertem `avg_pool2d` für Einzel-Template-Scans in definierten Regionen zur Latenz-Minimierung.
-
-### ✨ Features
-- **Visual ROI Debug**: Neue Option in den Einstellungen zur Live-Visualisierung der aktuell gescannten Bildbereiche (lila Overlays).
 
 ### 🛠️ Fixes
+- **Robustes ROI-Clamping**: Suchfenster werden bei Bildschirmrand-Überschreitung nun intelligent verschoben statt verkleinert. Garantiert eine gültige Eingabegröße für GPU-Operationen und verhindert `RuntimeError`.
+- **Dimension-Guard**: Sicherheitsprüfung für `max_pool2d` bei extrem kleinen oder leeren Ergebnismaps (z.B. durch Randfälle bei der Skalierung).
 - **Varianten-Vererbung**: Template-Varianten (z.B. `Name__1`) erben nun korrekt die Scan-Regionen (ROI) ihres Basis-Templates.
 - **Fullscreen-Diagnose**: Erweitertes Logging identifiziert nun automatisch Templates, die einen Fullscreen-Scan ohne ROI erzwingen.
-- **ROI-Sicherheitscheck**: Verhindert Abstürze (`RuntimeError: conv2d`), wenn Scan-Regionen durch Skalierung oder Fehlkonfiguration kleiner als das Template sind.
 - **SharedMemory Windows-Fix**: Behebung von `WinError 183` durch automatisches Übernehmen existierender Puffer nach unsauberem Programmende.
 - **Variablen-Panel**: Wiederherstellung der `_is_smart_recursive` Methode zur korrekten Filterung und Anzeige im UI.
+
 ---
 
 ## v1.5.5 (Performance-Turbo) - 01.05.2026

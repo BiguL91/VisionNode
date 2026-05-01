@@ -231,6 +231,7 @@ from ui.panels.workflow_panel_qt import MasterflowPanel, SubWorkflowPanel, Logic
 from ui.panels.variable_panel_qt import VariablePanel as VariablePanelQt
 from ui.panels.template_panel_qt import TemplatePanel as TemplatePanelQt
 from ui.panels.daten_panel_qt    import DatenPanel    as DatenPanelQt
+from ui.panels.matching_monitor_panel_qt import MatchingMonitorPanel
 
 # ── Qt Widgets / Dialoge ──────────────────────────────────────────────────────
 from ui.widgets.vorschau_label     import VorschauLabel, _frame_to_qpixmap
@@ -353,6 +354,7 @@ class TilesBotWindow(QMainWindow):
             ("OCR Variablen", self._dock_ocr),
             ("State Variablen", self._dock_states),
             ("Globale Var.", self._dock_global_vars),
+            ("Matching-Monitor", self._dock_matching_monitor),
             ("Log", self._dock_log),
             ("Daten-Listen", self._dock_daten),
         ]
@@ -483,14 +485,18 @@ class TilesBotWindow(QMainWindow):
         self.log_panel = LogPanelQt()
         self._dock_log = self._create_dock("Log", self.log_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_log")
 
+        self.matching_monitor_panel = MatchingMonitorPanel(bot_win=self)
+        self._dock_matching_monitor = self._create_dock("Matching-Monitor", self.matching_monitor_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_matching_monitor")
+
         self.global_vars_panel = DatenPanelQt(bot_ref=self, filter_typ="timer")
         self._dock_global_vars = self._create_dock("Globale Var.", self.global_vars_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_global_vars")
 
         self.daten_panel = DatenPanelQt(bot_ref=self, filter_typ="daten")
         self._dock_daten = self._create_dock("Daten-Listen", self.daten_panel, Qt.DockWidgetArea.BottomDockWidgetArea, "dock_daten")
 
-        # Log, Globale Var und Daten tabben
-        self.tabifyDockWidget(self._dock_log, self._dock_global_vars)
+        # Log, Matching-Monitor, Globale Var und Daten tabben
+        self.tabifyDockWidget(self._dock_log, self._dock_matching_monitor)
+        self.tabifyDockWidget(self._dock_matching_monitor, self._dock_global_vars)
         self.tabifyDockWidget(self._dock_global_vars, self._dock_daten)
         self._dock_log.raise_() # Log standardmäßig vorne
 
@@ -1490,7 +1496,7 @@ class TilesBotWindow(QMainWindow):
     # ── Dialoge ───────────────────────────────────────────────────────────────
 
     def _einstellungen_dialog(self):
-        result = SettingsDialog.ausfuehren(self.einstellungen, self)
+        result = SettingsDialog.ausfuehren(self.einstellungen, self.app.state, self)
         if result:
             self.einstellungen.update(result)
             self.template_engine.matching_skalierung = result.get(

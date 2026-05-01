@@ -58,7 +58,7 @@ def _matching_subprocess(frame_q, result_q, reload_event):
         t_start = time.time()
         engine.referenz_groesse = ref_groesse
         engine.matching_skalierung = skala
-        matches, master_namen, scanned_regions = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
+        matches, master_namen, scanned_regions, search_stats = engine.matches_suchen_np(frame, game_states=states, force_include=force_include)
         
         # Exakte Zeitmessung für GPU (da matches_suchen_np asynchron sein kann bis zum .cpu() Aufruf)
         # torch.cuda.synchronize() stellt sicher, dass alle GPU-Befehle fertig sind.
@@ -71,7 +71,7 @@ def _matching_subprocess(frame_q, result_q, reload_event):
             except Exception: break
         try:
             # Wir packen alles in ein flaches Paket
-            result_package = (matches, ms, scanned_regions, master_namen)
+            result_package = (matches, ms, scanned_regions, master_namen, search_stats)
             result_q.put_nowait(result_package)
         except Exception: pass
     
@@ -295,13 +295,14 @@ class TilesBotApp:
             try:
                 res_package = self.result_q.get(timeout=0.1)
                 
-                # Neues flaches Format: (matches, ms, scanned_regions, master_namen)
+                # Neues flaches Format: (matches, ms, scanned_regions, master_namen, search_stats)
                 if isinstance(res_package, tuple) and len(res_package) >= 3:
                     matches, ms_sub, scanned_regions = res_package[:3]
                     master_namen = res_package[3] if len(res_package) > 3 else []
+                    search_stats = res_package[4] if len(res_package) > 4 else {}
                 else:
                     # Fallback für alte/andere Formate
-                    matches, ms_sub, scanned_regions, master_namen = [], 0, [], []
+                    matches, ms_sub, scanned_regions, master_namen, search_stats = [], 0, [], [], {}
 
                 # Wenn wir ein Ergebnis haben, gehört es zum last_sent_frame
                 if last_sent_frame is not None:
@@ -309,6 +310,8 @@ class TilesBotApp:
 
                 # Gescannt Regionen für UI-Debug
                 self.state.scanned_regions = scanned_regions
+                self.state.active_search_stats = search_stats
+                bus.publish("matching.stats", search_stats, sender="Matching")
 
                 if master_namen and self.settings.get("log_gpu_templates", False):
                     m_set = sorted(set(master_namen))

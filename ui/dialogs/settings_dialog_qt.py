@@ -31,13 +31,14 @@ LOG_DEFAULTS = {"log_variablen", "log_workflow"}
 class SettingsDialog(QDialog):
     gespeichert = pyqtSignal(dict)
 
-    def __init__(self, einstellungen: dict, parent=None):
+    def __init__(self, einstellungen: dict, bot_state=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(lang.t("btn_settings"))
         self.setModal(True)
         self.setFixedWidth(440)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
         self._ein = einstellungen
+        self._state = bot_state
         self._setup_ui()
 
     def _sektion(self, layout: QVBoxLayout, text: str):
@@ -161,10 +162,10 @@ class SettingsDialog(QDialog):
         self.accept()
 
     @staticmethod
-    def ausfuehren(einstellungen: dict, parent=None) -> dict | None:
+    def ausfuehren(einstellungen: dict, bot_state=None, parent=None) -> dict | None:
         """Gibt geänderte Settings zurück oder None bei Abbruch."""
         result = {}
-        dlg = SettingsDialog(einstellungen, parent)
+        dlg = SettingsDialog(einstellungen, bot_state, parent)
         dlg.gespeichert.connect(lambda d: result.update(d))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             return result
