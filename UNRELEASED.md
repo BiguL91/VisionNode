@@ -10,6 +10,12 @@
 - **Matching.Stats Event**: Erweiterung des EventBus um detaillierte Metriken pro Matching-Zyklus.
 
 ### ⚙️ Optimierungen
+- **Box-Filter-Precalculating**: Radikale Reduktion der Convolution-Last. Redundante Helligkeits- und Varianzberechnungen für Fullscreen-Templates werden durch einen hocheffizienten Vorberechnungsschritt (`avg_pool2d`) eliminiert. Pro Template-Größe erfolgt die Summenbildung nur noch einmal für alle unmaskierten Vorlagen.
+- **Zero-Sync-Pipeline v2**: Vollständige Eliminierung von Synchronisationspunkten durch Vor-Allokation aller Schwellwerte und Metadaten als GPU-Tensoren. Keine `torch.tensor()`-Aufrufe mehr innerhalb der Matching-Schleifen.
+- **Persistent ROI-Stacks**: Dauerhaftes Caching von gestapelten Gewichts- und Masken-Tensoren für ROI-Gruppen im VRAM. Vermeidet hunderte `torch.cat()`-Operationen pro Sekunde und schont die Speicherbandbreite.
+- **Unified GPU-Transfer**: Ergebnisse verbleiben bis zum finalen Filter-Schritt als Tensoren auf der GPU. Reduktion der PCIe-Kommunikation auf einen einzigen gebündelten Transfer pro Suchvorgang.
+- **Hierarchie- & Logik-Caching**: Aggressives Caching von Template-Abhängigkeiten, rekursiven Pfadprüfungen und Status-Bedingungen zur drastischen Reduktion des Python-Overheads.
+- **GPU-Vektorisierung**: Koordinaten-Transformationen, Skalierungen und Offsets werden nun massiv parallel direkt auf der GPU berechnet statt seriell in Python-Schleifen.
 - **ROI-Padding-Batching**: Radikale Reduktion der GPU-Kernel-Launches durch Gruppierung von ROIs gleicher Template-Größe. Bildausschnitte werden gepolstert (Padding) und in einem einzigen Batch-Scan verarbeitet.
 - **No-Sync-GPU-Pipeline**: Verschiebung aller Template-Konstanten (Normen, Pixelanzahl) als fertige Tensoren in den GPU-Cache. Eliminiert teure Synchronisationspunkte (`torch.tensor()`) während des Scans.
 - **Zero-Sync-Broadcasting**: Optimierte Tensor-Dimensionen im Cache ermöglichen direktes GPU-Broadcasting ohne Re-Shaping im Loop.

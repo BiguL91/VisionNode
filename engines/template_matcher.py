@@ -24,6 +24,8 @@ class TemplateMatcher:
         self.log_enabled_func    = log_enabled_func
         self._gpu_cache: dict    = {}
         self._batch_cache: dict  = {}
+        self._hierarchy_cache: dict = {}
+        self._logic_cache: dict     = {}
 
     def _log(self, message):
         if self.log_func:
@@ -33,9 +35,71 @@ class TemplateMatcher:
     def cache_leeren(self):
         self._gpu_cache.clear()
         self._batch_cache.clear()
+        self._hierarchy_cache.clear()
+        self._logic_cache.clear()
 
     # ── State/Conditions-Helfer ───────────────────────────────────────────────
 
+    def _get_hierarchy_names(self, name_oder_pfad):
+        if name_oder_pfad in self._hierarchy_cache: return self._hierarchy_cache[name_oder_pfad]
+        namen = [name_oder_pfad.split("__")[0]]
+        s = self.settings.get(namen[0], {})
+        if not s and "/" in name_oder_pfad: 
+            leaf = name_oder_pfad.split("/")[-1]
+            s = self.settings.get(leaf, {}); 
+            if leaf != namen[0]: namen.append(leaf)
+        if s:
+            curr, besucht = s.get("gruppe", ""), {name_oder_pfad}
+            while curr:
+                leaf = curr.split("/")[-1]
+                if leaf in besucht: break
+                besucht.add(leaf); namen.append(leaf)
+                e = self.settings.get(leaf, {})
+                curr = "/".join(curr.split("/")[:-1]) if (isinstance(e, dict) and len(curr.split("/")) > 1) else e.get("gruppe", "") if isinstance(e, dict) else ""
+        res = list(dict.fromkeys(namen))
+        self._hierarchy_cache[name_oder_pfad] = res
+        return res
+
+    def _is_search_only_recursive(self, name_oder_pfad):
+        key = ("so", name_oder_pfad)
+        if key in self._logic_cache: return self._logic_cache[key]
+        basis = name_oder_pfad.split("__")[0]
+        s = self.settings.get(basis, {}) or self.settings.get(name_oder_pfad.split("/")[-1], {})
+        res = False
+        if isinstance(s, dict) and s.get("search_only"): res = True
+        else:
+            curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name_oder_pfad}
+            while curr:
+                leaf = curr.split("/")[-1]
+                if leaf in besucht: break
+                besucht.add(leaf); e = self.settings.get(leaf, {})
+                if isinstance(e, dict):
+                    if e.get("search_only"): res = True; break
+                    curr = "/".join(curr.split("/")[:-1]) if len(curr.split("/")) > 1 else e.get("gruppe", "")
+                else: break
+        self._logic_cache[key] = res
+        return res
+
+    def _is_smart_recursive(self, name_oder_pfad):
+        key = ("smart", name_oder_pfad)
+        if key in self._logic_cache: return self._logic_cache[key]
+        basis = name_oder_pfad.split("__")[0]
+        s = self.settings.get(basis, {}) or self.settings.get(name_oder_pfad.split("/")[-1], {})
+        res = False
+        if isinstance(s, dict) and s.get("is_smart"): res = True
+        else:
+            curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name_oder_pfad}
+            while curr:
+                leaf = curr.split("/")[-1]
+                if leaf in besucht: break
+                besucht.add(leaf); e = self.settings.get(leaf, {})
+                if isinstance(e, dict):
+                    if e.get("is_smart"): res = True; break
+                    curr = "/".join(curr.split("/")[:-1]) if len(curr.split("/")) > 1 else e.get("gruppe", "")
+                else: break
+        self._logic_cache[key] = res
+        return res
+    
     @staticmethod
     def _condition_states_erfuellt(conditions, game_states, ignore_states=None):
         if not conditions or game_states is None: return True
@@ -125,53 +189,6 @@ class TemplateMatcher:
             else: break
         return []
 
-    def _is_search_only_recursive(self, name_oder_pfad):
-        basis = name_oder_pfad.split("__")[0]
-        s = self.settings.get(basis, {}) or self.settings.get(name_oder_pfad.split("/")[-1], {})
-        if isinstance(s, dict) and s.get("search_only"): return True
-        curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name_oder_pfad}
-        while curr:
-            leaf = curr.split("/")[-1]
-            if leaf in besucht: break
-            besucht.add(leaf); e = self.settings.get(leaf, {})
-            if isinstance(e, dict):
-                if e.get("search_only"): return True
-                curr = "/".join(curr.split("/")[:-1]) if len(curr.split("/")) > 1 else e.get("gruppe", "")
-            else: break
-        return False
-
-    def _is_smart_recursive(self, name_oder_pfad):
-        basis = name_oder_pfad.split("__")[0]
-        s = self.settings.get(basis, {}) or self.settings.get(name_oder_pfad.split("/")[-1], {})
-        if isinstance(s, dict) and s.get("is_smart"): return True
-        curr, besucht = s.get("gruppe", "") if isinstance(s, dict) else "", {name_oder_pfad}
-        while curr:
-            leaf = curr.split("/")[-1]
-            if leaf in besucht: break
-            besucht.add(leaf); e = self.settings.get(leaf, {})
-            if isinstance(e, dict):
-                if e.get("is_smart"): return True
-                curr = "/".join(curr.split("/")[:-1]) if len(curr.split("/")) > 1 else e.get("gruppe", "")
-            else: break
-        return False
-
-    def get_hierarchy_names(self, name_oder_pfad):
-        namen = [name_oder_pfad.split("__")[0]]
-        s = self.settings.get(namen[0], {})
-        if not s and "/" in name_oder_pfad: 
-            leaf = name_oder_pfad.split("/")[-1]
-            s = self.settings.get(leaf, {}); 
-            if leaf != namen[0]: namen.append(leaf)
-        if s:
-            curr, besucht = s.get("gruppe", ""), {name_oder_pfad}
-            while curr:
-                leaf = curr.split("/")[-1]
-                if leaf in besucht: break
-                besucht.add(leaf); namen.append(leaf)
-                e = self.settings.get(leaf, {})
-                curr = "/".join(curr.split("/")[:-1]) if (isinstance(e, dict) and len(curr.split("/")) > 1) else e.get("gruppe", "") if isinstance(e, dict) else ""
-        return list(dict.fromkeys(namen))
-
     # ── GPU-Cache ─────────────────────────────────────────────────────────────
 
     def _get_gpu_template(self, name, s_eff):
@@ -183,21 +200,28 @@ class TemplateMatcher:
         t_s = F.interpolate(t_orig, size=(max(1, th), max(1, tw)), mode='bilinear', align_corners=False) if s_eff != 1.0 else t_orig
         m_s = F.interpolate(m_orig, size=(max(1, th), max(1, tw)), mode='nearest') if m_orig is not None and s_eff != 1.0 else m_orig
         
+        basis = name.split("__")[0]
+        s = self.settings.get(name, {}) or self.settings.get(basis, {})
+        thresh = s.get("match_schwellwert", 0.8)
+        t_thresh = torch.tensor([thresh], device=self.device, dtype=torch.float32).view(1, 1, 1, 1)
+
         if m_s is not None:
             m_3 = m_s.expand(1, 3, t_s.shape[2], t_s.shape[3]); N = m_3.sum() + 1e-5
             t_zm = (t_s - ((t_s * m_3).sum() / N)) * m_3
             self._gpu_cache[key] = {
                 "t_zm": t_zm, "m": m_3, 
-                "t_norm": t_zm.pow(2).sum().sqrt().view(-1), 
-                "N": torch.tensor([N], device=self.device).view(-1), 
+                "t_norm": t_zm.pow(2).sum().sqrt().view(1, 1, 1, 1), 
+                "N": torch.tensor([N], device=self.device, dtype=torch.float32).view(1, 1, 1, 1), 
+                "threshold": t_thresh,
                 "is_masked": True
             }
         else:
             N = t_s.numel() / 3; t_zm = t_s - t_s.mean()
             self._gpu_cache[key] = {
                 "t_zm": t_zm, 
-                "t_norm": t_zm.pow(2).sum().sqrt().view(-1), 
-                "N": torch.tensor([N], device=self.device).view(-1), 
+                "t_norm": t_zm.pow(2).sum().sqrt().view(1, 1, 1, 1), 
+                "N": torch.tensor([N], device=self.device, dtype=torch.float32).view(1, 1, 1, 1), 
+                "threshold": t_thresh,
                 "is_masked": False
             }
         return self._gpu_cache[key]
@@ -224,12 +248,13 @@ class TemplateMatcher:
 
         master_namen, kinder_nach_gruppe, templates_by_sz = [], defaultdict(list), defaultdict(list)
         for name, t in self.templates.items():
-            tpl_s, basis = self.settings.get(name, {}), name.split("__")[0]
+            basis = name.split("__")[0]
             erz = basis in fi_set or any(gt in fi_set for gt in (t.get("gruppe") or "").split("/") if gt)
             if not erz:
                 if self._is_search_only_recursive(name): continue
                 if game_states is not None:
-                    c = tpl_s.get("condition_states") or self.settings.get(basis, {}).get("condition_states", {})
+                    tpl_s = self.settings.get(name, {}) or self.settings.get(basis, {})
+                    c = tpl_s.get("condition_states")
                     if c and not self._condition_states_erfuellt(c, game_states, ignore_states=self._get_hierarchy_set_states(name)): continue
                     if t["gruppe"] and not self._eltern_conditions_pruefen(t["gruppe"], game_states): continue
             
@@ -243,13 +268,14 @@ class TemplateMatcher:
             if parent_tpl: kinder_nach_gruppe[parent_tpl].append(name)
             else:
                 master_namen.append(name); gd = self._get_gpu_template(name, s_eff)
-                # Sicherheits-Check: Template darf nicht größer als das Bild sein
                 if gd["t_zm"].shape[2] <= th_t and gd["t_zm"].shape[3] <= tw_t:
                     templates_by_sz[gd["t_zm"].shape[2:]].append((name, gd, self._get_effective_regions(name)))
 
-        master_ergebnisse, search_stats = [], {}
+        # 2. Master-Scan
+        res_raw, search_stats = [], {}
         for t_sz, t_list in templates_by_sz.items():
-            gh, gw, all_tasks, max_h, max_w = t_sz[0], t_sz[1], [], 0, 0
+            gh, gw = t_sz
+            fs_tpls, roi_tasks = [], []
             for t_name, gd, regs in t_list:
                 search_stats[t_name] = len(regs) if regs else 0
                 if regs:
@@ -259,89 +285,140 @@ class TemplateMatcher:
                         if (sy1-sy0) < gh: sy1 = sy0 + gh
                         if sx1 > tw_t: sx0 = max(0, sx0 - (sx1 - tw_t)); sx1 = tw_t
                         if sy1 > th_t: sy0 = max(0, sy0 - (sy1 - th_t)); sy1 = th_t
-                        # Nur hinzufügen, wenn es jetzt passt
                         if (sx1-sx0) >= gw and (sy1-sy0) >= gh:
-                            ch, cw = sy1-sy0, sx1-sx0; max_h, max_w = max(max_h, ch), max(max_w, cw)
-                            all_tasks.append((img_m[:,:,sy0:sy1,sx0:sx1], img_sum[:,:,sy0:sy1,sx0:sx1], img_sq[:,:,sy0:sy1,sx0:sx1], t_name, gd, (sx0, sy0)))
+                            roi_tasks.append({"imgs": (img_m[:,:,sy0:sy1,sx0:sx1], img_sum[:,:,sy0:sy1,sx0:sx1], img_sq[:,:,sy0:sy1,sx0:sx1]), "name": t_name, "gd": gd, "offset": (sx0, sy0)})
                             scanned_regions.append([int(r[0]*nx), int(r[1]*ny), int(r[2]*nx), int(r[3]*ny)])
                 else:
-                    max_h, max_w = th_t, tw_t; all_tasks.append((img_m, img_sum, img_sq, t_name, gd, (0, 0))); scanned_regions.append([0, 0, iw, ih])
+                    fs_tpls.append((t_name, gd))
+                    scanned_regions.append([0, 0, iw, ih])
 
-            if not all_tasks: continue
-            imgs_list, imgs_s_list, imgs_sq_list = [], [], []
-            for crop, crop_s, crop_q, t_name, gd, off in all_tasks:
-                ch, cw = crop.shape[2:]
-                if ch < max_h or cw < max_w:
-                    imgs_list.append(F.pad(crop, (0, max_w-cw, 0, max_h-ch)))
-                    imgs_s_list.append(F.pad(crop_s, (0, max_w-cw, 0, max_h-ch)))
-                    imgs_sq_list.append(F.pad(crop_q, (0, max_w-cw, 0, max_h-ch)))
-                else: imgs_list.append(crop); imgs_s_list.append(crop_s); imgs_sq_list.append(crop_q)
-            
-            batch_imgs, batch_s, batch_q = torch.cat(imgs_list), torch.cat(imgs_s_list), torch.cat(imgs_sq_list)
-            master_ergebnisse.extend(self._batch_match_fixed_size(batch_imgs, batch_s, batch_q, [(t[0], t[1]) for t in t_list], s_eff, offsets=[t[5] for t in all_tasks]))
+            if fs_tpls: res_raw.extend(self._batch_match_fixed_size(img_m, img_sum, img_sq, fs_tpls, s_eff))
+            if roi_tasks:
+                max_h = max(t["imgs"][0].shape[2] for t in roi_tasks); max_w = max(t["imgs"][0].shape[3] for t in roi_tasks)
+                imgs_l, imgs_s_l, imgs_sq_l, tpl_l, off_l = [], [], [], [], []
+                for task in roi_tasks:
+                    crop, crop_s, crop_q = task["imgs"]; ch, cw = crop.shape[2:]
+                    if ch < max_h or cw < max_w:
+                        imgs_l.append(F.pad(crop, (0, max_w-cw, 0, max_h-ch))); imgs_s_l.append(F.pad(crop_s, (0, max_w-cw, 0, max_h-ch))); imgs_sq_l.append(F.pad(crop_q, (0, max_w-cw, 0, max_h-ch)))
+                    else: imgs_l.append(crop); imgs_s_l.append(crop_s); imgs_sq_l.append(crop_q)
+                    tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])
+                b_imgs, b_s, b_q = torch.cat(imgs_l), torch.cat(imgs_s_l), torch.cat(imgs_sq_l)
+                res_raw.extend(self._batch_match_fixed_size(b_imgs, b_s, b_q, tpl_l, s_eff, is_1to1=True, offsets=off_l))
 
-        gefiltert, res, grp_hits = self._nms(master_ergebnisse), [], defaultdict(list)
+        # 3. Unified Transfer & Kaskade
+        res_cpu = []
+        for r in res_raw: res_cpu.append([r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
+        
+        gefiltert, res_final = self._nms(res_cpu), []
+        k_tasks_by_sz = defaultdict(list)
         for m in gefiltert:
-            name = m[0]; m_basis = name.split("__")[0]
-            k_key = name if name in kinder_nach_gruppe else m_basis if m_basis in kinder_nach_gruppe else None
-            if k_key: grp_hits[k_key].append(m)
-            else: res.append(m)
-
-        kaskade_tasks = defaultdict(list)
-        for m_key, hits in grp_hits.items():
-            k_names = kinder_nach_gruppe[m_key]
-            for h in hits:
-                res.append(h); rx, ry, rw, rh = h[1], h[2], h[3], h[4]; pad = 4
-                x0, y0, x1, y1 = max(0, int(rx*s_eff)-pad), max(0, int(ry*s_eff)-pad), min(tw_t, int((rx+rw)*s_eff)+pad), min(th_t, int((ry+rh)*s_eff)+pad)
-                if x1 > x0 and y1 > y0: kaskade_tasks[(y1-y0, x1-x0)].append((img_m[:,:,y0:y1,x0:x1], img_sum[:,:,y0:y1,x0:x1], img_sq[:,:,y0:y1,x0:x1], k_names, (x0, y0)))
-
-        for sz, tasks in kaskade_tasks.items():
-            imgs, imgs_s, imgs_sq = torch.cat([t[0] for t in tasks]), torch.cat([t[1] for t in tasks]), torch.cat([t[2] for t in tasks])
-            alle_k_namen = sorted(list(set([kn for t in tasks for kn in t[3]])))
-            k_tpls_by_sz = defaultdict(list)
-            for kn in alle_k_namen:
+            res_final.append(m); name = m[0]; m_basis = name.split("__")[0]
+            k_names = kinder_nach_gruppe.get(name) or kinder_nach_gruppe.get(m_basis)
+            if not k_names: continue
+            rx, ry, rw, rh = m[1], m[2], m[3], m[4]; pad = 4
+            x0, y0, x1, y1 = max(0, int(rx*s_eff)-pad), max(0, int(ry*s_eff)-pad), min(tw_t, int((rx+rw)*s_eff)+pad), min(th_t, int((ry+rh)*s_eff)+pad)
+            if x1 <= x0 or y1 <= y0: continue
+            crop_info = (img_m[:,:,y0:y1,x0:x1], img_sum[:,:,y0:y1,x0:x1], img_sq[:,:,y0:y1,x0:x1])
+            for kn in k_names:
                 kgd = self._get_gpu_template(kn, s_eff)
-                if kgd["t_zm"].shape[2] <= sz[0] and kgd["t_zm"].shape[3] <= sz[1]: k_tpls_by_sz[kgd["t_zm"].shape[2:]].append((kn, kgd))
-            for k_sz, k_list in k_tpls_by_sz.items(): res.extend(self._batch_match_fixed_size(imgs, imgs_s, imgs_sq, k_list, s_eff, 0.7, [t[4] for t in tasks]))
+                if kgd["t_zm"].shape[2] <= (y1-y0) and kgd["t_zm"].shape[3] <= (x1-x0):
+                    k_tasks_by_sz[kgd["t_zm"].shape[2:]].append({"imgs": crop_info, "name": kn, "gd": kgd, "offset": (x0, y0)})
+
+        for sz, k_tasks in k_tasks_by_sz.items():
+            max_h = max(t["imgs"][0].shape[2] for t in k_tasks); max_w = max(t["imgs"][0].shape[3] for t in k_tasks)
+            imgs_l, imgs_s_l, imgs_sq_l, tpl_l, off_l = [], [], [], [], []
+            for task in k_tasks:
+                crop, crop_s, crop_q = task["imgs"]; ch, cw = crop.shape[2:]
+                imgs_l.append(F.pad(crop, (0, max_w-cw, 0, max_h-ch))); imgs_s_l.append(F.pad(crop_s, (0, max_w-cw, 0, max_h-ch))); imgs_sq_l.append(F.pad(crop_q, (0, max_w-cw, 0, max_h-ch)))
+                tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])
+            b_imgs, b_s, b_q = torch.cat(imgs_l), torch.cat(imgs_s_l), torch.cat(imgs_sq_l)
+            k_raw = self._batch_match_fixed_size(b_imgs, b_s, b_q, tpl_l, s_eff, is_1to1=True, threshold=0.7, offsets=off_l)
+            for r in k_raw: res_final.append([r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
 
         final = []
-        for n, rx, ry, rw, rh, sc in self._nms(res): final.append((n.split("__")[0], int(rx*nx), int(ry*ny), int(rw*nx), int(rh*ny), sc, n, self.get_hierarchy_names(n)))
+        for n, rx, ry, rw, rh, sc in self._nms(res_final): 
+            final.append((n.split("__")[0], int(rx*nx), int(ry*ny), int(rw*nx), int(rh*ny), sc, n, self._get_hierarchy_names(n)))
         return final, sorted(list(set([m[0] for m in final]))), scanned_regions, search_stats
 
-    def _batch_match_fixed_size(self, imgs, imgs_s, imgs_sq, tpls, s_eff, threshold=None, offsets=None):
+    def _batch_match_fixed_size(self, imgs, imgs_s, imgs_sq, tpls, s_eff, is_1to1=False, threshold=None, offsets=None):
         if not tpls or imgs.shape[0] == 0: return []
         num_tpl, (gh, gw) = len(tpls), tpls[0][1]["t_zm"].shape[2:]
-        b_key = tuple([t[0] for t in tpls])
-        if b_key not in self._batch_cache:
-            w = torch.stack([t[1]["t_zm"].squeeze(0) for t in tpls])
-            m = torch.stack([(t[1]["m"].squeeze(0)[0:1] if t[1]["is_masked"] else torch.ones((1, gh, gw), device=self.device)) for t in tpls])
-            tn = torch.stack([t[1]["t_norm"] for t in tpls]).view(1, num_tpl, 1, 1)
-            npix = torch.stack([t[1]["N"] for t in tpls]).view(1, num_tpl, 1, 1)
-            self._batch_cache[b_key] = (w, m, tn, npix)
-        w, m, tn, npix = self._batch_cache[b_key]
+        num_img = imgs.shape[0]
         
-        res = F.conv2d(imgs, w, padding=0)
-        i_s = F.conv2d(imgs_s, m, padding=0)
-        i_q = F.conv2d(imgs_sq, m, padding=0)
-        
+        if is_1to1:
+            # ROI Turbo mit Batch-Caching
+            b_key = ("roi", tuple([t[0] for t in tpls]))
+            if b_key not in self._batch_cache:
+                w = torch.cat([t[1]["t_zm"] for t in tpls]) 
+                m_list = []
+                for t in tpls:
+                    if t[1]["is_masked"]: m_list.append(t[1]["m"])
+                    else: m_list.append(torch.ones((1, 3, gh, gw), device=self.device))
+                m_3ch = torch.cat(m_list)
+                tn = torch.cat([t[1]["t_norm"] for t in tpls], dim=0).view(1, num_img, 1, 1)
+                npix = torch.cat([t[1]["N"] for t in tpls], dim=0).view(1, num_img, 1, 1)
+                lims = torch.cat([t[1]["threshold"] for t in tpls], dim=0).view(1, num_img, 1, 1)
+                self._batch_cache[b_key] = (w, m_3ch, tn, npix, lims)
+            w, m_3ch, tn, npix, limits = self._batch_cache[b_key]
+            
+            i_grouped = imgs.view(1, num_img * 3, imgs.shape[2], imgs.shape[3])
+            res = F.conv2d(i_grouped, w, groups=num_img) 
+            m_single = m_3ch[:, 0:1, :, :].view(num_img, 1, gh, gw)
+            i_s = F.conv2d(imgs_s.view(1, num_img, imgs.shape[2], imgs.shape[3]), m_single, groups=num_img)
+            i_q = F.conv2d(imgs_sq.view(1, num_img, imgs.shape[2], imgs.shape[3]), m_single, groups=num_img)
+        else:
+            # Fullscreen mit Batch-Caching
+            b_key = ("fs", tuple([t[0] for t in tpls]))
+            if b_key not in self._batch_cache:
+                w = torch.stack([t[1]["t_zm"].squeeze(0) for t in tpls])
+                m_list = [ (t[1]["m"].squeeze(0)[0:1] if t[1]["is_masked"] else None) for t in tpls]
+                tn = torch.cat([t[1]["t_norm"] for t in tpls], dim=0).view(1, num_tpl, 1, 1)
+                npix = torch.cat([t[1]["N"] for t in tpls], dim=0).view(1, num_tpl, 1, 1)
+                lims = torch.cat([t[1]["threshold"] for t in tpls], dim=0).view(1, num_tpl, 1, 1)
+                self._batch_cache[b_key] = (w, m_list, tn, npix, lims)
+            w, m_list, tn, npix, limits = self._batch_cache[b_key]
+            
+            res = F.conv2d(imgs, w, padding=0)
+            i_s_all = torch.zeros((1, num_tpl, res.shape[2], res.shape[3]), device=self.device)
+            i_q_all = torch.zeros((1, num_tpl, res.shape[2], res.shape[3]), device=self.device)
+            
+            has_unmasked = any(m is None for m in m_list)
+            if has_unmasked:
+                i_s_box = F.avg_pool2d(imgs_s, (gh, gw), stride=1, divisor_override=1)
+                i_q_box = F.avg_pool2d(imgs_sq, (gh, gw), stride=1, divisor_override=1)
+            
+            for i, m in enumerate(m_list):
+                if m is None:
+                    i_s_all[:, i:i+1] = i_s_box; i_q_all[:, i:i+1] = i_q_box
+                else:
+                    i_s_all[:, i:i+1] = F.conv2d(imgs_s, m.unsqueeze(0), padding=0)
+                    i_q_all[:, i:i+1] = F.conv2d(imgs_sq, m.unsqueeze(0), padding=0)
+            i_s, i_q = i_s_all, i_q_all
+            
+        if threshold: limits = torch.ones_like(limits) * threshold
         i_var = i_q - (i_s.pow(2) / npix)
         scores = res / (torch.sqrt(torch.clamp(i_var, min=1e-5)) * tn + 1e-6)
-
-        limits = torch.stack([torch.tensor(threshold or self.settings[t[0]]["match_schwellwert"], device=self.device) for t in tpls]).view(1, num_tpl, 1, 1)
-        mask = scores >= limits
+        mask = (scores >= limits)
         if scores.numel() > 0 and scores.size(-2) > 1 and scores.size(-1) > 1:
-            mp = F.max_pool2d(scores, 3, 1, 1)
-            mask &= (scores == mp)
+            mp = F.max_pool2d(scores, 3, 1, 1); mask &= (scores == mp)
             
         pts = torch.nonzero(mask)
         if pts.numel() == 0: return []
-        pts_cpu, s_v_cpu = pts.cpu().numpy(), scores[mask].cpu().numpy()
-        results = []
-        for k in range(len(pts_cpu)):
-            b, i, y_c, x_c = pts_cpu[k]
-            name = tpls[i][0]; ox, oy = offsets[b] if offsets else (0, 0)
-            results.append([name, (int(x_c)+ox)/s_eff, (int(y_c)+oy)/s_eff, gw/s_eff, gh/s_eff, float(s_v_cpu[k])])
-        return results
+        
+        # Sammle Resultate (immer noch als Tensoren)
+        batch_idx = pts[:, 0]; tpl_idx = pts[:, 1]; y_c = pts[:, 2]; x_c = pts[:, 3]; s_vals = scores[mask]
+        
+        if offsets:
+            off_t = torch.tensor(offsets, device=self.device, dtype=torch.float32)
+            ox = off_t[tpl_idx if is_1to1 else batch_idx, 0]; oy = off_t[tpl_idx if is_1to1 else batch_idx, 1]
+            x_final, y_final = (x_c.float() + ox) / s_eff, (y_c.float() + oy) / s_eff
+        else:
+            x_final, y_final = x_c.float() / s_eff, y_c.float() / s_eff
+            
+        res_list = []
+        for k in range(pts.shape[0]):
+            res_list.append([tpls[int(tpl_idx[k])][0], x_final[k], y_final[k], gw/s_eff, gh/s_eff, s_vals[k]])
+        return res_list
 
     def _nms(self, matches):
         if not matches: return []
