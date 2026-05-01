@@ -294,46 +294,79 @@ class TemplateMatcher:
 
             if fs_tpls: res_raw.extend(self._batch_match_fixed_size(img_m, img_sum, img_sq, fs_tpls, s_eff))
             if roi_tasks:
-                max_h = max(t["imgs"][0].shape[2] for t in roi_tasks); max_w = max(t["imgs"][0].shape[3] for t in roi_tasks)
-                imgs_l, imgs_s_l, imgs_sq_l, tpl_l, off_l = [], [], [], [], []
-                for task in roi_tasks:
+                num_t = len(roi_tasks)
+                max_h = max(t["imgs"][0].shape[2] for t in roi_tasks)
+                max_w = max(t["imgs"][0].shape[3] for t in roi_tasks)
+                
+                b_imgs = torch.zeros((num_t, 3, max_h, max_w), device=self.device)
+                b_s = torch.zeros((num_t, 1, max_h, max_w), device=self.device)
+                b_q = torch.zeros((num_t, 1, max_h, max_w), device=self.device)
+                tpl_l, off_l = [], []
+                
+                for i, task in enumerate(roi_tasks):
                     crop, crop_s, crop_q = task["imgs"]; ch, cw = crop.shape[2:]
-                    if ch < max_h or cw < max_w:
-                        imgs_l.append(F.pad(crop, (0, max_w-cw, 0, max_h-ch))); imgs_s_l.append(F.pad(crop_s, (0, max_w-cw, 0, max_h-ch))); imgs_sq_l.append(F.pad(crop_q, (0, max_w-cw, 0, max_h-ch)))
-                    else: imgs_l.append(crop); imgs_s_l.append(crop_s); imgs_sq_l.append(crop_q)
-                    tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])
-                b_imgs, b_s, b_q = torch.cat(imgs_l), torch.cat(imgs_s_l), torch.cat(imgs_sq_l)
+                    b_imgs[i, :, :ch, :cw] = crop
+                    b_s[i, :, :ch, :cw] = crop_s
+                    b_q[i, :, :ch, :cw] = crop_q
+                    tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])       
+                
                 res_raw.extend(self._batch_match_fixed_size(b_imgs, b_s, b_q, tpl_l, s_eff, is_1to1=True, offsets=off_l))
 
         # 3. Unified Transfer & Kaskade
-        res_cpu = []
-        for r in res_raw: res_cpu.append([r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
-        
+        res_cpu = res_raw # res_raw enthält bereits CPU-Floats durch Unified Transfer in _batch_match_fixed_size
+
         gefiltert, res_final = self._nms(res_cpu), []
+        if not gefiltert: 
+            return [], [], scanned_regions, search_stats
+            
         k_tasks_by_sz = defaultdict(list)
+        
+        # Kinder-Daten vorab sammeln, um Python-Lookups in der Schleife zu minimieren
+        all_k_names = set()
         for m in gefiltert:
             res_final.append(m); name = m[0]; m_basis = name.split("__")[0]
-            k_names = kinder_nach_gruppe.get(name) or kinder_nach_gruppe.get(m_basis)
+            kn = kinder_nach_gruppe.get(name) or kinder_nach_gruppe.get(m_basis)
+            if kn: all_k_names.update(kn)
+        
+        k_data_map = {kn: self._get_gpu_template(kn, s_eff) for kn in all_k_names}
+        
+        for m in gefiltert:
+            name = m[0]; m_basis = name.split("__")[0]
+            k_names = kinder_nach_gruppe.get(name) or kinder_nach_gruppe.get(m_basis)        
             if not k_names: continue
+            
             rx, ry, rw, rh = m[1], m[2], m[3], m[4]; pad = 4
             x0, y0, x1, y1 = max(0, int(rx*s_eff)-pad), max(0, int(ry*s_eff)-pad), min(tw_t, int((rx+rw)*s_eff)+pad), min(th_t, int((ry+rh)*s_eff)+pad)
             if x1 <= x0 or y1 <= y0: continue
+            
             crop_info = (img_m[:,:,y0:y1,x0:x1], img_sum[:,:,y0:y1,x0:x1], img_sq[:,:,y0:y1,x0:x1])
+            ch, cw = y1-y0, x1-x0
+            
             for kn in k_names:
-                kgd = self._get_gpu_template(kn, s_eff)
-                if kgd["t_zm"].shape[2] <= (y1-y0) and kgd["t_zm"].shape[3] <= (x1-x0):
+                kgd = k_data_map[kn]
+                if kgd["t_zm"].shape[2] <= ch and kgd["t_zm"].shape[3] <= cw:      
                     k_tasks_by_sz[kgd["t_zm"].shape[2:]].append({"imgs": crop_info, "name": kn, "gd": kgd, "offset": (x0, y0)})
 
         for sz, k_tasks in k_tasks_by_sz.items():
-            max_h = max(t["imgs"][0].shape[2] for t in k_tasks); max_w = max(t["imgs"][0].shape[3] for t in k_tasks)
-            imgs_l, imgs_s_l, imgs_sq_l, tpl_l, off_l = [], [], [], [], []
-            for task in k_tasks:
+            num_t = len(k_tasks)
+            max_h = max(t["imgs"][0].shape[2] for t in k_tasks)
+            max_w = max(t["imgs"][0].shape[3] for t in k_tasks)
+            
+            # PRE-ALLOCATED BATCH: Viel schneller als hunderte F.pad Aufrufe
+            b_imgs = torch.zeros((num_t, 3, max_h, max_w), device=self.device)
+            b_s = torch.zeros((num_t, 1, max_h, max_w), device=self.device)
+            b_q = torch.zeros((num_t, 1, max_h, max_w), device=self.device)
+            tpl_l, off_l = [], []
+            
+            for i, task in enumerate(k_tasks):
                 crop, crop_s, crop_q = task["imgs"]; ch, cw = crop.shape[2:]
-                imgs_l.append(F.pad(crop, (0, max_w-cw, 0, max_h-ch))); imgs_s_l.append(F.pad(crop_s, (0, max_w-cw, 0, max_h-ch))); imgs_sq_l.append(F.pad(crop_q, (0, max_w-cw, 0, max_h-ch)))
-                tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])
-            b_imgs, b_s, b_q = torch.cat(imgs_l), torch.cat(imgs_s_l), torch.cat(imgs_sq_l)
+                b_imgs[i, :, :ch, :cw] = crop
+                b_s[i, :, :ch, :cw] = crop_s
+                b_q[i, :, :ch, :cw] = crop_q
+                tpl_l.append((task["name"], task["gd"])); off_l.append(task["offset"])       
+                
             k_raw = self._batch_match_fixed_size(b_imgs, b_s, b_q, tpl_l, s_eff, is_1to1=True, threshold=0.7, offsets=off_l)
-            for r in k_raw: res_final.append([r[0], float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
+            res_final.extend(k_raw)
 
         final = []
         for n, rx, ry, rw, rh, sc in self._nms(res_final): 
@@ -382,15 +415,16 @@ class TemplateMatcher:
             i_s_all = torch.zeros((1, num_tpl, res.shape[2], res.shape[3]), device=self.device)
             i_q_all = torch.zeros((1, num_tpl, res.shape[2], res.shape[3]), device=self.device)
             
-            has_unmasked = any(m is None for m in m_list)
-            if has_unmasked:
+            # Optimierte Helligkeits-Zuweisung (Vektorisiert)
+            unmasked_idx = [i for i, m in enumerate(m_list) if m is None]
+            if unmasked_idx:
                 i_s_box = F.avg_pool2d(imgs_s, (gh, gw), stride=1, divisor_override=1)
                 i_q_box = F.avg_pool2d(imgs_sq, (gh, gw), stride=1, divisor_override=1)
+                i_s_all[:, unmasked_idx] = i_s_box; i_q_all[:, unmasked_idx] = i_q_box
             
+            # Nur für Maskierte Templates conv2d aufrufen
             for i, m in enumerate(m_list):
-                if m is None:
-                    i_s_all[:, i:i+1] = i_s_box; i_q_all[:, i:i+1] = i_q_box
-                else:
+                if m is not None:
                     i_s_all[:, i:i+1] = F.conv2d(imgs_s, m.unsqueeze(0), padding=0)
                     i_q_all[:, i:i+1] = F.conv2d(imgs_sq, m.unsqueeze(0), padding=0)
             i_s, i_q = i_s_all, i_q_all
@@ -405,29 +439,32 @@ class TemplateMatcher:
         pts = torch.nonzero(mask)
         if pts.numel() == 0: return []
         
-        # Sammle Resultate (immer noch als Tensoren)
-        batch_idx = pts[:, 0]; tpl_idx = pts[:, 1]; y_c = pts[:, 2]; x_c = pts[:, 3]; s_vals = scores[mask]
+        # UNIFIED TRANSFER: Wir holen pts [N, 4] und scores [N] zur CPU
+        # pts enthält: (batch_idx, tpl_idx, y, x)
+        res_pts = pts.cpu().numpy()
+        res_scores = scores[mask].cpu().numpy()
         
-        if offsets:
-            off_t = torch.tensor(offsets, device=self.device, dtype=torch.float32)
-            ox = off_t[tpl_idx if is_1to1 else batch_idx, 0]; oy = off_t[tpl_idx if is_1to1 else batch_idx, 1]
-            x_final, y_final = (x_c.float() + ox) / s_eff, (y_c.float() + oy) / s_eff
-        else:
-            x_final, y_final = x_c.float() / s_eff, y_c.float() / s_eff
-            
         res_list = []
-        for k in range(pts.shape[0]):
-            res_list.append([tpls[int(tpl_idx[k])][0], x_final[k], y_final[k], gw/s_eff, gh/s_eff, s_vals[k]])
+        for k in range(res_pts.shape[0]):
+            bi, ti, yi, xi = res_pts[k]
+            name = tpls[ti][0]; ox, oy = offsets[ti if is_1to1 else bi] if offsets else (0, 0)
+            # [name, x, y, w, h, score] -> Berechnung auf CPU (Zero-Sync)
+            res_list.append([name, (float(xi) + ox)/s_eff, (float(yi) + oy)/s_eff, gw/s_eff, gh/s_eff, float(res_scores[k])])
         return res_list
 
     def _nms(self, matches):
         if not matches: return []
+        # matches ist jetzt eine Liste von [name, x, y, w, h, score] wobei x, y, score bereits float (CPU) sind
         matches.sort(key=lambda x: x[5], reverse=True); ergebnis = []
         for m in matches:
-            cx, cy, doppelt = m[1]+m[3]/2, m[2]+m[4]/2, False
+            mx, my, mw, mh = m[1], m[2], m[3], m[4]
+            cx, cy = mx + mw/2, my + mh/2
+            doppelt = False
             for a in ergebnis:
                 if a[0] == m[0]:
-                    if abs(cx-(a[1]+a[3]/2)) < m[3]*0.5 and abs(cy-(a[2]+a[4]/2)) < m[4]*0.5: doppelt = True; break
+                    ax, ay, aw, ah = a[1], a[2], a[3], a[4]
+                    if abs(cx - (ax + aw/2)) < mw*0.5 and abs(cy - (ay + ah/2)) < mh*0.5: 
+                        doppelt = True; break
             if not doppelt: ergebnis.append(m)
         return ergebnis
 
