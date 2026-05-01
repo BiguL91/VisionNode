@@ -54,7 +54,7 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v1.5.3 – **Präzisions-Update**.
+v1.5.4 – **Event-Bus & UX-Update**.
 
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

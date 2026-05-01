@@ -1,13 +1,26 @@
-# Unreleased Changes (Draft)
+﻿# Unreleased Changes (Draft)
 
 ---
 
-## v1.5.4 (TBD)
+## v1.5.5 (TBD)
 *Aktueller Stand – In Arbeit*
 
 ### ✨ Features
-- **Event Bus System**: Implementierung einer zentralen Pub/Sub Infrastruktur (`core/event_bus.py`) zur vollständigen Entkopplung der Engines von der Benutzeroberfläche.
-- **Asynchroner Data-Worker**: Neuer Hintergrund-Dienst (`core/data_worker.py`) zur Verarbeitung von OCR-Rohdaten (Timer-Berechnungen, Einheiten-Transformationen, Formel-Auswertungen) ohne Blockierung des UI-Threads.
+- 
+
+### ⚙️ Optimierungen
+- 
+
+### 🛠️ Fixes
+- 
+
+---
+
+## v1.5.4 (Event-Bus & UX-Update) - 01.05.2026
+
+### ✨ Features
+- **Event Bus System**: Implementierung einer zentralen Pub/Sub Infrastruktur (core/event_bus.py) zur vollständigen Entkopplung der Engines von der Benutzeroberfläche.
+- **Asynchroner Data-Worker**: Neuer Hintergrund-Dienst (core/data_worker.py) zur Verarbeitung von OCR-Rohdaten (Timer-Berechnungen, Einheiten-Transformationen, Formel-Auswertungen) ohne Blockierung des UI-Threads.
   - **DataWorker Heartbeat**: Kontinuierliche Berechnung von Timern und Formeln auch ohne aktive OCR-Events (1,5s Intervall).
 - **Reaktive UI-Panels**: Alle Haupt-Panels (State, Workflow, Template, Variable, Daten) wurden auf ein ereignisgesteuertes Modell umgestellt und aktualisieren sich nun autonom via Event Bus.
 - **Auto-Tune Engine (Alpha)**: Ein neuer interaktiver Wizard hilft beim Einlernen von Templates. Er sucht automatisch nach der besten Trennschärfe zwischen Icon und Hintergrund.
@@ -17,9 +30,9 @@
 - **Toleranz-Sweep**: Automatische Optimierung der Hintergrund-Toleranz basierend auf den Benutzer-Markierungen.
 
 ### ⚙️ Optimierungen
-- **Thread-Sicherheit (BotState)**: Einführung von Locks in `core/bot_state.py` zur Vermeidung von Race Conditions bei gleichzeitigem Zugriff von Matching- und UI-Threads auf Spielzustände.
+- **Thread-Sicherheit (BotState)**: Einführung von Locks in core/bot_state.py zur Vermeidung von Race Conditions bei gleichzeitigem Zugriff von Matching- und UI-Threads auf Spielzustände.
 - **UI-Performance**: Massive Entlastung des Haupt-Threads durch Entfernung von Polling-Loops; chirurgische Updates der UI-Komponenten statt vollständiger Rebuilds bei Wertänderungen.
-  - **Live-Vorschau Optimierung**: Umstellung der Bildskalierung auf bilineare Interpolation (`INTER_LINEAR`) für flüssige 60-FPS-Darstellung bei geringerer CPU-Last.
+  - **Live-Vorschau Optimierung**: Umstellung der Bildskalierung auf bilineare Interpolation (INTER_LINEAR) für flüssige 60-FPS-Darstellung bei geringerer CPU-Last.
 - **Workflow-Editor UX**:
   - **Präzises Hit-Testing**: Verbindungspunkte (Ports) nutzen nun Nearest-Neighbor-Logik; bei Überlagerungen wird immer der exakt nächste Port ausgewählt.
   - **Visuelles Feedback**: Neuer Hover-Effekt vergrößert und beleuchtet Ports beim Überfahren mit der Maus.
