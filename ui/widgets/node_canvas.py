@@ -68,6 +68,7 @@ class NodeCanvas(QWidget):
         self._node_rects: dict[str, QRectF]   = {}
         self._conn_paths: dict[str, tuple]    = {}
         self._hover_conn: str | None          = None
+        self._hover_port: tuple[str, str] | None = None # (node_id, port_name)
 
         self._drag_node   = None
         self._drag_start  = QPointF()
@@ -105,8 +106,8 @@ class NodeCanvas(QWidget):
             if port_name == "body":
                 return QPointF(x, y + h / 2)
             if port_name == "done":
-                # Da body nun links ist, ist done der einzige Port rechts
-                return QPointF(x + w, y + h * 0.75) 
+                # done weiter nach unten schieben für mehr Abstand zum Eingang (in)
+                return QPointF(x + w, y + h * 0.85) 
             return QPointF(x + w / 2, y + h / 2)
 
         if typ == "priority_selector":
@@ -266,18 +267,22 @@ class NodeCanvas(QWidget):
 
         if hat_ein:
             pp = self._port_pos(node, "in")
-            rect_p = QRectF(pp.x()-r, pp.y()-r, 2*r, 2*r)
+            is_hover = (self._hover_port == (nid, "in"))
+            pr = (r + 2) if is_hover else r
+            rect_p = QRectF(pp.x()-pr, pp.y()-pr, 2*pr, 2*pr)
             p.setBrush(QBrush(QColor("#333333")))
-            p.setPen(QPen(QColor("#888888"), max(1, 2*s)))
+            p.setPen(QPen(QColor("white" if is_hover else "#888888"), max(1, (3 if is_hover else 2)*s)))
             p.drawEllipse(rect_p)
             self._port_rects[(nid, "in")] = rect_p
 
         for port in aus_ports:
             pp = self._port_pos(node, port)
+            is_hover = (self._hover_port == (nid, port))
+            pr = (r + 2) if is_hover else r
             pfarbe = QColor(PORT_FARBEN.get(port, "#aaaaaa"))
-            rect_p = QRectF(pp.x()-r, pp.y()-r, 2*r, 2*r)
+            rect_p = QRectF(pp.x()-pr, pp.y()-pr, 2*pr, 2*pr)
             p.setBrush(QBrush(pfarbe))
-            p.setPen(QPen(QColor("white"), max(1, s)))
+            p.setPen(QPen(QColor("white"), max(1, (2 if is_hover else 1)*s)))
             p.drawEllipse(rect_p)
             self._port_rects[(nid, port)] = rect_p
             if len(aus_ports) > 1 and s > 0.5:
@@ -341,22 +346,42 @@ class NodeCanvas(QWidget):
 
     def _get_port_at(self, pos: QPointF) -> tuple[dict, str, bool] | tuple[None, None, None]:
         fang_radius_sq = 25 * 25
+        best_node = None
+        best_port = None
+        best_dist_sq = float("inf")
+        is_best_in = False
+
         for node in reversed(self.nodes):
             typ = node["typ"]
             if typ == "priority_selector":
                 aus_ports = [a.get("port") for a in node.get("ausgaenge", [])] + ["else"]
             else:
                 _, aus_ports = NODE_PORTS.get(typ, (True, ["out"]))
-            for p_name in aus_ports:
-                pp = self._port_pos(node, p_name)
-                dx, dy = pos.x()-pp.x(), pos.y()-pp.y()
-                if (dx*dx + dy*dy) <= fang_radius_sq:
-                    return node, p_name, False
+            
+            # Alle Ports dieses Nodes sammeln (Eingang + alle Ausgänge)
+            ports_to_check = []
             if typ != "start":
-                pp = self._port_pos(node, "in")
-                dx, dy = pos.x()-pp.x(), pos.y()-pp.y()
-                if (dx*dx + dy*dy) <= fang_radius_sq:
-                    return node, "in", True
+                ports_to_check.append(("in", True))
+            for p in aus_ports:
+                ports_to_check.append((p, False))
+
+            for p_name, ist_in in ports_to_check:
+                pp = self._port_pos(node, p_name)
+                dx, dy = pos.x() - pp.x(), pos.y() - pp.y()
+                dist_sq = dx*dx + dy*dy
+                
+                if dist_sq <= fang_radius_sq:
+                    if dist_sq < best_dist_sq:
+                        best_dist_sq = dist_sq
+                        best_node = node
+                        best_port = p_name
+                        is_best_in = ist_in
+            
+            # Wenn wir im aktuellen Node bereits einen Treffer haben, 
+            # nehmen wir den besten dieses Nodes (Nodes liegen übereinander, wir nehmen den obersten)
+            if best_node:
+                return best_node, best_port, is_best_in
+
         return None, None, None
 
     def mousePressEvent(self, event):
@@ -414,6 +439,18 @@ class NodeCanvas(QWidget):
             self.update()
             return
 
+        # Hover-Effekt für Ports
+        old_hover_port = self._hover_port
+        h_node, h_port, _ = self._get_port_at(pos)
+        if h_node:
+            self._hover_port = (h_node["id"], h_port)
+        else:
+            self._hover_port = None
+        
+        if self._hover_port != old_hover_port:
+            self.update()
+
+        # Hover-Effekt für Verbindungen
         old_hover = self._hover_conn
         self._hover_conn = None
         pf       = event.position()
