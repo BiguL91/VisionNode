@@ -1,7 +1,8 @@
 """
-Matching-Monitor Panel (Qt). 
+Matching-Monitor Panel (Qt).
 Zeigt live an, welche Templates in wie vielen ROIs gescannt werden.
 """
+import time
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QLabel
 from PyQt6.QtCore import Qt, pyqtSlot
 from core.event_bus import bus
@@ -10,6 +11,7 @@ class MatchingMonitorPanel(QWidget):
     def __init__(self, bot_win=None, parent=None):
         super().__init__(parent)
         self.bot_win = bot_win
+        self._last_update = 0.0
         self._setup_ui()
         self._connect_bus()
 
@@ -40,6 +42,10 @@ class MatchingMonitorPanel(QWidget):
         bus.subscribe("matching.stats", self._on_stats_received)
 
     def _on_stats_received(self, event):
+        now = time.monotonic()
+        if now - self._last_update < 0.25:  # max 4fps
+            return
+        self._last_update = now
         stats = event.data
         self.liste.clear()
         if not stats or not isinstance(stats, dict):

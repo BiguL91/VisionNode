@@ -95,7 +95,7 @@ def _ocr_subprocess(req_q, resp_q, ready_event):
     import easyocr
     import torch.nn as nn
 
-    reader = easyocr.Reader(["en", "de"], gpu=True)
+    reader = easyocr.Reader(["en", "de"], gpu=False)
     for attr, val in vars(reader).items():
         if isinstance(val, nn.DataParallel):
             setattr(reader, attr, val.module)
@@ -343,8 +343,30 @@ class TilesBotApp:
             daemon=True
         )
         self.matching_proc.start()
-        
+
         last_sent_frame = None
+
+        def _send_frame():
+            """Schickt den aktuellen Frame-Snapshot an den Subprocess (non-blocking)."""
+            nonlocal last_sent_frame
+            current_f = self.current_screenshot_np
+            if current_f is None:
+                return
+            try:
+                self.frame_q.put_nowait((
+                    current_f.shape,
+                    current_f.dtype,
+                    self.template_engine.referenz_groesse,
+                    self.template_engine.matching_skalierung,
+                    self.state.get_all_game_states(),
+                    self.state.force_include
+                ))
+                last_sent_frame = current_f
+            except Exception:
+                pass
+
+        # Ersten Frame schicken bevor die Loop startet, damit der Subprocess sofort arbeiten kann.
+        _send_frame()
 
         while self.state.capture_active:
             if self.matching_proc is not None and not self.matching_proc.is_alive():
@@ -356,28 +378,17 @@ class TilesBotApp:
                     daemon=True
                 )
                 self.matching_proc.start()
-
-            if self.current_screenshot_np is not None:
-                try:
-                    current_f = self.current_screenshot_np
-                    # Wir schicken nur noch Metadaten + Spielzustand.
-                    # Das Bild liegt bereits im Shared Memory.
-                    self.frame_q.put_nowait((
-                        current_f.shape,
-                        current_f.dtype,
-                        self.template_engine.referenz_groesse,
-                        self.template_engine.matching_skalierung,
-                        self.state.get_all_game_states(),
-                        self.state.force_include
-                    ))
-                    last_sent_frame = current_f
-                    t_start = time.time()
-                except Exception: t_start = None
-            else:
-                t_start = None
+                # Nach Neustart sofort einen Frame schicken damit der Subprocess nicht wartet.
+                _send_frame()
 
             try:
                 res_package = self.result_q.get(timeout=0.1)
+
+                # Sofort nächsten Frame schicken BEVOR das Ergebnis verarbeitet wird.
+                # Subprocess kann so direkt mit dem nächsten Frame starten, während
+                # wir das aktuelle Ergebnis auswerten. Eliminiert die Idle-Zeit des Subprocess.
+                _send_frame()
+                t_start = time.time()
                 
                 # Neues flaches Format: (matches, ms, scanned_regions, master_namen, search_stats)
                 if isinstance(res_package, tuple) and len(res_package) >= 3:
@@ -474,13 +485,12 @@ class TilesBotApp:
                 if self.settings.get("log_matching", False):
                     self._log(f"[Matching] {len(aktive_matches)} Treffer in {ms_sub:.1f}ms")
             except Exception as e:
-                # Kurzer Sleep bei Fehlern/Timeout, um CPU zu schonen
+                # Bei Timeout oder Fehler: Subprocess mit einem frischen Frame versorgen,
+                # damit er nicht auf frame_q.get(timeout=0.5) wartet.
+                _send_frame()
                 time.sleep(0.01)
                 if self.settings.get("log_matching", False) and not isinstance(e, mp.queues.Empty):
                     self._log(f"Matching-Loop Fehler: {e}")
-            
-            # Kein fixer Sleep mehr am Ende, um maximale FPS zu erreichen.
-            # Die Loop wird durch result_q.get(timeout=0.1) gebremst.
 
     def _ocr_loop(self):
         while self.state.capture_active:

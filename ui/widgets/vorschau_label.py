@@ -20,10 +20,8 @@ from core.helpers import _template_farbe
 from ui.widgets.magnifier import OCRMagnifier
 
 
-def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float, float, float]:
-    """BGR numpy → QPixmap, skaliert auf max_w × max_h.
-    Gibt (pixmap, skala, offset_x, offset_y) zurück.
-    """
+def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple:
+    """BGR numpy → (QPixmap, skala, offset_x, offset_y). Wird von externen Dialogen genutzt."""
     if cv2 is None or frame_bgr is None:
         return QPixmap(), 1.0, 0.0, 0.0
     try:
@@ -32,7 +30,6 @@ def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float
         nw, nh = int(round(w * skala)), int(round(h * skala))
         if nw < 1 or nh < 1:
             return QPixmap(), 1.0, 0.0, 0.0
-        # Performance: INTER_LINEAR ist deutlich schneller als INTER_AREA für Live-Video
         resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
         qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888)
@@ -40,14 +37,95 @@ def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float
         ox = (max_w - nw) / 2.0
         oy = (max_h - nh) / 2.0
         return pm, skala, ox, oy
-    except (Exception,):
-        import gc
-        gc.collect()
+    except Exception:
         return QPixmap(), 1.0, 0.0, 0.0
 
 
+def _render_overlay_image(
+    max_w: int, max_h: int,
+    skala: float, ox: float, oy: float,
+    matches: list, ocr_regionen: dict, ocr_werte: dict,
+    ocr_konf: dict, scanned_regions: list, show_roi: bool,
+) -> "QImage | None":
+    """Rendert alle Overlays in ein transparentes QImage.
+    Läuft im _FrameWorker-Thread (QPainter auf QImage ist thread-sicher).
+    Gibt None zurück wenn nichts zu zeichnen ist.
+    """
+    if not matches and not ocr_regionen and not (show_roi and scanned_regions):
+        return None
+
+    img = QImage(max_w, max_h, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(Qt.GlobalColor.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setFont(QFont("Segoe UI", 7))
+
+    # 0. Gescannte Regionen (Debug)
+    if show_roi and scanned_regions:
+        p.setPen(QPen(QColor(255, 0, 255, 150), 1, Qt.PenStyle.SolidLine))
+        p.setBrush(QColor(255, 0, 255, 20))
+        for r in scanned_regions:
+            rx0 = int(round(ox + r[0] * skala))
+            ry0 = int(round(oy + r[1] * skala))
+            rx1 = int(round(ox + r[2] * skala))
+            ry1 = int(round(oy + r[3] * skala))
+            p.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+    # 1. Globale OCR-Regionen
+    p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
+    for r_name, r in ocr_regionen.items():
+        rx = int(round(ox + r["x"] * skala))
+        ry = int(round(oy + r["y"] * skala))
+        rw = int(round(r["breite"] * skala))
+        rh = int(round(r["hoehe"] * skala))
+        p.drawRect(rx, ry, rw, rh)
+        val = ocr_werte.get(r_name, "")
+        p.setPen(QColor("#ffca28"))
+        p.drawText(rx + 2, ry + 12, f"{r_name}: {val}")
+        p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
+
+    # 2. Template-OCR nach Template gruppieren
+    ocr_by_tmpl: dict[str, list] = {}
+    for k, cfg in ocr_konf.items():
+        ocr_by_tmpl.setdefault(cfg.get("template", k), []).append(cfg)
+
+    # 3. Matches
+    for match in matches:
+        name, mx, my, mw, mh, score = match[:6]
+        farbe = QColor(_template_farbe(name))
+        cx = int(round(ox + mx * skala))
+        cy = int(round(oy + my * skala))
+        cw = int(round(mw * skala))
+        ch = int(round(mh * skala))
+        p.setPen(QPen(farbe, 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(cx, cy, cw, ch)
+        p.setPen(farbe)
+        p.drawText(cx + 2, max(cy - 2, 10), f"{name} {score:.2f}")
+
+        for cfg in ocr_by_tmpl.get(name, []):
+            cl = cfg.get("crop_links",  0) / 100
+            co = cfg.get("crop_oben",   0) / 100
+            cr = cfg.get("crop_rechts", 0) / 100
+            cu = cfg.get("crop_unten",  0) / 100
+            rx0 = int(round(ox + (mx + cl * mw) * skala))
+            ry0 = int(round(oy + (my + co * mh) * skala))
+            rx1 = int(round(ox + (mx + mw - cr * mw) * skala))
+            ry1 = int(round(oy + (my + mh - cu * mh) * skala))
+            p.setPen(QPen(QColor("#00bcd4"), 1, Qt.PenStyle.DashLine))
+            if cfg.get("ausschnitt_form", "box") == "kreis":
+                p.drawEllipse(rx0, ry0, rx1 - rx0, ry1 - ry0)
+            else:
+                p.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
+
+    p.end()
+    return img
+
+
 class _FrameWorker(QThread):
-    """Konvertiert BGR-Frames im Hintergrund. Kein Signal — Ergebnis liegt im Result-Slot.
+    """Konvertiert BGR-Frames und rendert Overlays im Hintergrund.
+    Kein Signal — Ergebnis liegt im Result-Slot.
     _display_tick liest den Slot und ruft repaint() direkt auf (funktioniert im Windows Modal-Loop).
     """
 
@@ -56,13 +134,13 @@ class _FrameWorker(QThread):
         self._submit_lock = threading.Lock()
         self._result_lock = threading.Lock()
         self._pending = None
-        self._result  = None          # (QImage, skala, ox, oy)
+        self._result  = None          # (frame_QImage, overlay_QImage|None, skala, ox, oy)
         self._event   = threading.Event()
         self._running = True
 
-    def submit(self, frame_bgr, max_w: int, max_h: int):
+    def submit(self, frame_bgr, max_w: int, max_h: int, overlay_data: tuple | None = None):
         with self._submit_lock:
-            self._pending = (frame_bgr, max_w, max_h)
+            self._pending = (frame_bgr, max_w, max_h, overlay_data)
         self._event.set()
 
     def get_and_clear(self):
@@ -81,7 +159,7 @@ class _FrameWorker(QThread):
                 self._pending = None
             if task is None:
                 continue
-            frame_bgr, max_w, max_h = task
+            frame_bgr, max_w, max_h, overlay_data = task
             if cv2 is None or frame_bgr is None:
                 continue
             try:
@@ -90,15 +168,26 @@ class _FrameWorker(QThread):
                 nw, nh = int(round(w * skala)), int(round(h * skala))
                 if nw < 1 or nh < 1:
                     continue
-                resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
-                rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-                qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888).copy()
+                resized    = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                rgb        = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+                frame_qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888).copy()
                 ox = (max_w - nw) / 2.0
                 oy = (max_h - nh) / 2.0
+
+                # Overlay im gleichen Hintergrund-Thread rendern (QPainter auf QImage ist thread-sicher)
+                overlay_qimg = None
+                if overlay_data is not None:
+                    matches, ocr_regionen, ocr_werte, ocr_konf, scanned_regions, show_roi = overlay_data
+                    overlay_qimg = _render_overlay_image(
+                        max_w, max_h, skala, ox, oy,
+                        matches, ocr_regionen, ocr_werte, ocr_konf, scanned_regions, show_roi,
+                    )
+
                 with self._result_lock:
-                    self._result = (qimg, skala, ox, oy)
+                    self._result = (frame_qimg, overlay_qimg, skala, ox, oy)
             except Exception:
-                pass
+                with self._result_lock:
+                    self._result = (frame_qimg, None, skala, ox, oy)
 
     def stop(self):
         self._running = False
@@ -123,7 +212,8 @@ class VorschauLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(400, 300)
 
-        self._pixmap:    QPixmap | None = None
+        self._pixmap:         QPixmap | None = None
+        self._overlay_pixmap: QPixmap | None = None
         self._skala:     float          = 1.0
         self._offset_x:  float          = 0.0
         self._offset_y:  float          = 0.0
@@ -143,8 +233,6 @@ class VorschauLabel(QLabel):
         self._current:       QPoint | None = None
         self._mouse_pos = QPoint(-100, -100)
         self._magnifier = OCRMagnifier(size=160, zoom=4)
-
-        self._overlay_cache: QPixmap | None = None
 
         self._frame_worker = _FrameWorker(self)
         self._frame_worker.start()
@@ -171,31 +259,23 @@ class VorschauLabel(QLabel):
         if w < 10 or h < 10:
             return
         scanned_regions = scanned_regions or []
-        # Cache nur invalidieren wenn sich die Overlay-Daten tatsächlich geändert haben.
-        # Matching läuft alle 50-80ms → Cache wird nur dann neu gebaut, nicht 60x/sec.
-        if (matches != self._matches
-                or ocr_werte != self._ocr_werte
-                or scanned_regions != self._scanned_regions
-                or show_roi != self._show_roi):
-            self._overlay_cache = None
         self._matches         = matches
         self._ocr_regionen    = ocr_regionen
         self._ocr_werte       = ocr_werte
         self._ocr_konf        = template_ocr_konf
         self._scanned_regions = scanned_regions
         self._show_roi        = show_roi
-        self._frame_worker.submit(frame_bgr, w, h)
+        overlay_data = (matches, ocr_regionen, ocr_werte, template_ocr_konf, scanned_regions, show_roi)
+        self._frame_worker.submit(frame_bgr, w, h, overlay_data)
 
     def apply_pending_frame(self):
-        """Übernimmt den letzten konvertierten Frame vom Worker (GUI-Thread).
-        Muss vor repaint() aufgerufen werden."""
+        """Übernimmt Frame + Overlay vom Worker (GUI-Thread). Vor repaint() aufrufen."""
         result = self._frame_worker.get_and_clear()
         if result is None:
             return
-        qimg, skala, ox, oy = result
-        if skala != self._skala:
-            self._overlay_cache = None
-        self._pixmap   = QPixmap.fromImage(qimg)
+        frame_qimg, overlay_qimg, skala, ox, oy = result
+        self._pixmap         = QPixmap.fromImage(frame_qimg)
+        self._overlay_pixmap = QPixmap.fromImage(overlay_qimg) if overlay_qimg is not None else None
         self._skala    = skala
         self._offset_x = ox
         self._offset_y = oy
@@ -250,11 +330,11 @@ class VorschauLabel(QLabel):
             src_size = m_size // m_zoom
             sx = e.pos().x() - src_size // 2
             sy = e.pos().y() - src_size // 2
-            
+
             source_rect = QRect(sx, sy, src_size, src_size)
             full_crop = QPixmap(src_size, src_size)
             full_crop.fill(QColor("#1a1a1a"))
-            
+
             p_crop = QPainter(full_crop)
             pix = self.grab(source_rect)
             p_crop.drawPixmap(0, 0, pix)
@@ -278,9 +358,8 @@ class VorschauLabel(QLabel):
         self._start   = None
         self._current = None
         self.update()
-        
+
         if self._aktiv:
-            # Einlern-Modus: Region emittieren
             if abs(x1 - x0) > 4 and abs(y1 - y0) > 4:
                 self.region_ausgewaehlt.emit(
                     min(x0, x1), min(y0, y1),
@@ -288,7 +367,6 @@ class VorschauLabel(QLabel):
                     form,
                 )
         elif self._direkt_aktiv:
-            # Direktsteuerung: Klick oder Wischen
             dist = ((x1-x0)**2 + (y1-y0)**2)**0.5
             if dist > 10:
                 self.direkt_wischen.emit(x0, y0, x1, y1)
@@ -297,31 +375,13 @@ class VorschauLabel(QLabel):
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
-    def resizeEvent(self, event):
-        self._overlay_cache = None
-        super().resizeEvent(event)
-
-    def _rebuild_overlay_cache(self):
-        w, h = self.width(), self.height()
-        if w < 1 or h < 1:
-            return
-        pm = QPixmap(w, h)
-        pm.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._zeichne_overlays(p)
-        p.end()
-        self._overlay_cache = pm
-
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._pixmap:
             p.drawPixmap(int(round(self._offset_x)), int(round(self._offset_y)), self._pixmap)
-            if self._overlay_cache is None:
-                self._rebuild_overlay_cache()
-            if self._overlay_cache:
-                p.drawPixmap(0, 0, self._overlay_cache)
+            if self._overlay_pixmap:
+                p.drawPixmap(0, 0, self._overlay_pixmap)
         else:
             p.setPen(QColor("#555555"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._status)
@@ -346,66 +406,3 @@ class VorschauLabel(QLabel):
             p.drawLine(self._mouse_pos.x(), 0, self._mouse_pos.x(), self.height())
 
         p.end()
-
-    def _zeichne_overlays(self, p: QPainter):
-        ox, oy, s = self._offset_x, self._offset_y, self._skala
-        p.setFont(QFont("Segoe UI", 7))
-
-        # 0. Gescannt Regionen (Visual Debug)
-        if hasattr(self, "_show_roi") and self._show_roi and hasattr(self, "_scanned_regions"):
-            p.setPen(QPen(QColor(255, 0, 255, 150), 1, Qt.PenStyle.SolidLine))
-            p.setBrush(QColor(255, 0, 255, 20)) # Sehr zartes Lila
-            for r in self._scanned_regions:
-                rx0 = int(round(ox + r[0] * s))
-                ry0 = int(round(oy + r[1] * s))
-                rx1 = int(round(ox + r[2] * s))
-                ry1 = int(round(oy + r[3] * s))
-                p.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-
-        # 1. Globale OCR-Regionen
-        p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
-        for r_name, r in self._ocr_regionen.items():
-            rx = int(round(ox + r["x"] * s))
-            ry = int(round(oy + r["y"] * s))
-            rw = int(round(r["breite"] * s))
-            rh = int(round(r["hoehe"] * s))
-            p.drawRect(rx, ry, rw, rh)
-            val = self._ocr_werte.get(r_name, "")
-            p.setPen(QColor("#ffca28"))
-            p.drawText(rx + 2, ry + 12, f"{r_name}: {val}")
-            p.setPen(QPen(QColor("#ffca28"), 1, Qt.PenStyle.DashLine))
-
-        # 2. Template-OCR nach Template gruppieren
-        ocr_by_tmpl: dict[str, list] = {}
-        for k, cfg in self._ocr_konf.items():
-            ocr_by_tmpl.setdefault(cfg.get("template", k), []).append(cfg)
-
-        # 3. Matches
-        for match in self._matches:
-            name, mx, my, mw, mh, score = match[:6]
-            farbe = QColor(_template_farbe(name))
-            cx = int(round(ox + mx * s))
-            cy = int(round(oy + my * s))
-            cw = int(round(mw * s))
-            ch = int(round(mh * s))
-            p.setPen(QPen(farbe, 2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(cx, cy, cw, ch)
-            p.setPen(farbe)
-            p.drawText(cx + 2, max(cy - 2, 10), f"{name} {score:.2f}")
-
-            for cfg in ocr_by_tmpl.get(name, []):
-                cl = cfg.get("crop_links",  0) / 100
-                co = cfg.get("crop_oben",   0) / 100
-                cr = cfg.get("crop_rechts", 0) / 100
-                cu = cfg.get("crop_unten",  0) / 100
-                rx0 = int(round(ox + (mx + cl * mw) * s))
-                ry0 = int(round(oy + (my + co * mh) * s))
-                rx1 = int(round(ox + (mx + mw - cr * mw) * s))
-                ry1 = int(round(oy + (my + mh - cu * mh) * s))
-                p.setPen(QPen(QColor("#00bcd4"), 1, Qt.PenStyle.DashLine))
-                if cfg.get("ausschnitt_form", "box") == "kreis":
-                    p.drawEllipse(rx0, ry0, rx1 - rx0, ry1 - ry0)
-                else:
-                    p.drawRect(rx0, ry0, rx1 - rx0, ry1 - ry0)

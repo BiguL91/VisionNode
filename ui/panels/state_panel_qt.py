@@ -1,3 +1,4 @@
+import time
 from core.event_bus import bus
 from lang import lang
 from PyQt6.QtWidgets import (
@@ -77,6 +78,7 @@ class StatePanel(QWidget):
         self.nur_aktive = False
         self._last_keys: set[str] = set()
         self._last_states: dict | None = None
+        self._last_state_update = 0.0
 
         self._setup_ui()
         bus.subscribe("state.changed", self._on_state_changed)
@@ -91,9 +93,13 @@ class StatePanel(QWidget):
         states = event.data
         if states is not None:
             self._last_states = states
-        
+
+        now = time.monotonic()
+        if now - self._last_state_update < 0.25:  # max 4fps bei Matching-Rate-Events
+            return
+        self._last_state_update = now
+
         if self._last_states is not None:
-            # Wir nutzen werte_aktualisieren, da es selbst entscheidet, ob ein Rebuild nötig ist
             QTimer.singleShot(0, lambda: self.werte_aktualisieren(self._last_states))
 
     def _heartbeat(self):
