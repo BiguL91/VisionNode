@@ -19,7 +19,7 @@ from core.event_bus import bus
 from core.data_worker import DataWorker
 from core.helpers import (
     memu_fenster_finden, fenster_screenshot_mss,
-    fenster_screenshot_wgc, wgc_starten, wgc_stoppen,
+    fenster_screenshot_wgc, wgc_starten, wgc_stoppen, wgc_subprocess_alive,
     MEMU_FENSTERTITEL, SharedFrameBuffer
 )
 
@@ -81,6 +81,42 @@ def _matching_subprocess(frame_q, result_q, reload_event):
     
     shm_buffer.close()
 
+
+def _ocr_subprocess(req_q, resp_q, ready_event):
+    """Isolierter Prozess für EasyOCR – hält PyTorch-Heap vom Hauptprozess fern."""
+    import faulthandler
+    faulthandler.enable(file=open("crash_subprocess.log", "a"))
+
+    import torch
+    import warnings
+    torch.set_num_threads(1)
+    warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
+
+    import easyocr
+    import torch.nn as nn
+
+    reader = easyocr.Reader(["en", "de"], gpu=True)
+    for attr, val in vars(reader).items():
+        if isinstance(val, nn.DataParallel):
+            setattr(reader, attr, val.module)
+
+    ready_event.set()
+
+    while True:
+        try:
+            item = req_q.get(timeout=1.0)
+        except Exception:
+            continue
+        if item is None:
+            break
+        ocr_input, readtext_kwargs = item
+        try:
+            ergebnisse = reader.readtext(ocr_input, **readtext_kwargs)
+            resp_q.put(("ok", ergebnisse))
+        except Exception as e:
+            resp_q.put(("err", str(e)))
+
+
 class TilesBotApp:
     """Die Logik-Zentrale des Bots (Engine-Management & Loops)."""
     
@@ -106,6 +142,21 @@ class TilesBotApp:
             log_enabled_func=lambda: self.settings.get("log_dateitransfers", True)
         )
         self.ocr_engine = OCREngine()
+
+        # OCR-Subprocess: EasyOCR/PyTorch in isoliertem Prozess (verhindert Heap-Corruption im Hauptprozess)
+        self.ocr_req_q = mp.Queue(maxsize=2)
+        self.ocr_resp_q = mp.Queue(maxsize=2)
+        self.ocr_ready_event = mp.Event()
+        self.ocr_proc = mp.Process(
+            target=_ocr_subprocess,
+            args=(self.ocr_req_q, self.ocr_resp_q, self.ocr_ready_event),
+            daemon=True,
+        )
+        self.ocr_proc.start()
+        self.ocr_engine._ocr_req_q = self.ocr_req_q
+        self.ocr_engine._ocr_resp_q = self.ocr_resp_q
+        self.ocr_engine._ocr_ready_event = self.ocr_ready_event
+
         self.action_engine = ActionEngine(log_func=self._log)
         self.workflow_engine = WorkflowEngine()
         self.workflow_engine.node_delay = self.settings.get("workflow_node_delay", 0.5)
@@ -222,7 +273,15 @@ class TilesBotApp:
             self.frame_q.put(None)
             self.matching_proc.join(timeout=1.0)
             self.matching_proc.terminate()
-        
+        if self.ocr_proc and self.ocr_proc.is_alive():
+            try:
+                self.ocr_req_q.put(None)
+            except Exception:
+                pass
+            self.ocr_proc.join(timeout=2.0)
+            if self.ocr_proc.is_alive():
+                self.ocr_proc.terminate()
+
         # Shared Memory aufräumen
         if hasattr(self, "shm_buffer"):
             self.shm_buffer.close()
@@ -249,6 +308,16 @@ class TilesBotApp:
                         self._log("MEMUPlayer Fenster verloren.")
                         self.state.memu_hwnd = None
                 
+                # WGC-Subprocess-Crash erkennen und neu starten
+                if wgc_aktiv and not wgc_subprocess_alive():
+                    self._log("[Capture] WGC-Subprocess abgestürzt – Neustart...")
+                    try:
+                        wgc_stoppen()
+                        wgc_starten(MEMU_FENSTERTITEL)
+                    except Exception as e:
+                        self._log(f"[Capture] WGC-Neustart fehlgeschlagen ({e}) – nutze mss")
+                        wgc_aktiv = False
+
                 frame = None
                 if wgc_aktiv:
                     frame = fenster_screenshot_wgc()

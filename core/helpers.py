@@ -1,112 +1,184 @@
 import win32gui
 import numpy as np
+import multiprocessing as mp
 from PIL import Image
 
-# Name des MEMUPlayer-Fensters (Teilstring genügt)
 MEMU_FENSTERTITEL = "MEmu"
 
-# Farben für Match-Rahmen (pro Template-Name gleichbleibend)
 _RAHMEN_FARBEN = [
     "#ef5350", "#ab47bc", "#42a5f5", "#26c6da",
     "#66bb6a", "#ffca28", "#ff7043", "#8d6e63",
 ]
 
 def _template_farbe(name):
-    """Gibt eine konsistente Farbe für einen Template-Namen zurück."""
     return _RAHMEN_FARBEN[hash(name) % len(_RAHMEN_FARBEN)]
-
-# ---------------------------------------------------------------------------
-# Windows Graphics Capture (WGC) – primäre Capture-Methode
-# ---------------------------------------------------------------------------
 
 
 def memu_fenster_finden():
-    """Sucht das MEMUPlayer-Fenster und gibt das Handle zurück."""
     gefunden = []
-
     def callback(hwnd, _):
         if win32gui.IsWindowVisible(hwnd):
             titel = win32gui.GetWindowText(hwnd)
             if MEMU_FENSTERTITEL.lower() in titel.lower():
                 gefunden.append(hwnd)
-
     win32gui.EnumWindows(callback, None)
     return gefunden[0] if gefunden else None
 
 
 # ---------------------------------------------------------------------------
-# Windows Graphics Capture (WGC) – primäre Capture-Methode
+# WGC-Subprocess – isoliert den instabilen windows_capture-Buffer-Zugriff.
+# Der Rust-Thread gibt D3D11-Staging-Buffer ohne GIL frei → egal welche
+# Python-Kopiermethode wir nutzen, der Hauptprozess kann abstürzen.
+# Lösung: WGC läuft in einem eigenen Subprocess. Crash dort → kein Crash
+# im Hauptprozess, _capture_loop fällt auf mss zurück.
 # ---------------------------------------------------------------------------
 
-class _WGCKamera:
-    """Wraps Windows.Graphics.Capture für synchrones frame.grab()."""
+# Shared-Memory-Layout: [h(i32), w(i32), frame_id(i32), pad(i32)] = 16 Bytes Header
+# ab Byte 16: BGR-Framedaten
+_WGC_SHM_NAME  = "bot_wgc_frame"
+_WGC_SHM_BYTES = 30 * 1024 * 1024   # 30 MB → reicht für 4K BGR
 
-    def __init__(self, fenster_titel, hwnd=None):
+_wgc_proc: mp.Process | None = None
+_wgc_shm  = None   # multiprocessing.shared_memory.SharedMemory
+
+
+def _wgc_subprocess(shm_name: str, shm_size: int, hwnd):
+    """Läuft isoliert. Schreibt WGC-Frames in Shared Memory."""
+    import faulthandler, ctypes, numpy as np, threading, time, warnings
+    faulthandler.enable(file=open("crash_subprocess.log", "a"))
+    warnings.filterwarnings("ignore")
+
+    from multiprocessing import shared_memory as shm_mod
+
+    try:
+        shm = shm_mod.SharedMemory(name=shm_name)
+    except Exception:
+        return
+
+    header = np.ndarray(4, dtype=np.int32, buffer=shm.buf)
+
+    try:
         from windows_capture import WindowsCapture
-
-        self._letzter_frame = None  # BGR numpy array
-        self._fehler = None
 
         capture = WindowsCapture(
             cursor_capture=False,
             draw_border=False,
             window_hwnd=hwnd if hwnd else None,
-            window_name=fenster_titel if not hwnd else None,
-            minimum_update_interval=33,  # max ~30fps, verhindert Race: Rust recycled Frame bevor bytes(buf) fertig
+            window_name=None,
+            minimum_update_interval=33,
         )
-
-        kamera = self
 
         @capture.event
         def on_frame_arrived(frame, capture_control):
             try:
                 buf = frame.frame_buffer
-                if buf.ndim == 3 and buf.shape[2] >= 3:
-                    h, w = buf.shape[:2]
-                    # bytes() kopiert Rust-Speicher sofort in Python-managed Objekt
-                    kamera._letzter_frame = np.frombuffer(bytes(buf), dtype=np.uint8).reshape(h, w, 4)[:, :, :3].copy()
+                if buf.ndim != 3 or buf.shape[2] < 3:
+                    return
+                h, w      = buf.shape[:2]
+                row_stride = buf.strides[0]
+                row_bytes  = w * 4
+
+                # Kopie aus Rust-Buffer (kann hier crashen – isoliert im Subprocess)
+                total = h * row_stride
+                tmp = np.empty(total, dtype=np.uint8)
+                ctypes.memmove(tmp.ctypes.data, buf.ctypes.data, total)
+
+                # BGR extrahieren (alles Python-Speicher ab hier)
+                if row_stride == row_bytes:
+                    bgr = np.ascontiguousarray(tmp.reshape(h, w, 4)[:, :, :3])
+                else:
+                    bgr = np.ascontiguousarray(
+                        tmp.reshape(h, row_stride)[:, :row_bytes].reshape(h, w, 4)[:, :, :3]
+                    )
+
+                nbytes = bgr.nbytes
+                if nbytes + 16 > shm_size:
+                    return
+
+                header[0] = h
+                header[1] = w
+                np.ndarray(nbytes, dtype=np.uint8, buffer=shm.buf, offset=16)[:] = bgr.ravel()
+                header[2] += 1          # frame-counter für Reader
+
             except Exception:
                 pass
 
         @capture.event
         def on_closed():
-            kamera._letzter_frame = None
+            header[0] = 0
+            header[1] = 0
 
-        capture.start_free_threaded()
-        self._capture = capture
+        threading.Thread(target=capture.start, daemon=True).start()
 
-    def grab(self):
-        return self._letzter_frame
+        while True:
+            time.sleep(0.5)
 
-    def stoppen(self):
+    except Exception:
+        pass
+    finally:
         try:
-            self._capture.stop()
+            shm.close()
         except Exception:
             pass
 
 
-_wgc_kamera: _WGCKamera | None = None
-
-
 def wgc_starten(fenster_titel):
-    """Erstellt und startet eine WGC-Kamera-Instanz. Wirft Exception bei Fehler."""
-    global _wgc_kamera
+    """Startet den WGC-Subprocess. Wirft Exception wenn nicht möglich."""
+    global _wgc_proc, _wgc_shm
+    from multiprocessing import shared_memory as shm_mod
+
     hwnd = memu_fenster_finden()
-    _wgc_kamera = _WGCKamera(fenster_titel, hwnd=hwnd)
+
+    try:
+        _wgc_shm = shm_mod.SharedMemory(name=_WGC_SHM_NAME, create=True, size=_WGC_SHM_BYTES)
+    except FileExistsError:
+        _wgc_shm = shm_mod.SharedMemory(name=_WGC_SHM_NAME)
+
+    # Header nullen
+    np.ndarray(4, dtype=np.int32, buffer=_wgc_shm.buf)[:] = 0
+
+    _wgc_proc = mp.Process(
+        target=_wgc_subprocess,
+        args=(_WGC_SHM_NAME, _WGC_SHM_BYTES, hwnd),
+        daemon=True,
+    )
+    _wgc_proc.start()
 
 
-def fenster_screenshot_wgc():
-    """Liefert den letzten WGC-Frame als BGR numpy array oder None."""
-    if _wgc_kamera is None:
+def fenster_screenshot_wgc() -> np.ndarray | None:
+    """Liest den letzten WGC-Frame aus Shared Memory. None wenn kein Frame da."""
+    if _wgc_shm is None:
         return None
-    return _wgc_kamera.grab()
+    header = np.ndarray(4, dtype=np.int32, buffer=_wgc_shm.buf)
+    h, w = int(header[0]), int(header[1])
+    if h <= 0 or w <= 0:
+        return None
+    nbytes = h * w * 3
+    if nbytes + 16 > _WGC_SHM_BYTES:
+        return None
+    return np.ndarray((h, w, 3), dtype=np.uint8, buffer=_wgc_shm.buf, offset=16).copy()
+
+
+def wgc_subprocess_alive() -> bool:
+    return _wgc_proc is not None and _wgc_proc.is_alive()
 
 
 def wgc_stoppen():
-    global _wgc_kamera
-    if _wgc_kamera is not None:
-        _wgc_kamera.stoppen()
-        _wgc_kamera = None
+    global _wgc_proc, _wgc_shm
+    if _wgc_proc and _wgc_proc.is_alive():
+        try:
+            _wgc_proc.terminate()
+            _wgc_proc.join(timeout=1.0)
+        except Exception:
+            pass
+    _wgc_proc = None
+    if _wgc_shm:
+        try:
+            _wgc_shm.close()
+            _wgc_shm.unlink()
+        except Exception:
+            pass
+    _wgc_shm = None
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +186,10 @@ def wgc_stoppen():
 # ---------------------------------------------------------------------------
 
 def fenster_screenshot_mss(hwnd, sct):
-    """mss-basierter Screenshot als numpy BGR-Array. Fallback wenn WGC nicht verfügbar."""
     try:
         client_rect = win32gui.GetClientRect(hwnd)
         breite = client_rect[2]
-        hoehe = client_rect[3]
+        hoehe  = client_rect[3]
         if breite <= 0 or hoehe <= 0:
             return None, 0, 0
         x, y = win32gui.ClientToScreen(hwnd, (0, 0))
@@ -127,7 +198,7 @@ def fenster_screenshot_mss(hwnd, sct):
         import cv2
         frame = cv2.cvtColor(
             np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(hoehe, breite, 4),
-            cv2.COLOR_BGRA2BGR
+            cv2.COLOR_BGRA2BGR,
         )
         return frame, breite, hoehe
     except Exception:
@@ -135,11 +206,10 @@ def fenster_screenshot_mss(hwnd, sct):
 
 
 def fenster_screenshot(hwnd, sct):
-    """Kompatibilitäts-Wrapper – gibt PIL Image zurück (für OCR-Engine)."""
     try:
         client_rect = win32gui.GetClientRect(hwnd)
         breite = client_rect[2]
-        hoehe = client_rect[3]
+        hoehe  = client_rect[3]
         if breite <= 0 or hoehe <= 0:
             return None
         x, y = win32gui.ClientToScreen(hwnd, (0, 0))
@@ -149,6 +219,7 @@ def fenster_screenshot(hwnd, sct):
     except Exception:
         return None
 
+
 class SharedFrameBuffer:
     """Verwaltet einen Shared Memory Block für Screenshots."""
     def __init__(self, name: str, size_mb: int = 40, create: bool = False):
@@ -156,9 +227,8 @@ class SharedFrameBuffer:
         import threading
         self.name = name
         self.size = size_mb * 1024 * 1024
-        self.shm = None
+        self.shm  = None
         self._lock = threading.Lock()
-
         try:
             if create:
                 try:
@@ -171,7 +241,6 @@ class SharedFrameBuffer:
             print(f"[SharedMemory] Fehler: {e}")
 
     def write_frame(self, frame_np: np.ndarray):
-        """Kopiert den Frame in den Shared Memory Bereich."""
         if self.shm is None or frame_np is None:
             return
         if frame_np.nbytes > self.size:
@@ -182,7 +251,6 @@ class SharedFrameBuffer:
             target[:] = frame_np[:]
 
     def get_frame(self, shape, dtype) -> np.ndarray:
-        """Gibt eine Kopie des aktuellen Frames zurück."""
         if self.shm is None:
             return None
         nbytes = int(np.dtype(dtype).itemsize * np.prod(shape))

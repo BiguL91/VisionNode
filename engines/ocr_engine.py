@@ -1,14 +1,10 @@
-import easyocr
 import json
 import os
 import re
 import cv2
 import numpy as np
-import warnings
+import threading
 from PIL import Image
-
-# Unterdrücke PyTorch RNN-Warnung (bekanntes EasyOCR/GPU Problem)
-warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.rnn")
 
 _BASE_DIR          = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OCR_REGIONEN_DATEI = os.path.join(_BASE_DIR, "templates", "settings", "ocr_regionen.json")
@@ -20,19 +16,13 @@ class OCREngine:
     def __init__(self):
         # name -> {"x": int, "y": int, "breite": int, "hoehe": int, "modus": str}
         self.regionen = {}
-        # Initialisiere EasyOCR mit Englisch und Deutsch (für Umlaute und Tage 'T')
-        self.reader = easyocr.Reader(["en", "de"], gpu=True)
-        # DataParallel korrumpiert den Heap durch GIL-Verletzungen in nativen Threads (crash_main.log: 0xc0000374)
-        # Unwrapping erzwingt Single-GPU-Inference ohne DataParallel
-        try:
-            import torch.nn as nn
-            for attr, val in vars(self.reader).items():
-                if isinstance(val, nn.DataParallel):
-                    setattr(self.reader, attr, val.module)
-        except Exception:
-            pass
         self.debug_filter = "Aus"  # "Aus", "Alle" oder Name der Region
         self._template_ocr_cache = None
+        # IPC zum OCR-Subprocess (wird von TilesBotApp gesetzt)
+        self._ocr_req_q = None
+        self._ocr_resp_q = None
+        self._ocr_ready_event = None
+        self._ocr_lock = threading.Lock()
 
         self._regionen_laden()
         self._template_ocr_laden() # Sofort laden
@@ -251,17 +241,28 @@ class OCREngine:
         # Im Debug-Modus geben wir (Text, Koordinaten, Debug-Bild) zurück
         debug_info = (abs_x0, abs_y0, abs_x1, abs_y1, ocr_input.copy()) if debug else None
 
-        try:
-            ergebnisse = self.reader.readtext(ocr_input, **readtext_kwargs)
-            
-            # Filtere nach Konfidenz (mind. 0.35)
-            text_teile = []
+        if self._ocr_req_q is None or self._ocr_ready_event is None:
+            return ("", debug_info) if debug else ""
 
+        try:
+            with self._ocr_lock:
+                if not self._ocr_ready_event.wait(timeout=30.0):
+                    return ("", debug_info) if debug else ""
+                self._ocr_req_q.put((ocr_input, readtext_kwargs))
+                status, payload = self._ocr_resp_q.get(timeout=15.0)
+
+            if status != "ok":
+                if debug:
+                    return f"[Fehler: {payload}]", debug_info
+                return f"[Fehler: {payload}]"
+
+            ergebnisse = payload
+            text_teile = []
             for res in ergebnisse:
                 if res[2] >= 0.35:
                     box, text, conf = res
                     text_teile.append(text)
-            
+
             text = " ".join(text_teile)
             ergebnis = self._bereinigen(text, modus)
 
