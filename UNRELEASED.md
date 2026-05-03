@@ -36,6 +36,12 @@
 - **Fullscreen-Diagnose**: Erweitertes Logging identifiziert nun automatisch Templates, die einen Fullscreen-Scan ohne ROI erzwingen.
 - **SharedMemory Windows-Fix**: Behebung von `WinError 183` durch automatisches Übernehmen existierender Puffer nach unsauberem Programmende.
 - **Variablen-Panel**: Wiederherstellung der `_is_smart_recursive` Methode zur korrekten Filterung und Anzeige im UI.
+- **Crash-Isolierung durch vollständige Subprocess-Architektur**: Behebung von wiederholten `access violation` und `0xc0000374` Heap-Corruption-Abstürzen durch vollständige Prozess-Isolation aller nativen Bibliotheken:
+  - *Ursache EasyOCR*: PyTorch-nativer Allokator korrumpierte den Windows-Heap des Hauptprozesses und führte zu sporadischen Access Violations in nicht verwandten Threads (z.B. WGC-Callback). Fix: EasyOCR/PyTorch läuft jetzt in `_ocr_subprocess` (eigener OS-Prozess), kommuniziert über `mp.Queue` Request/Response mit `mp.Event` Bereitschaftssignal.
+  - *Ursache WGC*: Der Rust-Thread der `windows_capture`-Bibliothek gibt D3D11-Staging-Buffer ohne Python-GIL frei. Jede Kopiermethode (`bytes()`, `np.array()`, `ctypes.memmove()`) kann in diesem Zeitfenster abstürzen, da der Hauptprozess-Heap korrumpiert wird. Fix: WGC läuft in `_wgc_subprocess`, schreibt BGR-Frames per Shared Memory (`bot_wgc_frame`, 30 MB), Hauptprozess liest daraus ohne direkten Rust-Buffer-Kontakt.
+  - Automatischer WGC-Subprocess-Neustart in `_capture_loop` bei Absturz; `mss` als Fallback während des Neustarts.
+- **TemplateEngine CPU-Isolation im Hauptprozess**: `TemplateEngine` im Hauptprozess lädt Templates jetzt ausschließlich auf CPU (`force_cpu=True`). Ursache: `_templates_laden()` rief `.to(cuda)` beim Start und bei jedem Reload auf, wodurch PyTorchs CUDA-Allocator im Hauptprozess aktiv war und sporadisch den Windows-Heap korrumpierte (Access Violation in `mp.Queue._feed`). Der Matching-Subprocess verwendet weiterhin CUDA und ist davon nicht betroffen.
+- **ROI-Editor Matches**: `matches_suchen_np` gibt seit den Performance-Optimierungen 4 Werte zurück (`matches, master_namen, scanned_regions, search_stats`). Der ROI-Editor-Test hat nur 2 entpackt → `too many values to unpack`. Korrigiert auf `res, master_namen, _, _ = ...`.
 
 ---
 

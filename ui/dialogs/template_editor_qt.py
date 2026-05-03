@@ -858,7 +858,7 @@ class TemplateEditorQt(QDialog):
                 "condition_states": {}, "set_states": {},
             }
 
-            res, master_namen = self.template_engine.matches_suchen_np(snap_np)
+            res, master_namen, _, _ = self.template_engine.matches_suchen_np(snap_np)
             my_matches = [m for m in res if m[0] == n_tmp]
             self.roi_editor.draw_test_results(my_matches, match_s)
 

@@ -139,7 +139,8 @@ class TilesBotApp:
             matching_skalierung=self.settings.get("matching_skalierung", 0.5),
             referenz_groesse=(ref_b, ref_h) if ref_b and ref_h else None,
             log_func=self._log,
-            log_enabled_func=lambda: self.settings.get("log_dateitransfers", True)
+            log_enabled_func=lambda: self.settings.get("log_dateitransfers", True),
+            force_cpu=True,
         )
         self.ocr_engine = OCREngine()
 

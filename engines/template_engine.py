@@ -17,8 +17,8 @@ from engines.template_matcher import TemplateMatcher
 class TemplateEngine:
     SETTINGS_DATEI = TemplateStore.SETTINGS_DATEI
 
-    def __init__(self, matching_skalierung=0.5, referenz_groesse=None, log_func=None, log_enabled_func=None):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, matching_skalierung=0.5, referenz_groesse=None, log_func=None, log_enabled_func=None, force_cpu=False):
+        self.device = torch.device("cpu") if force_cpu else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.log_func         = log_func
         self.log_enabled_func = log_enabled_func
         self._log(f"TemplateEngine: Nutze Device '{self.device}'")
