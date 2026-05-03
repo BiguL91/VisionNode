@@ -162,6 +162,10 @@ class _FrameWorker(QThread):
             frame_bgr, max_w, max_h, overlay_data = task
             if cv2 is None or frame_bgr is None:
                 continue
+            frame_qimg = None
+            skala = 1.0
+            ox = 0.0
+            oy = 0.0
             try:
                 h, w = frame_bgr.shape[:2]
                 skala = min(max_w / w, max_h / h)
@@ -186,8 +190,9 @@ class _FrameWorker(QThread):
                 with self._result_lock:
                     self._result = (frame_qimg, overlay_qimg, skala, ox, oy)
             except Exception:
-                with self._result_lock:
-                    self._result = (frame_qimg, None, skala, ox, oy)
+                if frame_qimg is not None:
+                    with self._result_lock:
+                        self._result = (frame_qimg, None, skala, ox, oy)
 
     def stop(self):
         self._running = False
@@ -342,7 +347,8 @@ class VorschauLabel(QLabel):
 
             self._magnifier.update_view(full_crop, self.mapToGlobal(e.pos()))
 
-        self.update()
+        if self._aktiv:
+            self.update()
 
     def leaveEvent(self, event):
         self._mouse_pos = QPoint(-100, -100)
