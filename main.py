@@ -294,6 +294,10 @@ class TilesBotWindow(QMainWindow):
         self._active_dialogs = []
         self._ui_locked = self.einstellungen.get("layout_locked", False)
 
+        # Display-Cache: selten ändernde Daten, nicht jedes Tick neu kopieren
+        self._cached_ocr_konf     = {}
+        self._cached_ocr_regionen = {}
+
         self._gui_aufbauen()
         self._connect_signals()
         self._fenster_groesse_initialisieren()
@@ -727,7 +731,17 @@ class TilesBotWindow(QMainWindow):
             p.einheiten_requested.connect(self._einheiten_dialog)
             p.geandert.connect(self._panels_aktualisieren)
 
+        # Display-Cache via EventBus warm halten
+        from core.event_bus import bus
+        bus.subscribe("templates.changed", self._update_display_cache)
+        self._update_display_cache()
+
     # ── Display Loop ──────────────────────────────────────────────────────────
+
+    def _update_display_cache(self, event=None):
+        """Aktualisiert selten ändernde Daten für den Display-Tick."""
+        self._cached_ocr_konf     = dict(self.ocr_engine.template_ocr_konfigurationen())
+        self._cached_ocr_regionen = dict(self.ocr_engine.regionen)
 
     def _check_memu_retry(self):
         if self.app.find_memu():
@@ -739,6 +753,8 @@ class TilesBotWindow(QMainWindow):
     def _start_display_loop(self):
         fps = self.einstellungen.get("display_fps", DISPLAY_FPS_DEFAULT)
         self._display_timer = QTimer(self)
+        # PreciseTimer nutzt Windows Multimedia-Timer → feuert auch im Modal-Move-Loop
+        self._display_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._display_timer.setInterval(1000 // fps)
         self._display_timer.timeout.connect(self._display_tick)
         self._display_timer.start()
@@ -746,26 +762,22 @@ class TilesBotWindow(QMainWindow):
     def _display_tick(self):
         if not self.app.state.capture_active:
             return
-            
-        # Zurück zum Live-Modus für maximale Flüssigkeit (FPS).
-        # Das Bild kommt direkt vom Capture-Thread, die Markierungen hinken
-        # dadurch zwar minimal hinterher, aber das Video ist butterweich.
         frame = self.app.current_screenshot_np
-            
         if frame is None:
             return
-
-        ocr_konf = dict(self.ocr_engine.template_ocr_konfigurationen())
         self._vorschau.set_frame(
             frame,
             list(self.app.state.active_matches),
-            dict(self.ocr_engine.regionen),
+            self._cached_ocr_regionen,
             dict(self.app.state.ocr_values),
-            ocr_konf,
+            self._cached_ocr_konf,
             scanned_regions=list(self.app.state.scanned_regions),
             show_roi=self.app.settings.get("debug_show_roi", False)
         )
-        # Die Panels (OCR, State, etc.) aktualisieren sich nun selbst via EventBus.
+        # Worker-Ergebnis vom vorherigen Tick übernehmen, dann synchron zeichnen.
+        # repaint() ruft paintEvent direkt auf → funktioniert auch im Windows Modal-Move-Loop.
+        self._vorschau.apply_pending_frame()
+        self._vorschau.repaint()
 
     # ── Bot-Steuerung ─────────────────────────────────────────────────────────
 

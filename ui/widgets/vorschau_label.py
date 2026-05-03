@@ -5,8 +5,10 @@ Emittiert region_ausgewaehlt (x0, y0, x1, y1, form) bei Maus-Drag.
 """
 from __future__ import annotations
 
+import threading
+
 from PyQt6.QtWidgets import QLabel, QSizePolicy, QMenu
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QPoint, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFont
 
 try:
@@ -44,6 +46,66 @@ def _frame_to_qpixmap(frame_bgr, max_w: int, max_h: int) -> tuple[QPixmap, float
         return QPixmap(), 1.0, 0.0, 0.0
 
 
+class _FrameWorker(QThread):
+    """Konvertiert BGR-Frames im Hintergrund. Kein Signal — Ergebnis liegt im Result-Slot.
+    _display_tick liest den Slot und ruft repaint() direkt auf (funktioniert im Windows Modal-Loop).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._submit_lock = threading.Lock()
+        self._result_lock = threading.Lock()
+        self._pending = None
+        self._result  = None          # (QImage, skala, ox, oy)
+        self._event   = threading.Event()
+        self._running = True
+
+    def submit(self, frame_bgr, max_w: int, max_h: int):
+        with self._submit_lock:
+            self._pending = (frame_bgr, max_w, max_h)
+        self._event.set()
+
+    def get_and_clear(self):
+        """Gibt das letzte fertige Ergebnis zurück und leert den Slot (GUI-Thread)."""
+        with self._result_lock:
+            r = self._result
+            self._result = None
+            return r
+
+    def run(self):
+        while self._running:
+            self._event.wait()
+            self._event.clear()
+            with self._submit_lock:
+                task = self._pending
+                self._pending = None
+            if task is None:
+                continue
+            frame_bgr, max_w, max_h = task
+            if cv2 is None or frame_bgr is None:
+                continue
+            try:
+                h, w = frame_bgr.shape[:2]
+                skala = min(max_w / w, max_h / h)
+                nw, nh = int(round(w * skala)), int(round(h * skala))
+                if nw < 1 or nh < 1:
+                    continue
+                resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
+                rgb     = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+                qimg = QImage(rgb.data, nw, nh, nw * 3, QImage.Format.Format_RGB888).copy()
+                ox = (max_w - nw) / 2.0
+                oy = (max_h - nh) / 2.0
+                with self._result_lock:
+                    self._result = (qimg, skala, ox, oy)
+            except Exception:
+                pass
+
+    def stop(self):
+        self._running = False
+        self._event.set()
+        self.wait(300)
+
+
 class VorschauLabel(QLabel):
     """Live-Preview Widget.
     - Zeichnet Frame + Overlays (Match-Boxen, OCR-Regionen) via paintEvent
@@ -67,10 +129,12 @@ class VorschauLabel(QLabel):
         self._offset_y:  float          = 0.0
         self._status:    str            = "Suche MEMUPlayer..."
 
-        self._matches:       list  = []
-        self._ocr_regionen:  dict  = {}
-        self._ocr_werte:     dict  = {}
-        self._ocr_konf:      dict  = {}
+        self._matches:        list  = []
+        self._ocr_regionen:   dict  = {}
+        self._ocr_werte:      dict  = {}
+        self._ocr_konf:       dict  = {}
+        self._scanned_regions: list = []
+        self._show_roi:        bool = False
 
         self._aktiv:         bool          = False
         self._direkt_aktiv:  bool          = False
@@ -79,6 +143,11 @@ class VorschauLabel(QLabel):
         self._current:       QPoint | None = None
         self._mouse_pos = QPoint(-100, -100)
         self._magnifier = OCRMagnifier(size=160, zoom=4)
+
+        self._overlay_cache: QPixmap | None = None
+
+        self._frame_worker = _FrameWorker(self)
+        self._frame_worker.start()
 
     def contextMenuEvent(self, event):
         if not self._aktiv:
@@ -101,18 +170,35 @@ class VorschauLabel(QLabel):
         w, h = self.width(), self.height()
         if w < 10 or h < 10:
             return
-        pm, skala, ox, oy = _frame_to_qpixmap(frame_bgr, w, h)
-        self._pixmap       = pm
-        self._skala        = skala
-        self._offset_x     = ox
-        self._offset_y     = oy
-        self._matches      = matches
-        self._ocr_regionen = ocr_regionen
-        self._ocr_werte    = ocr_werte
-        self._ocr_konf     = template_ocr_konf
-        self._scanned_regions = scanned_regions or []
-        self._show_roi     = show_roi
-        self.update()
+        scanned_regions = scanned_regions or []
+        # Cache nur invalidieren wenn sich die Overlay-Daten tatsächlich geändert haben.
+        # Matching läuft alle 50-80ms → Cache wird nur dann neu gebaut, nicht 60x/sec.
+        if (matches != self._matches
+                or ocr_werte != self._ocr_werte
+                or scanned_regions != self._scanned_regions
+                or show_roi != self._show_roi):
+            self._overlay_cache = None
+        self._matches         = matches
+        self._ocr_regionen    = ocr_regionen
+        self._ocr_werte       = ocr_werte
+        self._ocr_konf        = template_ocr_konf
+        self._scanned_regions = scanned_regions
+        self._show_roi        = show_roi
+        self._frame_worker.submit(frame_bgr, w, h)
+
+    def apply_pending_frame(self):
+        """Übernimmt den letzten konvertierten Frame vom Worker (GUI-Thread).
+        Muss vor repaint() aufgerufen werden."""
+        result = self._frame_worker.get_and_clear()
+        if result is None:
+            return
+        qimg, skala, ox, oy = result
+        if skala != self._skala:
+            self._overlay_cache = None
+        self._pixmap   = QPixmap.fromImage(qimg)
+        self._skala    = skala
+        self._offset_x = ox
+        self._offset_y = oy
 
     def set_status(self, text: str):
         self._status = text
@@ -211,12 +297,31 @@ class VorschauLabel(QLabel):
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
+    def resizeEvent(self, event):
+        self._overlay_cache = None
+        super().resizeEvent(event)
+
+    def _rebuild_overlay_cache(self):
+        w, h = self.width(), self.height()
+        if w < 1 or h < 1:
+            return
+        pm = QPixmap(w, h)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._zeichne_overlays(p)
+        p.end()
+        self._overlay_cache = pm
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._pixmap:
             p.drawPixmap(int(round(self._offset_x)), int(round(self._offset_y)), self._pixmap)
-            self._zeichne_overlays(p)
+            if self._overlay_cache is None:
+                self._rebuild_overlay_cache()
+            if self._overlay_cache:
+                p.drawPixmap(0, 0, self._overlay_cache)
         else:
             p.setPen(QColor("#555555"))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._status)
@@ -235,7 +340,6 @@ class VorschauLabel(QLabel):
             else:
                 p.drawRect(x0, y0, x1 - x0, y1 - y0)
 
-        # Fadenkreuz an Mausposition zeichnen (nur im Einlern-Modus)
         if self._aktiv and self.underMouse() and self._mouse_pos.x() >= 0:
             p.setPen(QPen(QColor(0, 255, 255, 120), 1, Qt.PenStyle.DashLine))
             p.drawLine(0, self._mouse_pos.y(), self.width(), self._mouse_pos.y())
