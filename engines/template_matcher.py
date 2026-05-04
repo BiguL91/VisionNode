@@ -216,7 +216,7 @@ class TemplateMatcher:
                 "is_masked": True
             }
         else:
-            N = t_s.numel() / 3; t_zm = t_s - t_s.mean()
+            N = float(t_s.numel()); t_zm = t_s - t_s.mean()
             self._gpu_cache[key] = {
                 "t_zm": t_zm, 
                 "t_norm": t_zm.pow(2).sum().sqrt().view(1, 1, 1, 1), 

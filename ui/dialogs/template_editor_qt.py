@@ -95,8 +95,7 @@ class TemplateEditorQt(QDialog):
         self._nach_vorschau_cb = None
         self.initial_scan_regions: list = []
         if self.bearbeiten_name:
-            self.initial_scan_regions = self.template_engine.settings.get(
-                self.bearbeiten_name, {}).get("scan_regions", [])
+            self.initial_scan_regions = self.template_engine._get_effective_regions(self.bearbeiten_name)
 
         self.varianten_liste: list = []
         self.aktuelle_variante_idx: int = 0
@@ -811,6 +810,10 @@ class TemplateEditorQt(QDialog):
 
         n_tmp = "test_match_preview"
         aktuelle_rois = self.roi_editor.get_regions()
+        if not aktuelle_rois:
+            t_name = self.bearbeiten_name or self.name_entry.text().strip()
+            if t_name:
+                aktuelle_rois = self.template_engine._get_effective_regions(t_name)
         match_s = self._schwellwert_slider.value() / 100
 
         try:

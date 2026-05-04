@@ -478,10 +478,16 @@ class VisionNodeApp:
                     if m_name.split("__")[0] in fi_bases:
                         aktive_matches.append(m)
                         continue
+                    # Eigene Bedingungen prüfen
                     conds = self.template_engine.settings.get(m_name, {}).get("condition_states", [])
                     ignore = self.template_engine._get_hierarchy_set_states(m_name)
-                    if self.template_engine._condition_states_erfuellt(conds, neue_states, ignore_states=ignore):
-                        aktive_matches.append(m)
+                    if not self.template_engine._condition_states_erfuellt(conds, neue_states, ignore_states=ignore):
+                        continue
+                    # Elterngruppen-Bedingungen prüfen
+                    gruppe = self.template_engine.templates.get(m_name, {}).get("gruppe", "")
+                    if gruppe and not self.template_engine._eltern_conditions_pruefen(gruppe, neue_states):
+                        continue
+                    aktive_matches.append(m)
                 
                 self.state.active_matches = aktive_matches
                 bus.publish("matches.found", aktive_matches, sender="Matching")

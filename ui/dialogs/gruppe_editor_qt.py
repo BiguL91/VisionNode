@@ -165,14 +165,17 @@ class GruppeEditorQt(QDialog):
 
         g = {"wrapper": wrapper, "zeilen": [], "connector_var": [gruppe_data.get("connector") or "OR"]}
 
-        # Connector (AND/OR) - nur für Gruppen > 1
+        # Connector (AND/OR) - nur für Gruppen > 1, als visueller Trenner zwischen Gruppen
         conn_frame = QFrame()
+        conn_frame.setObjectName("condition_connector_row")
         conn_lay = QHBoxLayout(conn_frame)
-        conn_lay.setContentsMargins(0, 8, 0, 4)
-        
-        lbl = QLabel("Verknüpfung:")
-        lbl.setProperty("class", "lbl_info")
-        conn_lay.addWidget(lbl)
+        conn_lay.setContentsMargins(0, 4, 0, 4)
+        conn_lay.setSpacing(6)
+
+        line_l = QFrame()
+        line_l.setFrameShape(QFrame.Shape.HLine)
+        line_l.setProperty("class", "separator")
+        conn_lay.addWidget(line_l, 1)
 
         btn_grp = QButtonGroup(self)
         for txt in ["AND", "OR"]:
@@ -185,7 +188,12 @@ class GruppeEditorQt(QDialog):
             btn.clicked.connect(lambda checked, t=txt, ref=g: ref["connector_var"].__setitem__(0, t))
             btn_grp.addButton(btn)
             conn_lay.addWidget(btn)
-        conn_lay.addStretch()
+
+        line_r = QFrame()
+        line_r.setFrameShape(QFrame.Shape.HLine)
+        line_r.setProperty("class", "separator")
+        conn_lay.addWidget(line_r, 1)
+
         w_lay.addWidget(conn_frame)
         g["conn_frame"] = conn_frame
 
@@ -226,9 +234,7 @@ class GruppeEditorQt(QDialog):
 
         w_lay.addWidget(box)
         
-        # Vor dem Stretch einfügen
-        idx = max(0, self._gruppen_layout.count() - 1)
-        self._gruppen_layout.insertWidget(idx, wrapper)
+        self._gruppen_layout.addWidget(wrapper)
         self._gruppen_ui.append(g)
         self._refresh_connectors()
 

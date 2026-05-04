@@ -219,6 +219,12 @@ class TemplateEngine:
     def _condition_states_erfuellt(self, conditions, game_states, ignore_states=None):
         return self._matcher._condition_states_erfuellt(conditions, game_states, ignore_states)
 
+    def _eltern_conditions_pruefen(self, pfad, game_states):
+        return self._matcher._eltern_conditions_pruefen(pfad, game_states)
+
+    def _get_effective_regions(self, name):
+        return self._matcher._get_effective_regions(name)
+
     def _settings_speichern(self):
         self._store._settings_speichern()
 

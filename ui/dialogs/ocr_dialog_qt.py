@@ -46,7 +46,7 @@ class OCRKonfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"OCR-Bereiche: {template_name}")
         self.setModal(False)
-        self.resize(600, 800)
+        self.resize(900, 700)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
         self._name = template_name
@@ -111,21 +111,28 @@ class OCRKonfigDialog(QDialog):
         header.addStretch()
         root.addLayout(header)
 
+        # Body: links (Canvas + Params) | rechts (Zonen-Liste)
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        left = QVBoxLayout()
+        left.setSpacing(8)
+
         # Canvas in ScrollArea
         self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(False)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setMinimumHeight(150)
         self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._canvas = OCRCanvas()
         self._canvas.auswahl_geaendert.connect(self._on_auswahl_canvas)
         self._canvas.form_geaendert.connect(self._on_form_changed)
         self._scroll.setWidget(self._canvas)
-        # self._scroll.setFixedHeight(VORSCHAU_GROESSE + 4) # FESTE HÖHE ENTFERNT
-        root.addWidget(self._scroll, 1) # Streckt sich nun
+        left.addWidget(self._scroll, 1)
+
         # OCR-Ergebnis Vorschau
         self._ocr_label = QLabel("—")
         self._ocr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._ocr_label.setObjectName("ocr_preview_result")
-        root.addWidget(self._ocr_label)
+        left.addWidget(self._ocr_label)
 
         # Parameter
         param_frame = QFrame()
@@ -222,7 +229,7 @@ class OCRKonfigDialog(QDialog):
         proc_row.addStretch()
         pl.addLayout(proc_row)
 
-        root.addWidget(param_frame)
+        left.addWidget(param_frame)
 
         # Farbfilter
         color_frame = QFrame()
@@ -253,7 +260,7 @@ class OCRKonfigDialog(QDialog):
         cl.addWidget(self._sl_toleranz)
 
         cl.addStretch()
-        root.addWidget(color_frame)
+        left.addWidget(color_frame)
 
         # Korrekturen
         korr_frame = QFrame()
@@ -299,42 +306,59 @@ class OCRKonfigDialog(QDialog):
         korr_add_row.addStretch()
         kl.addLayout(korr_add_row)
 
-        root.addWidget(korr_frame)
+        left.addWidget(korr_frame)
 
-        # Eingabe: Name + Modus + Hinzufügen
-        eingabe = QHBoxLayout()
+        body.addLayout(left, 1)
+
+        # Rechtes Panel: Zonen-Liste
+        right_widget = QWidget()
+        right_widget.setMinimumWidth(270)
+        right_widget.setMaximumWidth(340)
+        right = QVBoxLayout(right_widget)
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(6)
+
+        # Zonenname
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Zonenname...")
-        eingabe.addWidget(self._name_edit, 2)
+        right.addWidget(self._name_edit)
 
+        # Modus-Buttons
+        mode_row = QHBoxLayout()
         self._modus_grp = QButtonGroup(self)
         for m in ["Timer", "Zahl", "Text"]:
             rb = QRadioButton(m)
             if m == "Zahl":
                 rb.setChecked(True)
             self._modus_grp.addButton(rb)
-            eingabe.addWidget(rb)
+            mode_row.addWidget(rb)
+        right.addLayout(mode_row)
 
+        # Aktualisieren
         self._btn_add = QPushButton("Aktualisieren")
         self._btn_add.setObjectName("btn_new")
         self._btn_add.clicked.connect(self._hinzufuegen)
-        eingabe.addWidget(self._btn_add)
-        root.addLayout(eingabe)
+        right.addWidget(self._btn_add)
 
-        # Tabelle bestehender Einträge
+        # Trennlinie
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        right.addWidget(sep)
+
+        # Zonen-Tabelle (streckt sich vertikal)
         self._tabelle_scroll = QScrollArea()
         self._tabelle_scroll.setWidgetResizable(True)
-        self._tabelle_scroll.setFixedHeight(120)
         self._tabelle_scroll.setObjectName("ocr_zones_scroll")
 
         self._tabelle_widget = QWidget()
         self._tabelle_layout = QVBoxLayout(self._tabelle_widget)
         self._tabelle_layout.setSpacing(4)
         self._tabelle_layout.setContentsMargins(4, 4, 4, 4)
-        self._tabelle_layout.addStretch() # Initial stretch
+        self._tabelle_layout.addStretch()
 
         self._tabelle_scroll.setWidget(self._tabelle_widget)
-        root.addWidget(self._tabelle_scroll)
+        right.addWidget(self._tabelle_scroll, 1)
 
         # Footer
         footer = QHBoxLayout()
@@ -348,7 +372,10 @@ class OCRKonfigDialog(QDialog):
         btn_close = QPushButton("Schließen")
         btn_close.clicked.connect(self.close)
         footer.addWidget(btn_close)
-        root.addLayout(footer)
+        right.addLayout(footer)
+
+        body.addWidget(right_widget)
+        root.addLayout(body, 1)
 
     def _on_toleranz_changed(self, val):
         self._lbl_toleranz.setText(f"Tol: +/- {val}")
@@ -456,12 +483,10 @@ class OCRKonfigDialog(QDialog):
                     (crop_x, crop_y, crop_x + sw, crop_y + sh)
                 ).convert("RGB")
 
-                # Canvas-Bild immer aktualisieren (kein OCR-Overhead, kein Flackern)
                 pm = _pil_to_qpixmap(pil_crop)
                 tm_size = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
                 self._canvas.set_template_info((ox, oy), tm_size)
                 self._canvas.set_pixmap(pm)
-                self._canvas.setFixedSize(sw, sh)
 
                 # OCR-Basis aktualisieren und OCR nur starten wenn kein Lauf aktiv
                 self._vorschau_basis_pil = pil_crop
@@ -955,39 +980,41 @@ class OCRKonfigDialog(QDialog):
             self._lade_template()
             return
 
-        # Anzeige-Pixmap erstellen (Originalgröße)
         nw, nh = self._tw, self._th
         pm = _pil_to_qpixmap(self._template_pil)
-        
-        # Canvas informieren über Offset und die Größe, die das Template auf dem Canvas hat
-        # (Entweder Screen-Pixel vom Match oder Referenz-Pixel vom PNG)
+
         tm_size = getattr(self, "_live_tm_size", (self._orig_tw, self._orig_th))
         self._canvas.set_template_info(getattr(self, "_live_offset", (0,0)), tm_size)
         self._canvas.set_pixmap(pm)
-        self._canvas.setFixedSize(nw, nh) # Größe fixieren damit ScrollArea sie kennt
-        
-        # Wir zwingen die ScrollArea auf die Bildgröße + kleiner Puffer für den Rahmen
-        # Das verhindert, dass die ScrollArea vom Layout "erdrückt" wird.
-        self._scroll.setMinimumSize(min(nw + 4, 1000), min(nh + 4, 800))
+        # Kein setFixedSize – Canvas skaliert sich selbst auf die verfügbare Fläche
         
         # Dialog-Größe anpassen
         screen = self.screen().availableGeometry()
-        
+
         # Erhöhter Puffer für die restliche UI (Slider, Tabelle, Margins)
-        # 620px ist ein sicherer Wert für alle Elemente inklusive Abstände
-        ui_height = 620 
-        
-        # Mindestbreite 750px für die Slider-Zeilen, damit diese nicht gequetscht wirken
-        target_w = max(750, nw + 100)
-        target_h = nh + ui_height
-        
-        # Grenzen des Bildschirms einhalten
-        target_w = min(target_w, screen.width() - 40)
-        target_h = min(target_h, screen.height() - 40)
-        
+        ui_height = 480
+
+        # ScrollArea hat eine feste Mindestgröße unabhängig vom Template.
+        # Der Canvas skaliert sich selbst – kein großes Minimum nötig.
+        self._scroll.setMinimumSize(200, 150)
+
+        # Initiale Fenstergröße: sinnvoll für das Template, aber nie größer als Screen
+        target_w = min(max(750, nw + 100), screen.width() - 40)
+        target_h = min(nh + ui_height, screen.height() - 40)
+
         self.resize(target_w, target_h)
-        # adjustSize() am Ende hilft Qt, die restlichen Abstände perfekt zu berechnen
-        QTimer.singleShot(50, self.adjustSize)
+
+        # Dialog zentrieren und sicherstellen, dass er vollständig sichtbar bleibt
+        def _fix_pos():
+            geom = self.frameGeometry()
+            geom.moveCenter(screen.center())
+            if geom.right()  > screen.right():  geom.moveRight(screen.right() - 10)
+            if geom.bottom() > screen.bottom(): geom.moveBottom(screen.bottom() - 10)
+            if geom.left()   < screen.left():   geom.moveLeft(screen.left() + 10)
+            if geom.top()    < screen.top():    geom.moveTop(screen.top() + 10)
+            self.move(geom.topLeft())
+
+        QTimer.singleShot(50, _fix_pos)
 
     def _final_speichern(self):
         """Speichert alle Einträge im OCR-Engine persistent."""
