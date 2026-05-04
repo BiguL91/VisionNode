@@ -2,6 +2,66 @@
 
 ---
 
+## v1.5.7 (Stabilität & UI-Architektur) - 04.05.2026
+
+### ⚙️ Optimierungen
+- **DataWorker GUI-Thread-Offload**: `on_ocr_results` reiht OCR-Daten nur noch in eine `queue.Queue(maxsize=2)` ein (< 1ms); ein dedizierter Background-Thread (`_processing_loop`) übernimmt alle SQLite-Operationen und publisht `data.updated` via QueuedConnection zurück in den GUI-Thread. Zusätzlich: Struktur-Queries (spalten/zeilen/berechnungen) in `BaseListenBlock` werden einmalig gecacht und nur bei Struktur-Änderung invalidiert (3 von 4 DB-Queries pro `werte_aktualisieren`-Aufruf entfallen). `DatenPanel._on_data_updated` ist auf max. 2fps gedrosselt.
+- **Panel-Update-Throttle**: `MatchingMonitorPanel` und `StatePanel` werden auf max. 4fps gedrosselt. Vorher bauten beide Panels ihre Qt-Listen bei jedem Matching-Zyklus (~10–20fps) vollständig neu auf, was 5–20ms GUI-Thread-Blockage pro Update erzeugte und den 30fps-Display-Timer regelmäßig verzögerte.
+- **OCR-Subprocess GPU-Auto-Detect**: EasyOCR-Subprocess nutzt jetzt `gpu=torch.cuda.is_available()` statt hartkodiertem `gpu=True`. Nach jedem OCR-Aufruf wird `torch.cuda.empty_cache()` aufgerufen, um VRAM sofort freizugeben und GPU-Contention mit dem Matching-Subprocess zu reduzieren.
+- **Overlay-Rendering in Background-Thread**: Vollständige Verlagerung des Overlay-Renderings (Match-Boxen, OCR-Regionen, Scanned-Regions) aus dem GUI-Thread in den `_FrameWorker(QThread)`. Mit 18+ Matches spart das ~5–20ms GUI-Thread-Blockage pro Zyklus.
+- **Background-Frame-Worker**: Frame-Konvertierung (BGR → QImage) in einen `_FrameWorker(QThread)` ausgelagert. Keine Signal-Emissionen mehr (60×/sec Signal-Flood eliminiert); `apply_pending_frame()` liest das Ergebnis synchron per Slot ab.
+- **Zero-Idle Matching-Loop**: `_matching_loop` sendet den nächsten Frame sofort nach Empfang eines Ergebnisses — kein Idle-Fenster zwischen Matching-Zyklen mehr. `result_q`-Timeout auf 0.5s erhöht (war 0.1s, zu kurz bei 10–600ms Matching-Dauer).
+- **PreciseTimer + repaint() für Display-Loop**: `QTimer` nutzt `Qt.TimerType.PreciseTimer` (Windows-Multimedia-Timer), der auch während des modalen Fenster-Verschiebe-Loops feuert. `repaint()` statt `update()` für direktes synchrones Zeichnen.
+- **Display-Cache für OCR-Konfigurationen**: `_cached_ocr_konf` und `_cached_ocr_regionen` werden einmalig gecacht und nur bei `templates.changed`-Event aktualisiert.
+
+### ✨ Features
+- **Live-Matching-Monitor**: Neues permanentes UI-Panel zur Echtzeit-Visualisierung der Matching-Statistiken (ROI-Anzahl pro Template, Latenz, GPU-Last).
+- **Matching.Stats Event**: Erweiterung des EventBus um detaillierte Metriken pro Matching-Zyklus.
+
+### 🛠️ Fixes
+- **Crash-Isolierung durch vollständige Subprocess-Architektur**: Behebung von wiederholten `access violation` und `0xc0000374` Heap-Corruption-Abstürzen durch vollständige Prozess-Isolation aller nativen Bibliotheken:
+  - *Ursache EasyOCR*: PyTorch-nativer Allokator korrumpierte den Windows-Heap des Hauptprozesses. Fix: EasyOCR/PyTorch läuft jetzt in `_ocr_subprocess` (eigener OS-Prozess), kommuniziert über `mp.Queue` mit `mp.Event` Bereitschaftssignal.
+  - *Ursache WGC*: Der Rust-Thread der `windows_capture`-Bibliothek gibt D3D11-Buffer ohne Python-GIL frei → Heap-Korruption. Fix: WGC läuft in `_wgc_subprocess`, schreibt BGR-Frames per Shared Memory (`bot_wgc_frame`, 30 MB). Automatischer Neustart bei Absturz; `mss` als Fallback.
+- **TemplateEngine CPU-Isolation im Hauptprozess**: `TemplateEngine` lädt Templates jetzt ausschließlich auf CPU (`force_cpu=True`), um den CUDA-Allocator im Hauptprozess zu deaktivieren und Heap-Korruption in `mp.Queue._feed` zu verhindern.
+- **EventBus Thread-Safety**: `EventBus.publish()` erkennt Background-Thread-Aufrufe und routet alle Callbacks via `QObject`-Dispatcher (pyqtSignal `AutoConnection`) sicher in den GUI-Thread, statt sie direkt im Publisher-Thread auszuführen.
+- **FrameWorker Exception-Handling**: Bei einer Exception in `_render_overlay_image()` wurde `self._result` nicht gesetzt → Display fror am alten Frame ein. Fix: `except`-Zweig speichert mindestens `(frame_qimg, None, skala, ox, oy)`.
+- **VorschauLabel AttributeError beim Start**: `set_frame()` griff auf `_scanned_regions` zu bevor es in `__init__` initialisiert war. Fix: `self._scanned_regions: list = []` und `self._show_roi: bool = False` ergänzt.
+- **ROI-Editor Matches**: `matches_suchen_np` gibt 4 Werte zurück, ROI-Editor-Test entpackte nur 2 → `too many values to unpack`. Korrigiert auf `res, master_namen, _, _ = ...`.
+
+---
+
+## v1.5.6 (GPU-Matching-Sprint) - 04.05.2026
+
+### ⚙️ Optimierungen
+- **Zero-Loop Tensor-Prep**: Elimination aller Python-Schleifen bei der ROI-Vorbereitung. Ein einziger großer GPU-Tensor wird vor-allokiert; alle Ausschnitte werden per Batch-Slicing parallel hineinkopiert.
+- **Zero-Upload Offset-Logik**: Koordinaten-Transformation auf die CPU verlagert, redundanter GPU-Upload von Offsets entfällt komplett.
+- **Vektorisiertes Cascade-Batching**: Master-Kind-Suche vollständig vektorisiert — alle Kinder eines Frames werden in optimierten Batches verarbeitet statt sequenziell in Schleifen.
+- **Box-Filter-Precalculating**: Redundante Helligkeits- und Varianzberechnungen für Fullscreen-Templates durch einen einzigen `avg_pool2d`-Vorberechnungsschritt eliminiert.
+- **Zero-Sync-Pipeline v2**: Alle Schwellwerte und Metadaten als GPU-Tensoren vor-allokiert — vollständige Elimination von `torch.tensor()`-Synchronisationspunkten im Scan-Loop.
+- **Persistent ROI-Stacks**: Gestapelte Gewichts- und Masken-Tensoren für ROI-Gruppen dauerhaft im VRAM gecacht. Vermeidet hunderte `torch.cat()`-Operationen pro Sekunde.
+- **Unified GPU-Transfer**: Ergebnisse verbleiben bis zum finalen Filter-Schritt als Tensoren auf der GPU — PCIe-Kommunikation auf einen einzigen gebündelten Transfer pro Suchvorgang reduziert.
+- **Hierarchie- & Logik-Caching**: Aggressives Caching von Template-Abhängigkeiten, rekursiven Pfadprüfungen und Status-Bedingungen zur drastischen Reduktion des Python-Overheads.
+- **GPU-Vektorisierung**: Koordinaten-Transformationen, Skalierungen und Offsets werden massiv parallel direkt auf der GPU berechnet.
+- **ROI-Padding-Batching**: Reduktion der GPU-Kernel-Launches durch Gruppierung von ROIs gleicher Template-Größe in einen einzigen Batch-Scan.
+- **No-Sync-GPU-Pipeline**: Template-Konstanten (Normen, Pixelanzahl) als fertige Tensoren im GPU-Cache — eliminiert `torch.tensor()`-Aufrufe während des Scans.
+- **Zero-Sync-Broadcasting**: Optimierte Tensor-Dimensionen ermöglichen direktes GPU-Broadcasting ohne Re-Shaping im Loop.
+- **PCIe-Transfer-Optimierung**: Entfernung von `pin_memory()` für besseren Durchsatz bei Shared-Memory-Zugriffen unter Windows.
+- **Intelligentes Pruning**: Templates werden nur gescannt wenn ihre Eltern-Bedingungen erfüllt sind — reduziert die Anzahl der Scans pro Frame massiv.
+- **Hierarchische Kaskade**: Kinder werden nur in den Ausschnitten gescannt, in denen ihr Master tatsächlich gefunden wurde.
+- **ROI-Exklusivität**: Sobald eine ROI definiert ist, wird der Fullscreen-Scan für dieses Template unterdrückt — GPU-Last halbiert.
+- **GPU-Pipeline Fast-Path**: Optimierter Durchlauf für Einzel-Templates (ROIs) zur Minimierung von Synchronisations-Overhead.
+- **Batch-Caching**: Fertig gestapelte Template-Tensoren dauerhaft im GPU-Speicher gehalten — keine Speicher-Allokationen mehr pro Frame.
+
+### 🛠️ Fixes
+- **Robustes ROI-Clamping**: Suchfenster werden bei Bildschirmrand-Überschreitung intelligent verschoben statt verkleinert — verhindert `RuntimeError` in GPU-Operationen.
+- **Dimension-Guard**: Sicherheitsprüfung für `max_pool2d` bei extrem kleinen Ergebnismaps durch Randfälle bei der Skalierung.
+- **Varianten-Vererbung**: Template-Varianten (z.B. `Name__1`) erben nun korrekt die Scan-Regionen (ROI) ihres Basis-Templates.
+- **Fullscreen-Diagnose**: Erweitertes Logging identifiziert automatisch Templates, die einen Fullscreen-Scan ohne ROI erzwingen.
+- **SharedMemory Windows-Fix**: Behebung von `WinError 183` durch automatisches Übernehmen existierender Puffer nach unsauberem Programmende.
+- **Variablen-Panel**: Wiederherstellung der `_is_smart_recursive`-Methode zur korrekten Filterung und Anzeige im UI.
+
+---
+
 ## v1.5.5 (Performance-Turbo) - 01.05.2026
 
 ### ✨ Features

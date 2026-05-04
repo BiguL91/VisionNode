@@ -2,57 +2,8 @@
 
 ---
 
-## v1.5.6 (TBD)
+## v1.5.8 (TBD)
 *Aktueller Stand – In Arbeit*
-
-### ✨ Features
-- **Live-Matching-Monitor**: Neues permanentes UI-Panel zur Echtzeit-Visualisierung der Matching-Statistiken (ROI-Anzahl pro Template, Latenz, GPU-Last).
-- **Matching.Stats Event**: Erweiterung des EventBus um detaillierte Metriken pro Matching-Zyklus.
-
-### ⚙️ Optimierungen
-- **Panel-Update-Throttle**: `MatchingMonitorPanel` und `StatePanel` werden jetzt auf max. 4fps gedrosselt. Vorher bauten beide Panels ihre Qt-Listen bei jedem Matching-Zyklus (~10–20fps) vollständig neu auf, was 5–20ms GUI-Thread-Blockage pro Update erzeugte und den 30fps-Display-Timer regelmäßig verzögerte. Der letzte State wird weiterhin sofort gespeichert; nur die Widget-Aktualisierung ist gedrosselt.
-- **OCR-Subprocess GPU-Auto-Detect**: EasyOCR-Subprocess nutzt jetzt `gpu=torch.cuda.is_available()` statt hartkodiertem `gpu=True`. Für den Fall dass GPU verfügbar ist wird nach jedem OCR-Aufruf `torch.cuda.empty_cache()` aufgerufen, um VRAM sofort freizugeben und GPU-Contention mit dem Matching-Subprocess zu reduzieren. Hintergrund: ein früherer Versuch mit `gpu=False` erzeugte ~1–3s CPU-Inferenzzeit pro OCR-Aufruf (CRAFT-Netzwerk auf CPU sehr langsam) → bei 5+ OCR-Variablen summierte sich das auf 10+ Sekunden Verzögerung pro Zyklus.
-- **Overlay-Rendering in Background-Thread**: Vollständige Verlagerung des Overlay-Renderings (Match-Boxen, OCR-Regionen, Scanned-Regions) aus dem GUI-Thread in den `_FrameWorker(QThread)`. `QPainter` auf `QImage` ist in Qt thread-sicher; der GUI-Thread macht nur noch 2× `QPixmap.fromImage()` + 2× `drawPixmap()`. Mit 18+ Matches: Overlay-Rendering spart ~5–20ms GUI-Thread-Blockage pro Zyklus — vollständige Eliminierung der stotterbedingten Ursache.
-- **Zero-Idle Matching-Loop**: `_matching_loop` sendet den nächsten Frame **sofort nach** dem Empfang eines Ergebnisses (vor der Ergebnisverarbeitung). Subprocess erhält den neuen Frame bei T=50ms statt T=70ms → kein Idle-Fenster mehr. Bei Timeout wird ebenfalls sofort ein Frame nachgefüttert.
-- **Background-Frame-Worker**: Frame-Konvertierung (BGR → QImage: cv2.resize + cvtColor) in einen `_FrameWorker(QThread)` ausgelagert. GUI-Thread schreibt Frame per Submit-Slot, Worker schreibt QImage per Result-Slot zurück. Keine Signal-Emissionen (60×/sec Signal-Flood eliminiert); `apply_pending_frame()` liest den Slot synchron ab. `QPixmap.fromImage()` und `repaint()` bleiben im GUI-Thread.
-- **PreciseTimer + repaint() für Display-Loop**: `QTimer` nutzt jetzt `Qt.TimerType.PreciseTimer` (Windows-Multimedia-Timer), der auch während des modalen Windows-Fenster-Verschiebe-Loops feuert. `repaint()` (synchron, direkt `paintEvent`) statt `update()` (asynchron, blockiert im Modal-Loop).
-- **Display-Cache für OCR-Konfigurationen**: `_cached_ocr_konf` und `_cached_ocr_regionen` werden einmalig gecacht und nur bei `templates.changed`-Event aktualisiert — kein teures Neuaufbauen im 60-FPS-Display-Tick.
-- **Zero-Loop Tensor-Prep**: Vollständige Eliminierung von Python-Schleifen bei der Vorbereitung von Bildausschnitten (ROIs). Statt sequenziellem Padding wird nun ein einziger großer GPU-Tensor vor-allokiert, in den alle Ausschnitte per Batch-Slicing parallel hineinkopiert werden.
-- **Zero-Upload Offset-Logik**: Beseitigung von Synchronisationspunkten durch Verlagerung der Koordinaten-Transformation auf die CPU. Der redundante Upload von Offsets zur GPU entfällt komplett.
-- **Vektorisiertes Cascade-Batching**: Die kaskadierte Suche (Master-Kind-Beziehung) wurde vollständig vektorisiert. Alle Kinder-Templates eines Frames werden nun gesammelt in optimierten Batches verarbeitet, statt sequenziell in Schleifen.
-- **Box-Filter-Precalculating**: Radikale Reduktion der Convolution-Last. Redundante Helligkeits- und Varianzberechnungen für Fullscreen-Templates werden durch einen hocheffizienten Vorberechnungsschritt (`avg_pool2d`) eliminiert.
-- **Zero-Sync-Pipeline v2**: Vollständige Eliminierung von Synchronisationspunkten durch Vor-Allokation aller Schwellwerte und Metadaten als GPU-Tensoren.
-- **Persistent ROI-Stacks**: Dauerhaftes Caching von gestapelten Gewichts- und Masken-Tensoren für ROI-Gruppen im VRAM. Vermeidet hunderte `torch.cat()`-Operationen pro Sekunde und schont die Speicherbandbreite.
-- **Unified GPU-Transfer**: Ergebnisse verbleiben bis zum finalen Filter-Schritt als Tensoren auf der GPU. Reduktion der PCIe-Kommunikation auf einen einzigen gebündelten Transfer pro Suchvorgang.
-- **Hierarchie- & Logik-Caching**: Aggressives Caching von Template-Abhängigkeiten, rekursiven Pfadprüfungen und Status-Bedingungen zur drastischen Reduktion des Python-Overheads.
-- **GPU-Vektorisierung**: Koordinaten-Transformationen, Skalierungen und Offsets werden nun massiv parallel direkt auf der GPU berechnet statt seriell in Python-Schleifen.
-- **ROI-Padding-Batching**: Radikale Reduktion der GPU-Kernel-Launches durch Gruppierung von ROIs gleicher Template-Größe. Bildausschnitte werden gepolstert (Padding) und in einem einzigen Batch-Scan verarbeitet.
-- **No-Sync-GPU-Pipeline**: Verschiebung aller Template-Konstanten (Normen, Pixelanzahl) als fertige Tensoren in den GPU-Cache. Eliminiert teure Synchronisationspunkte (`torch.tensor()`) während des Scans.
-- **Zero-Sync-Broadcasting**: Optimierte Tensor-Dimensionen im Cache ermöglichen direktes GPU-Broadcasting ohne Re-Shaping im Loop.
-- **PCIe-Transfer-Optimierung**: Entfernung von `pin_memory()` zur Steigerung des Durchsatzes bei Shared-Memory-Zugriffen unter Windows.
-- **Intelligentes Pruning**: Vollständige Wiederherstellung der rekursiven Filterlogik. Templates werden nur gescannt, wenn ihre Eltern-Bedingungen (z.B. offene Menüs) erfüllt sind. Dies reduziert die Anzahl der Scans pro Frame massiv.
-- **Hierarchische Kaskade**: Wiederherstellung der Master-Kind-Abhängigkeit. Kinder werden nur in den Ausschnitten gescannt, in denen ihr Master tatsächlich gefunden wurde.
-- **ROI-Exklusivität**: Erzwungene Priorisierung von Scan-Regionen. Sobald eine ROI definiert ist, wird der Fullscreen-Scan für dieses Template unterdrückt, was die GPU-Last halbiert.     
-- **GPU-Pipeline Fast-Path**: Optimierter Durchlauf für Einzel-Templates (ROIs) zur Minimierung von Synchronisations-Overhead.
-- **Batch-Caching**: Dauerhafte Speicherung von fertig gestapelten Template-Tensoren im GPU-Speicher zur Vermeidung teurer Speicher-Allokationen in jedem Frame.
-
-### 🛠️ Fixes
-- **FrameWorker Exception-Handling**: Bei einer Exception in `_render_overlay_image()` (z.B. QPainter in Non-GUI-Thread) wurde `self._result` nicht gesetzt → `apply_pending_frame()` fand kein Ergebnis und das Display fror am alten Frame ein. Fix: im `except`-Zweig wird jetzt mindestens `(frame_qimg, None, skala, ox, oy)` gespeichert, sodass das Frame immer angezeigt wird.
-- **Robustes ROI-Clamping**: Suchfenster werden bei Bildschirmrand-Überschreitung nun intelligent verschoben statt verkleinert. Garantiert eine gültige Eingabegröße für GPU-Operationen und verhindert `RuntimeError`.
-- **Dimension-Guard**: Sicherheitsprüfung für `max_pool2d` bei extrem kleinen oder leeren Ergebnismaps (z.B. durch Randfälle bei der Skalierung).
-- **Varianten-Vererbung**: Template-Varianten (z.B. `Name__1`) erben nun korrekt die Scan-Regionen (ROI) ihres Basis-Templates.
-- **Fullscreen-Diagnose**: Erweitertes Logging identifiziert nun automatisch Templates, die einen Fullscreen-Scan ohne ROI erzwingen.
-- **SharedMemory Windows-Fix**: Behebung von `WinError 183` durch automatisches Übernehmen existierender Puffer nach unsauberem Programmende.
-- **Variablen-Panel**: Wiederherstellung der `_is_smart_recursive` Methode zur korrekten Filterung und Anzeige im UI.
-- **Crash-Isolierung durch vollständige Subprocess-Architektur**: Behebung von wiederholten `access violation` und `0xc0000374` Heap-Corruption-Abstürzen durch vollständige Prozess-Isolation aller nativen Bibliotheken:
-  - *Ursache EasyOCR*: PyTorch-nativer Allokator korrumpierte den Windows-Heap des Hauptprozesses und führte zu sporadischen Access Violations in nicht verwandten Threads (z.B. WGC-Callback). Fix: EasyOCR/PyTorch läuft jetzt in `_ocr_subprocess` (eigener OS-Prozess), kommuniziert über `mp.Queue` Request/Response mit `mp.Event` Bereitschaftssignal.
-  - *Ursache WGC*: Der Rust-Thread der `windows_capture`-Bibliothek gibt D3D11-Staging-Buffer ohne Python-GIL frei. Jede Kopiermethode (`bytes()`, `np.array()`, `ctypes.memmove()`) kann in diesem Zeitfenster abstürzen, da der Hauptprozess-Heap korrumpiert wird. Fix: WGC läuft in `_wgc_subprocess`, schreibt BGR-Frames per Shared Memory (`bot_wgc_frame`, 30 MB), Hauptprozess liest daraus ohne direkten Rust-Buffer-Kontakt.
-  - Automatischer WGC-Subprocess-Neustart in `_capture_loop` bei Absturz; `mss` als Fallback während des Neustarts.
-- **TemplateEngine CPU-Isolation im Hauptprozess**: `TemplateEngine` im Hauptprozess lädt Templates jetzt ausschließlich auf CPU (`force_cpu=True`). Ursache: `_templates_laden()` rief `.to(cuda)` beim Start und bei jedem Reload auf, wodurch PyTorchs CUDA-Allocator im Hauptprozess aktiv war und sporadisch den Windows-Heap korrumpierte (Access Violation in `mp.Queue._feed`). Der Matching-Subprocess verwendet weiterhin CUDA und ist davon nicht betroffen.
-- **ROI-Editor Matches**: `matches_suchen_np` gibt seit den Performance-Optimierungen 4 Werte zurück (`matches, master_namen, scanned_regions, search_stats`). Der ROI-Editor-Test hat nur 2 entpackt → `too many values to unpack`. Korrigiert auf `res, master_namen, _, _ = ...`.
-- **VorschauLabel AttributeError beim Start**: `set_frame()` verglich `scanned_regions != self._scanned_regions` bevor `_scanned_regions` in `__init__` initialisiert war → `AttributeError`. Fix: `self._scanned_regions: list = []` und `self._show_roi: bool = False` in `__init__` ergänzt.
-- **EventBus Thread-Safety / Access Violation im Qt-Event-Loop**: Der EventBus rief alle Callbacks synchron im Publisher-Thread auf. Da `_matching_loop`, `_ocr_loop` und `_capture_loop` aus Background-Threads publishten, wurden Qt-Panel-Updates (`matching_monitor`, `variable_panel`, `state_panel`, `daten_panel`) direkt aus fremden Threads ausgeführt — ein fataler Qt-Threading-Verstoß der sporadische Access Violations in `app.exec()` verursachte. Fix: `EventBus.publish()` erkennt jetzt ob es aus einem Background-Thread aufgerufen wird. Falls ja, wird ein `QObject`-basierter Dispatcher (`pyqtSignal` mit `AutoConnection`) verwendet, der Qt's eigenen Queued-Connection-Mechanismus nutzt und die Callbacks sicher in den GUI-Thread einreiht. Der Dispatcher wird lazy beim ersten publish aus dem Haupt-Thread initialisiert; in Subprocessen (kein `QApplication`) bleibt das bisherige Direktaufruf-Verhalten erhalten.
-- **DataWorker GUI-Thread-Blockade**: `DataWorker` war via EventBus auf dem GUI-Thread registriert. Bei jedem OCR-Zyklus lief `process_all_listen()` (N SQLite-Queries für alle Listen) synchron auf dem GUI-Thread → messbare Freeze-Spikes unabhängig von Matching-Geschwindigkeit. Fix: `on_ocr_results` reiht die Rohdaten nur noch in eine `queue.Queue(maxsize=2)` ein (< 1ms); ein dedizierter Background-Thread (`_processing_loop`) übernimmt alle DB-Operationen und publisht `data.updated` via QueuedConnection zurück in den GUI-Thread. Zusätzlich: Struktur-Queries (spalten/zeilen/berechnungen) in `BaseListenBlock` werden einmalig gecacht und nur bei Struktur-Änderung invalidiert (3 von 4 DB-Queries pro `werte_aktualisieren`-Aufruf entfallen). `DatenPanel._on_data_updated` ist auf max. 2fps gedrosselt.
 
 ---
 
