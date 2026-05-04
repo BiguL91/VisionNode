@@ -35,7 +35,7 @@ class TemplateEditorQt(QDialog):
 
     Parameter:
         parent                — Elternfenster (QWidget oder None)
-        bot                   — TilesBot-Instanz
+        bot                   — VisionNode-Instanz
         bearbeiten_name       — Name des zu bearbeitenden Templates (None = neu)
         aktueller_ausschnitt  — tuple(PIL.Image, ...) oder None
         einlern_modus_callback— Callable, wird beim Schließen aufgerufen

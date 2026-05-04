@@ -1,10 +1,10 @@
 """
-TilesBot Hauptfenster (Qt) — Ersetzt main.py (tkinter).
-Einstiegspunkt: python main_qt.py
+VisionNode Hauptfenster (Qt).
+Einstiegspunkt: python main.py
 
 Architektur:
-    VorschauLabel   — Custom QLabel für Live-Vorschau + Overlays + Einlern-Maus
-    TilesBotWindow  — QMainWindow, verbindet alle Qt-Panels via Signals
+    VorschauLabel    — Custom QLabel für Live-Vorschau + Overlays + Einlern-Maus
+    VisionNodeWindow — QMainWindow, verbindet alle Qt-Panels via Signals
 """
 from __future__ import annotations
 import os
@@ -220,7 +220,7 @@ except ImportError:
     _PILImage = None
 
 # ── Core ─────────────────────────────────────────────────────────────────────
-from core.main_app import TilesBotApp
+from core.main_app import VisionNodeApp
 from core.helpers import _template_farbe
 from core.daten_manager import alle_listen, cache_lesen, sekunden_formatieren
 
@@ -258,10 +258,10 @@ from ui.ui_utils import GeometryManager
 
 # ── Hauptfenster ──────────────────────────────────────────────────────────────
 
-class TilesBotWindow(QMainWindow):
+class VisionNodeWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Ai-Bot")
+        self.setWindowTitle("VisionNode")
         self.setObjectName("main_window")
         self.setMinimumSize(1450, 700)
 
@@ -274,7 +274,7 @@ class TilesBotWindow(QMainWindow):
         )
 
         # Core
-        self.app = TilesBotApp(log_callback=self._log)
+        self.app = VisionNodeApp(log_callback=self._log)
         self.template_engine  = self.app.template_engine
         self.ocr_engine       = self.app.ocr_engine
         self.action_engine    = self.app.action_engine
@@ -1667,6 +1667,6 @@ if __name__ == "__main__":
     lang.load("de")
     app = QApplication(sys.argv)
     app.setStyleSheet(style.load())
-    win = TilesBotWindow()
+    win = VisionNodeWindow()
     win.show()
     sys.exit(app.exec())

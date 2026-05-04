@@ -1,7 +1,7 @@
-# Ai-Bot – Mobile Game Automatisierung
+# VisionNode – Mobile Game Automatisierung
 
-Ein hochpräziser Bot für Mobile Games im MEMUPlayer.
-Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkennen und Workflows autonom auszuführen.
+Ein hochpräzises Automatisierungs-Framework für Mobile Games im MEMUPlayer.
+VisionNode nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkennen und Workflows autonom auszuführen.
 
 ---
 
@@ -54,7 +54,7 @@ Ai-Bot nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu erkenn
 
 ## Status
 
-v1.5.7 – **Stabilität & UI-Architektur**.
+VisionNode v1.5.7 – **Stabilität & UI-Architektur**.
 
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

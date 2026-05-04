@@ -1,4 +1,4 @@
-# Ai-Bot – Tech Stack
+# VisionNode – Tech Stack
 
 | Library              | Zweck                                        |
 |----------------------|----------------------------------------------|
@@ -33,7 +33,7 @@
 
 ## Threading- & Prozess-Modell (CPU-Optimierung)
 
-Um die CPU-Last minimal zu halten (~5-10% bei 60fps) und den Python-GIL zu umgehen, nutzt Ai-Bot ein hybrides Modell:
+Um die CPU-Last minimal zu halten (~5-10% bei 60fps) und den Python-GIL zu umgehen, nutzt VisionNode ein hybrides Modell:
 
 | Komponente            | Typ               | Aufgabe                                      | Intervall |
 |-----------------------|-------------------|----------------------------------------------|-----------|

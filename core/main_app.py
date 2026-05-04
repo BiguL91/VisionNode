@@ -121,7 +121,7 @@ def _ocr_subprocess(req_q, resp_q, ready_event):
                 torch.cuda.empty_cache()
 
 
-class TilesBotApp:
+class VisionNodeApp:
     """Die Logik-Zentrale des Bots (Engine-Management & Loops)."""
     
     def __init__(self, log_callback=None, ui_update_callback=None):

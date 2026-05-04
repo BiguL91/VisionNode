@@ -1,5 +1,5 @@
 """
-Sprach-System für TilesBot.
+Sprach-System für VisionNode.
 
 Verwendung:
     import lang

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def _resolve_bot(bot):
-    """Gibt immer die TilesBotApp-Instanz zurück, egal ob bot das Fenster oder die App ist."""
+    """Gibt immer die VisionNodeApp-Instanz zurück, egal ob bot das Fenster oder die App ist."""
     if bot is None:
         return None
     if hasattr(bot, "app"):

@@ -18,7 +18,7 @@ class OCREngine:
         self.regionen = {}
         self.debug_filter = "Aus"  # "Aus", "Alle" oder Name der Region
         self._template_ocr_cache = None
-        # IPC zum OCR-Subprocess (wird von TilesBotApp gesetzt)
+        # IPC zum OCR-Subprocess (wird von VisionNodeApp gesetzt)
         self._ocr_req_q = None
         self._ocr_resp_q = None
         self._ocr_ready_event = None

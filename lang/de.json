@@ -2,11 +2,11 @@
   "_meta": {
     "language": "Deutsch",
     "code": "de",
-    "author": "TilesBot Team",
+    "author": "VisionNode Team",
     "version": "1.0"
   },
 
-  "app_title": "Ai-Bot",
+  "app_title": "VisionNode",
 
   "btn_start": "▶  Start",
   "btn_stop": "■  Stop",
