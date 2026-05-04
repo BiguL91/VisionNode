@@ -54,8 +54,10 @@ VisionNode nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu er
 
 ## Status
 
-VisionNode v1.5.8 â€“ **Fehlerbehebung: ROI & Klick-PrÃ¤zision**.
+VisionNode v1.5.9 – **Lizenz-Update & Dokumentation**.
 
+## Lizenz
 
+Dieses Projekt steht unter der **GNU Affero General Public License v3.0 (AGPL-3.0)**. Siehe [LICENSE](LICENSE) für Details.
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

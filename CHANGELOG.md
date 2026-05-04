@@ -2,9 +2,17 @@
 
 ---
 
+## v1.5.9 (Lizenz & Dokumentation) - 04.05.2026
+
+### ✨ Features
+- **Lizenzierung**: Das Projekt steht nun offiziell unter der **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+- **Mini-Game Engine Vorbereitung**: Planung für das CandyLike-Modul (Raster-Erkennung, Spezialsteine) im TODO ergänzt.
+
+---
+
 ## v1.5.8 (Fehlerbehebung: ROI & Klick-PrÃ¤zision) - 04.05.2026
 
-### ðŸ› ï¸ Fixes
+### Fixes
 - **NCC-Mathematik & Score-Explosion**: Korrektur der Elementanzahl `N` in `template_matcher.py`. Bei unmaskierten Templates wurde `N` fÃ¤lschlicherweise durch 3 geteilt, was zu negativer Varianz und Division durch fast Null fÃ¼hrte (verhindert Scores > 3000).
 - **ROI-Vererbung im Editor**: `_erkennung_test()` in `template_editor_qt.py` nutzt nun `_get_effective_regions()`, wenn keine lokalen Regionen definiert sind. Der Editor lÃ¤dt nun auch beim Ã–ffnen automatisch die vererbten Regionen der Elterngruppe.
 - **ADB Klick-Versatz**: Standard-Offsets fÃ¼r MEmu (Header: 32px, Sidebar: 40px) wiederhergestellt und manuelle Addition in der Direktsteuerung entfernt. Die Koordinaten werden nun korrekt von der `ActionEngine` auf Basis des Spielfelds umgerechnet.

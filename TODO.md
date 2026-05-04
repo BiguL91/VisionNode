@@ -9,7 +9,11 @@
   - In dem Handy game Gibt es mehrer kleine Minispiele. zb. Eine Art Candycrush, eine Art Memory.
   - Die Mini-Game Engin soll ein Neues Panel in der Gui bekommen. Mit einer Liste Der verfügbaren Games.
   - Beim Klicken auf ein Game Soll ein neuer Dialog geöffnet werden.
-  - Am anfang wurde ich gerne mit dem Candycrush verschnitt anfangen da ich da bereit die Templates erstellt habe.
+  - Am anfang wurde ich gerne mit dem CandyLike anfangen da ich da bereits die Templates erstellt habe. 
+  - Wir benötigen ein Modul wo man das spielveld festlegen kann. und ihm sagen kann wie viel felder es hat zb. 7x7
+  - Wir brauchen ein Modul wo wir ihn die standart steine zuweisen konnen /grun,blau.. etc
+  - Es gibt noch etlich spezial steine da weiß ich noch nicht wie wir das inplementieren
+  - 
 
 
 
