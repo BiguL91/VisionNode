@@ -95,7 +95,8 @@ def _ocr_subprocess(req_q, resp_q, ready_event):
     import easyocr
     import torch.nn as nn
 
-    reader = easyocr.Reader(["en", "de"], gpu=False)
+    gpu_verfuegbar = torch.cuda.is_available()
+    reader = easyocr.Reader(["en", "de"], gpu=gpu_verfuegbar)
     for attr, val in vars(reader).items():
         if isinstance(val, nn.DataParallel):
             setattr(reader, attr, val.module)
@@ -115,6 +116,9 @@ def _ocr_subprocess(req_q, resp_q, ready_event):
             resp_q.put(("ok", ergebnisse))
         except Exception as e:
             resp_q.put(("err", str(e)))
+        finally:
+            if gpu_verfuegbar:
+                torch.cuda.empty_cache()
 
 
 class TilesBotApp:
@@ -382,7 +386,7 @@ class TilesBotApp:
                 _send_frame()
 
             try:
-                res_package = self.result_q.get(timeout=0.1)
+                res_package = self.result_q.get(timeout=0.5)
 
                 # Sofort nächsten Frame schicken BEVOR das Ergebnis verarbeitet wird.
                 # Subprocess kann so direkt mit dem nächsten Frame starten, während
