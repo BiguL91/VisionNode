@@ -54,7 +54,8 @@ VisionNode nutzt fortschrittliche Computer Vision und OCR, um Spielinhalte zu er
 
 ## Status
 
-VisionNode v1.5.7 – **Stabilität & UI-Architektur**.
+VisionNode v1.5.8 â€“ **Fehlerbehebung: ROI & Klick-PrÃ¤zision**.
+
 
 
 Für Details siehe [CHANGELOG.md](CHANGELOG.md)

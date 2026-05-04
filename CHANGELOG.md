@@ -2,7 +2,25 @@
 
 ---
 
-## v1.5.7 (Stabilität & UI-Architektur) - 04.05.2026
+## v1.5.8 (Fehlerbehebung: ROI & Klick-PrÃ¤zision) - 04.05.2026
+
+### ðŸ› ï¸ Fixes
+- **NCC-Mathematik & Score-Explosion**: Korrektur der Elementanzahl `N` in `template_matcher.py`. Bei unmaskierten Templates wurde `N` fÃ¤lschlicherweise durch 3 geteilt, was zu negativer Varianz und Division durch fast Null fÃ¼hrte (verhindert Scores > 3000).
+- **ROI-Vererbung im Editor**: `_erkennung_test()` in `template_editor_qt.py` nutzt nun `_get_effective_regions()`, wenn keine lokalen Regionen definiert sind. Der Editor lÃ¤dt nun auch beim Ã–ffnen automatisch die vererbten Regionen der Elterngruppe.
+- **ADB Klick-Versatz**: Standard-Offsets fÃ¼r MEmu (Header: 32px, Sidebar: 40px) wiederhergestellt und manuelle Addition in der Direktsteuerung entfernt. Die Koordinaten werden nun korrekt von der `ActionEngine` auf Basis des Spielfelds umgerechnet.
+- **Zustands-Filter (Hierarchie)**: `active_matches`-Post-Filter berÃ¼cksichtigt nun auch die Bedingungen von Elterngruppen via `_eltern_conditions_pruefen()`.
+- **Zustands-Editor UX**: AND/OR Connectoren werden nun visuell als horizontale Trenner zwischen Bedingungsgruppen dargestellt; Fehler bei der EinfÃ¼ge-Reihenfolge neuer Gruppen behoben.
+
+#### OCR-Editor Optimierungen
+- **Fenster-Management**: MindestgrÃ¶ÃŸe des ScrollArea-Bereichs auf 200Ã—150px reduziert (verhindert Riesenfenster bei groÃŸen Templates). Dialoge werden nun beim Ã–ffnen auf dem Bildschirm zentriert und begrenzt.
+- **Dynamische Skalierung**: Der Canvas skaliert das Bild nun dynamisch auf die verfÃ¼gbare FlÃ¤che (begrenzt auf 1:1). Alle Koordinaten (Zonen, Auswahl, Lupe) werden korrekt auf Bildpixel umgerechnet.
+- **Sicherheits-Clamping**: Alle Drag-Aktionen im Canvas werden nun zwingend auf die Bildgrenzen begrenzt (`_clamp_to_image`).
+- **Layout-Redesign**: Die Zonenliste wurde in ein rechtes Panel (Fixed Width) verschoben, wodurch der Canvas-Bereich links die volle FensterhÃ¶he nutzen kann.
+
+---
+
+## v1.5.7 (StabilitÃ¤t & UI-Architektur) - 04.05.2026
+
 
 ### ⚙️ Optimierungen
 - **DataWorker GUI-Thread-Offload**: `on_ocr_results` reiht OCR-Daten nur noch in eine `queue.Queue(maxsize=2)` ein (< 1ms); ein dedizierter Background-Thread (`_processing_loop`) übernimmt alle SQLite-Operationen und publisht `data.updated` via QueuedConnection zurück in den GUI-Thread. Zusätzlich: Struktur-Queries (spalten/zeilen/berechnungen) in `BaseListenBlock` werden einmalig gecacht und nur bei Struktur-Änderung invalidiert (3 von 4 DB-Queries pro `werte_aktualisieren`-Aufruf entfallen). `DatenPanel._on_data_updated` ist auf max. 2fps gedrosselt.
