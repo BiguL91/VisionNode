@@ -813,27 +813,20 @@ class VisionNodeWindow(QMainWindow):
         if not self.action_engine:
             return
         # Umrechnen: Vorschau-Pixel (Client Area) -> Window-Pixel
-        ax = x + self.action_engine.chrome_left
-        ay = y + self.action_engine.chrome_top
-        
         # ADB-Befehl im Hintergrund-Thread (UI nicht blockieren)
         threading.Thread(
             target=self.action_engine.tippen,
-            args=(ax, ay, True),
+            args=(x, y, True),
             daemon=True
         ).start()
 
     def _on_direkt_wischen(self, x0, y0, x1, y1):
         if not self.action_engine:
             return
-        ax0 = x0 + self.action_engine.chrome_left
-        ay0 = y0 + self.action_engine.chrome_top
-        ax1 = x1 + self.action_engine.chrome_left
-        ay1 = y1 + self.action_engine.chrome_top
         
         threading.Thread(
             target=self.action_engine.wischen,
-            args=(ax0, ay0, ax1, ay1, 300, True),
+            args=(x0, y0, x1, y1, 300, True),
             daemon=True
         ).start()
 
