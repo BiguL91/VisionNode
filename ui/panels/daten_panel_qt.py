@@ -28,6 +28,11 @@ class BaseListenBlock(QFrame):
         self.bot_ref = bot_ref
         self._aufgeklappt = True
         self._is_loading = False
+        # Struktur-Cache: spalten/zeilen/berechnungen ändern sich selten → einmalig laden
+        self._cache_spalten = None
+        self._cache_zeilen  = None
+        self._cache_berech  = None
+        self._cache_zuord   = None
 
         self.setObjectName("collapsible_panel")
         self._setup_ui()
@@ -151,24 +156,24 @@ class BaseListenBlock(QFrame):
             self._tabelle_zeichnen()
 
     def _tabelle_zeichnen(self):
-        pass
+        self._cache_spalten = None  # Struktur-Cache invalidieren
 
     def werte_aktualisieren(self):
         pass
 
     def _werte_abrufen(self):
-        """Holt die bereits verarbeiteten Werte aus dem Cache (DataWorker hat gerechnet)."""
-        spalten       = spalten_der_liste(self.l["id"])
-        zeilen_namen  = zeilen_der_liste(self.l["id"])
-        berechnungen  = berechnungen_der_liste(self.l["id"])
-        db_cache      = cache_lesen(self.l["id"])
-        
-        # Wir nutzen einfach den Cache als Basis für die Anzeige
-        ocr_werte     = dict(db_cache)
-        berech_namen  = {b["name"] for b in berechnungen}
-        zuordnungen   = zuordnungen_der_liste(self.l["id"])
-        
-        return ocr_werte, spalten, zeilen_namen, berech_namen, zuordnungen
+        """Holt Werte aus dem Cache. Struktur (spalten/zeilen/berechnungen) wird gecacht,
+        nur db_cache wird jedes Mal neu gelesen (enthält die aktuellen berechneten Werte)."""
+        if self._cache_spalten is None:
+            self._cache_spalten = spalten_der_liste(self.l["id"])
+            self._cache_zeilen  = zeilen_der_liste(self.l["id"])
+            self._cache_berech  = berechnungen_der_liste(self.l["id"])
+            self._cache_zuord   = zuordnungen_der_liste(self.l["id"])
+
+        db_cache     = cache_lesen(self.l["id"])
+        ocr_werte    = dict(db_cache)
+        berech_namen = {b["name"] for b in self._cache_berech}
+        return ocr_werte, self._cache_spalten, self._cache_zeilen, berech_namen, self._cache_zuord
 
     def _format_wert(self, wert, format_typ):
         if wert in (None, "", "—", "?"):
@@ -318,6 +323,7 @@ class DatenPanel(QWidget):
         self._listen_cache: list = []
         self._bloecke: dict[int, BaseListenBlock] = {}
         self._sichtbare_listen: set[int] = set() # listen_id
+        self._last_data_update = 0.0
 
         datenbank_initialisieren()
         self._setup_ui()
@@ -331,8 +337,11 @@ class DatenPanel(QWidget):
         bus.subscribe("data.updated", self._on_data_updated)
 
     def _on_data_updated(self, event):
-        """Wird vom DataWorker gerufen, wenn neue Berechnungen vorliegen."""
-        # Wir nutzen ein QTimer.singleShot, um den UI-Thread nicht direkt zu blockieren
+        """Wird vom DataWorker gerufen (Background-Thread → GUI via QueuedConnection)."""
+        now = time.monotonic()
+        if now - self._last_data_update < 0.5:  # max 2fps
+            return
+        self._last_data_update = now
         QTimer.singleShot(0, self._auto_update)
 
     def _setup_ui(self):
